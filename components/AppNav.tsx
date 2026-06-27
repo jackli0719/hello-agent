@@ -8,7 +8,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { logoutAction } from "@/app/login/actions";
 
-type AppPage = "dashboard" | "orders" | "services" | "masters" | "dispatch-rules";
+type AppPage =
+  | "dashboard"
+  | "orders"
+  | "services"
+  | "masters"
+  | "dispatch-rules"
+  | "metrics";
 
 const ITEMS: { key: AppPage; label: string; href: string }[] = [
   { key: "dashboard", label: "Dashboard", href: "/dashboard" },
@@ -16,6 +22,7 @@ const ITEMS: { key: AppPage; label: string; href: string }[] = [
   { key: "services", label: "服务管理", href: "/services" },
   { key: "masters", label: "师傅管理", href: "/masters" },
   { key: "dispatch-rules", label: "派单规则", href: "/dispatch-rules" },
+  { key: "metrics", label: "业务指标", href: "/admin/metrics" },
 ];
 
 function detectCurrent(pathname: string): AppPage | undefined {
@@ -24,6 +31,7 @@ function detectCurrent(pathname: string): AppPage | undefined {
   if (pathname.startsWith("/services")) return "services";
   if (pathname.startsWith("/masters")) return "masters";
   if (pathname.startsWith("/dispatch-rules")) return "dispatch-rules";
+  if (pathname.startsWith("/admin")) return "metrics";
   return undefined;
 }
 

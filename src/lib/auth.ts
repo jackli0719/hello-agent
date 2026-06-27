@@ -47,6 +47,7 @@ export const PROTECTED_PATHS = [
   "/services",
   "/masters",
   "/dispatch-rules",
+  "/admin",
 ];
 
 /** 静态资源 / 内部路径 — middleware 必须放行（不重定向） */
@@ -54,8 +55,12 @@ export const PUBLIC_PATHS = ["/login"];
 
 /** 是否受保护：路径是 PROTECTED_PATHS 任一前缀（但不是 PUBLIC） */
 export function isProtectedPath(pathname: string): boolean {
-  if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
+  if (
+    PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))
+  ) {
     return false;
   }
-  return PROTECTED_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"));
+  return PROTECTED_PATHS.some(
+    (p) => pathname === p || pathname.startsWith(p + "/"),
+  );
 }

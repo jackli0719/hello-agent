@@ -15,6 +15,8 @@
 
 import { prisma } from "@/src/lib/db";
 import { normalizeCode } from "@/src/lib/codes";
+import { logInfo, logError } from "@/src/lib/logger";
+import { incrementCounter, METRIC } from "@/src/lib/metrics";
 
 export type OrderField =
   | "customerName"
@@ -46,23 +48,42 @@ export type CreateOrderResult =
 
 export function validateCreateOrderInput(
   input: Partial<CreateOrderInput>,
-): { ok: true; cleaned: CreateOrderInput } | { ok: false; error: string; field: OrderField } {
+):
+  | { ok: true; cleaned: CreateOrderInput }
+  | { ok: false; error: string; field: OrderField } {
   const customerName = (input.customerName ?? "").trim();
-  if (!customerName) return { ok: false, error: "请填写客户姓名", field: "customerName" };
-  if (customerName.length > 50) return { ok: false, error: "客户姓名不能超过 50 个字符", field: "customerName" };
+  if (!customerName)
+    return { ok: false, error: "请填写客户姓名", field: "customerName" };
+  if (customerName.length > 50)
+    return {
+      ok: false,
+      error: "客户姓名不能超过 50 个字符",
+      field: "customerName",
+    };
 
   const customerPhone = (input.customerPhone ?? "").trim();
-  if (!customerPhone) return { ok: false, error: "请填写手机号", field: "customerPhone" };
+  if (!customerPhone)
+    return { ok: false, error: "请填写手机号", field: "customerPhone" };
   if (!/^1\d{10}$/.test(customerPhone)) {
-    return { ok: false, error: "手机号格式不正确（11 位数字，1 开头）", field: "customerPhone" };
+    return {
+      ok: false,
+      error: "手机号格式不正确（11 位数字，1 开头）",
+      field: "customerPhone",
+    };
   }
 
   const address = (input.address ?? "").trim();
   if (!address) return { ok: false, error: "请填写服务地址", field: "address" };
-  if (address.length > 200) return { ok: false, error: "服务地址不能超过 200 个字符", field: "address" };
+  if (address.length > 200)
+    return {
+      ok: false,
+      error: "服务地址不能超过 200 个字符",
+      field: "address",
+    };
 
   const skuCodeRaw = (input.skuCode ?? "").trim();
-  if (!skuCodeRaw) return { ok: false, error: "请选择服务 SKU", field: "skuCode" };
+  if (!skuCodeRaw)
+    return { ok: false, error: "请选择服务 SKU", field: "skuCode" };
 
   // categoryCode 可选 — 旧调用方不传时跳过校验。trim 后非空就保留，否则置 undefined
   let categoryCode: string | undefined;
@@ -77,16 +98,22 @@ export function validateCreateOrderInput(
   const skuCode = normalizeCode(skuCodeRaw);
   if (categoryCode !== undefined) categoryCode = normalizeCode(categoryCode);
   // normalize 后可能变空（输入完全是非法字符） — 重新校验
-  if (!skuCode) return { ok: false, error: "服务 SKU 格式不合法", field: "skuCode" };
+  if (!skuCode)
+    return { ok: false, error: "服务 SKU 格式不合法", field: "skuCode" };
   if (categoryCode === "") categoryCode = undefined;
 
   if (typeof input.amount !== "number" || Number.isNaN(input.amount)) {
     return { ok: false, error: "金额必须是数字", field: "amount" };
   }
-  if (input.amount < 0) return { ok: false, error: "金额不能为负数", field: "amount" };
-  if (input.amount > 1_000_000) return { ok: false, error: "金额超出合理范围", field: "amount" };
+  if (input.amount < 0)
+    return { ok: false, error: "金额不能为负数", field: "amount" };
+  if (input.amount > 1_000_000)
+    return { ok: false, error: "金额超出合理范围", field: "amount" };
 
-  if (!(input.scheduledAt instanceof Date) || Number.isNaN(input.scheduledAt.getTime())) {
+  if (
+    !(input.scheduledAt instanceof Date) ||
+    Number.isNaN(input.scheduledAt.getTime())
+  ) {
     return { ok: false, error: "预约时间不正确", field: "scheduledAt" };
   }
 
@@ -135,7 +162,11 @@ export async function createOrder(
     },
   });
   if (!sku) {
-    return { ok: false, error: `SKU 不存在：${input.skuCode}`, field: "skuCode" };
+    return {
+      ok: false,
+      error: `SKU 不存在：${input.skuCode}`,
+      field: "skuCode",
+    };
   }
   if (!sku.enabled) {
     return { ok: false, error: `SKU 已下架：${sku.name}`, field: "skuCode" };
@@ -144,7 +175,10 @@ export async function createOrder(
   // 配对校验：客户端传的 categoryCode 必须等于 SKU 真实所属类目的 categoryCode。
   // 这是「前端改了 skuCode 但没改 categoryCode」或者反过来时的兜底。
   // 不传 categoryCode 时跳过（兼容旧调用方/外部 API）。
-  if (input.categoryCode !== undefined && sku.category.categoryCode !== input.categoryCode) {
+  if (
+    input.categoryCode !== undefined &&
+    sku.category.categoryCode !== input.categoryCode
+  ) {
     return {
       ok: false,
       error: `SKU「${sku.name}」不属于类目「${input.categoryCode}」`,
@@ -174,6 +208,16 @@ export async function createOrder(
           remark: input.remark ?? null,
         },
       });
+      // 埋点：订单创建成功
+      logInfo("order created", {
+        orderId,
+        skuCode: input.skuCode,
+        customerPhone: input.customerPhone,
+      });
+      incrementCounter(METRIC.ORDER_CREATE_SUCCESS, {
+        orderId,
+        skuCode: input.skuCode,
+      });
       return { ok: true, orderId };
     } catch (e) {
       lastError = e;
@@ -184,6 +228,10 @@ export async function createOrder(
     }
   }
   // 重试耗尽才走到这里 — 5 次都撞号说明并发极高，转成业务错误返回
+  logError("order create exhausted retries", lastError, {
+    skuCode: input.skuCode,
+  });
+  incrementCounter(METRIC.ORDER_CREATE_FAILED, { reason: "retries_exhausted" });
   throw lastError instanceof Error ? lastError : new Error("订单号生成失败");
 }
 
@@ -213,7 +261,9 @@ export function buildOrderId(now: Date, seq: number): string {
  * 查 DB 算「下一个候选订单号」：O + YYYMMDD + (count + 1)。
  * 同日并发可能返回重复值 — 由 createOrder 的重试兜底。
  */
-export async function generateNextOrderId(now: Date = new Date()): Promise<string> {
+export async function generateNextOrderId(
+  now: Date = new Date(),
+): Promise<string> {
   const pad = (n: number) => String(n).padStart(2, "0");
   const ymd = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
   const todayPrefix = `O${ymd}`;
@@ -349,8 +399,16 @@ export async function assignOrder(
     });
   } catch (e) {
     if (e instanceof AssignOrderError) {
+      logInfo("assign failed (validation)", {
+        orderId,
+        masterId,
+        reason: e.reason,
+      });
+      incrementCounter(METRIC.ORDER_ASSIGN_FAILED, { reason: "validation" });
       return { ok: false, category: "validation", error: e.reason };
     }
+    logError("assign failed (system)", e, { orderId, masterId });
+    incrementCounter(METRIC.ORDER_ASSIGN_FAILED, { reason: "system" });
     return {
       ok: false,
       category: "system",
@@ -358,6 +416,15 @@ export async function assignOrder(
     };
   }
 
+  logInfo("order assigned", {
+    orderId,
+    masterId: master.id,
+    masterName: master.name,
+  });
+  incrementCounter(METRIC.ORDER_ASSIGN_SUCCESS, {
+    orderId,
+    masterId: master.id,
+  });
   return {
     ok: true,
     orderId,
@@ -370,13 +437,22 @@ export async function assignOrder(
  * 内部工具：跟 queries.ts 一样调 recommendMastersForOrder。
  * 这里独立查 DB（不依赖 queries.ts 的 listOrdersForPage）— assignOrder 是个独立路径。
  */
-async function computeRecommendationForOrder(
-  order: { id: string; serviceSkuId: string | null; status: string },
-) {
-  const { recommendMastersForOrder, parseRuleJson } = await import("@/lib/dispatch");
+async function computeRecommendationForOrder(order: {
+  id: string;
+  serviceSkuId: string | null;
+  status: string;
+}) {
+  const { recommendMastersForOrder, parseRuleJson } =
+    await import("@/lib/dispatch");
   type Tech = {
-    id: string; name: string; phone: string; skills: string;
-    rating: number; completedJobs: number; status: string; serviceArea: string;
+    id: string;
+    name: string;
+    phone: string;
+    skills: string;
+    rating: number;
+    completedJobs: number;
+    status: string;
+    serviceArea: string;
   };
 
   // 加载 SKU 拿 categoryId
@@ -392,7 +468,13 @@ async function computeRecommendationForOrder(
   const [ruleRows, masterRows] = await Promise.all([
     prisma.dispatchRule.findMany({
       where: { enabled: true },
-      select: { id: true, name: true, priority: true, enabled: true, ruleJson: true },
+      select: {
+        id: true,
+        name: true,
+        priority: true,
+        enabled: true,
+        ruleJson: true,
+      },
     }),
     prisma.master.findMany({
       select: {
@@ -419,25 +501,28 @@ async function computeRecommendationForOrder(
     spec: parseRuleJson(r.ruleJson) ?? { match: {}, requiredSkills: [] },
   }));
 
-  const masters = (masterRows as Tech[]).map((row): import("@/src/types").Technician => {
-    let skills: string[] = [];
-    try {
-      const parsed = JSON.parse(row.skills);
-      if (Array.isArray(parsed)) skills = parsed.filter((s) => typeof s === "string");
-    } catch {
-      // 坏数据留空
-    }
-    return {
-      id: row.id,
-      name: row.name,
-      phone: row.phone,
-      skills,
-      rating: row.rating,
-      completedJobs: row.completedJobs,
-      status: row.status as import("@/src/types").TechnicianStatus,
-      serviceArea: row.serviceArea ?? "",
-    };
-  });
+  const masters = (masterRows as Tech[]).map(
+    (row): import("@/src/types").Technician => {
+      let skills: string[] = [];
+      try {
+        const parsed = JSON.parse(row.skills);
+        if (Array.isArray(parsed))
+          skills = parsed.filter((s) => typeof s === "string");
+      } catch {
+        // 坏数据留空
+      }
+      return {
+        id: row.id,
+        name: row.name,
+        phone: row.phone,
+        skills,
+        rating: row.rating,
+        completedJobs: row.completedJobs,
+        status: row.status as import("@/src/types").TechnicianStatus,
+        serviceArea: row.serviceArea ?? "",
+      };
+    },
+  );
 
   return recommendMastersForOrder({
     order: { skuId: order.serviceSkuId, categoryId },
@@ -461,7 +546,11 @@ export class TransitionOrderError extends Error {
 }
 
 export type TransitionOrderResult =
-  | { ok: true; orderId: string; nextStatus: "in_service" | "completed" | "cancelled" }
+  | {
+      ok: true;
+      orderId: string;
+      nextStatus: "in_service" | "completed" | "cancelled";
+    }
   | {
       ok: false;
       category: "validation" | "system";
@@ -494,11 +583,16 @@ export async function transitionOrder(
   // 1. 加载订单
   const order = await prisma.order.findUnique({ where: { id: orderId } });
   if (!order) {
-    return { ok: false, category: "validation", error: `订单 ${orderId} 不存在` };
+    return {
+      ok: false,
+      category: "validation",
+      error: `订单 ${orderId} 不存在`,
+    };
   }
 
   // 2. 校验合法流转
-  const allowed = ALLOWED_TRANSITIONS[order.status as keyof typeof ALLOWED_TRANSITIONS];
+  const allowed =
+    ALLOWED_TRANSITIONS[order.status as keyof typeof ALLOWED_TRANSITIONS];
   if (!allowed || !allowed.includes(nextStatus)) {
     return {
       ok: false,
@@ -534,8 +628,27 @@ export async function transitionOrder(
     });
   } catch (e) {
     if (e instanceof TransitionOrderError) {
+      logInfo("transition failed (validation)", {
+        orderId,
+        fromStatus: order.status,
+        toStatus: nextStatus,
+        reason: e.reason,
+      });
+      incrementCounter(METRIC.ORDER_TRANSITION_FAILED(nextStatus), {
+        from: order.status,
+        reason: "validation",
+      });
       return { ok: false, category: "validation", error: e.reason };
     }
+    logError("transition failed (system)", e, {
+      orderId,
+      fromStatus: order.status,
+      toStatus: nextStatus,
+    });
+    incrementCounter(METRIC.ORDER_TRANSITION_FAILED(nextStatus), {
+      from: order.status,
+      reason: "system",
+    });
     return {
       ok: false,
       category: "system",
@@ -543,11 +656,22 @@ export async function transitionOrder(
     };
   }
 
+  logInfo("order transitioned", {
+    orderId,
+    fromStatus: order.status,
+    toStatus: nextStatus,
+  });
+  incrementCounter(METRIC.ORDER_TRANSITION_SUCCESS(nextStatus), {
+    from: order.status,
+  });
   return { ok: true, orderId, nextStatus };
 }
 
 // 合法流转表 — 用 lookup 代替一串 if
-const ALLOWED_TRANSITIONS: Record<string, Array<"in_service" | "completed" | "cancelled">> = {
+const ALLOWED_TRANSITIONS: Record<
+  string,
+  Array<"in_service" | "completed" | "cancelled">
+> = {
   pending: ["cancelled"],
   assigned: ["in_service", "cancelled"],
   in_service: ["completed", "cancelled"],
