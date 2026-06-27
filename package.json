@@ -7,12 +7,26 @@
     "build": "next build",
     "start": "next start",
     "check": "tsc --noEmit && npm run lint:paths",
+    "lint": "next lint",
     "lint:paths": "node scripts/check-paths.js",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "db:push": "prisma db push --accept-data-loss",
     "db:generate": "prisma generate",
     "db:seed": "tsx prisma/seed.ts",
-    "db:reset": "rm -f prisma/dev.db && npm run db:push && npm run db:seed"
+    "db:reset": "rm -f prisma/dev.db && npm run db:push && npm run db:seed",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx}": [
+      "prettier --write",
+      "eslint --fix"
+    ],
+    "*.{json,md}": [
+      "prettier --write"
+    ]
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -28,6 +42,12 @@
     "@types/node": "^22.9.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
+    "@vitest/coverage-v8": "^2.1.9",
+    "eslint": "^9.39.4",
+    "eslint-config-next": "^16.2.9",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
+    "prettier": "^3.9.0",
     "prisma": "5.22.0",
     "tsx": "^4.22.4",
     "typescript": "^5.6.3",

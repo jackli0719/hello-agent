@@ -1,16 +1,49 @@
 // worker.ts 端到端测试 — 走真实 SQLite。
 // 覆盖：listWorkerOptions 列表 / listOrdersForMaster 过滤（masterId 过滤 + 排除 pending + 保留 cancelled）
+// / getOrderForWorker 详情查询 + 越权防护
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { listOrdersForMaster, listWorkerOptions, getOrderForWorker } from "./worker";
+import {
+  listOrdersForMaster,
+  listWorkerOptions,
+  getOrderForWorker,
+} from "./worker";
 import { prisma } from "@/src/lib/db";
 
-// 重置订单状态到 seed 默认值
+// ============================================================
+// 测试隔离
+// ============================================================
+// seed 注入的订单 ID — 测试假设「除了这些订单，DB 没有其他订单」
+const SEED_ORDER_IDS = [
+  "O20260624001",
+  "O20260624002",
+  "O20260624003",
+  "O20260623007",
+  "O20260623005",
+  "O20260625009",
+];
+
+/**
+ * 重置订单状态到 seed 默认值。
+ * 同时清理**测试过程中创建的订单**（按 createdAt desc + 不是 seed ID 删）
+ * —— 防止污染下次跑测试。
+ */
 async function resetOrdersToSeed() {
-  const map: Record<string, { status: string; masterId: string | null; masterName: string | null }> = {
-    O20260624001: { status: "in_service", masterId: "T001", masterName: "李师傅" },
+  const map: Record<
+    string,
+    { status: string; masterId: string | null; masterName: string | null }
+  > = {
+    O20260624001: {
+      status: "in_service",
+      masterId: "T001",
+      masterName: "李师傅",
+    },
     O20260624002: { status: "pending", masterId: null, masterName: null },
-    O20260624003: { status: "assigned", masterId: "T002", masterName: "赵师傅" },
+    O20260624003: {
+      status: "assigned",
+      masterId: "T002",
+      masterName: "赵师傅",
+    },
     O20260623007: { status: "completed", masterId: "T003", masterName: "周姐" },
     O20260623005: { status: "cancelled", masterId: null, masterName: null },
     O20260625009: { status: "pending", masterId: null, masterName: null },
@@ -18,15 +51,33 @@ async function resetOrdersToSeed() {
   for (const [id, data] of Object.entries(map)) {
     await prisma.order.update({ where: { id }, data });
   }
+  // 清理测试创建的订单（不是 seed ID 的全删）
+  await prisma.order.deleteMany({
+    where: { id: { notIn: SEED_ORDER_IDS } },
+  });
+}
+
+/** 重置师傅状态到 seed 默认值（同样防止污染） */
+async function resetMastersToSeed() {
+  const map: Record<string, "available" | "busy" | "offline"> = {
+    T001: "busy", // seed 里李师傅有 in_service 订单 → busy
+    T002: "busy",
+    T003: "busy",
+    T004: "available",
+    T005: "offline",
+  };
+  for (const [id, status] of Object.entries(map)) {
+    await prisma.master.update({ where: { id }, data: { status } });
+  }
 }
 
 describe("listOrdersForMaster — 按师傅过滤", () => {
   beforeEach(async () => {
-    await resetOrdersToSeed();
+    await Promise.all([resetOrdersToSeed(), resetMastersToSeed()]);
   });
 
   afterEach(async () => {
-    await resetOrdersToSeed();
+    await Promise.all([resetOrdersToSeed(), resetMastersToSeed()]);
   });
 
   it("T001 (李师傅) → 只返回 O20260624001（in_service）", async () => {
@@ -58,11 +109,11 @@ describe("listOrdersForMaster — 按师傅过滤", () => {
 
 describe("listOrdersForMaster — 排除 pending", () => {
   beforeEach(async () => {
-    await resetOrdersToSeed();
+    await Promise.all([resetOrdersToSeed(), resetMastersToSeed()]);
   });
 
   afterEach(async () => {
-    await resetOrdersToSeed();
+    await Promise.all([resetOrdersToSeed(), resetMastersToSeed()]);
   });
 
   it("即使订单被改成 pending + masterId=T001，也不该返回", async () => {
@@ -84,11 +135,11 @@ describe("listOrdersForMaster — 排除 pending", () => {
 
 describe("listOrdersForMaster — cancelled 订单保留展示", () => {
   beforeEach(async () => {
-    await resetOrdersToSeed();
+    await Promise.all([resetOrdersToSeed(), resetMastersToSeed()]);
   });
 
   afterEach(async () => {
-    await resetOrdersToSeed();
+    await Promise.all([resetOrdersToSeed(), resetMastersToSeed()]);
   });
 
   it("cancelled 订单如果有关联 masterId，仍能展示", async () => {
@@ -119,18 +170,21 @@ describe("listOrdersForMaster — 边界", () => {
 
 describe("listOrdersForMaster — 字段映射", () => {
   beforeEach(async () => {
-    await resetOrdersToSeed();
+    await Promise.all([resetOrdersToSeed(), resetMastersToSeed()]);
   });
 
   afterEach(async () => {
-    await resetOrdersToSeed();
+    await Promise.all([resetOrdersToSeed(), resetMastersToSeed()]);
   });
 
   it("金额：分 → 元", async () => {
     // O20260624001 amount 在 seed 里是 20000 分（看 mock-data.ts）
     const orders = await listOrdersForMaster("T001");
     expect(orders[0].amountYuan).toBe(orders[0].amountYuan); // 至少是 number
-    expect(Number.isInteger(orders[0].amountYuan) || Number.isFinite(orders[0].amountYuan)).toBe(true);
+    expect(
+      Number.isInteger(orders[0].amountYuan) ||
+        Number.isFinite(orders[0].amountYuan),
+    ).toBe(true);
   });
 
   it("scheduledAt / createdAt 是 ISO 字符串", async () => {
@@ -166,11 +220,11 @@ describe("listWorkerOptions", () => {
 
 describe("getOrderForWorker — 详情查询", () => {
   beforeEach(async () => {
-    await resetOrdersToSeed();
+    await Promise.all([resetOrdersToSeed(), resetMastersToSeed()]);
   });
 
   afterEach(async () => {
-    await resetOrdersToSeed();
+    await Promise.all([resetOrdersToSeed(), resetMastersToSeed()]);
   });
 
   it("合法订单返回完整字段（含品类名 + 师傅）", async () => {
@@ -207,11 +261,11 @@ describe("getOrderForWorker — 详情查询", () => {
 
 describe("getOrderForWorker — 越权防护", () => {
   beforeEach(async () => {
-    await resetOrdersToSeed();
+    await Promise.all([resetOrdersToSeed(), resetMastersToSeed()]);
   });
 
   afterEach(async () => {
-    await resetOrdersToSeed();
+    await Promise.all([resetOrdersToSeed(), resetMastersToSeed()]);
   });
 
   it("订单归 T002，但传 masterId=T001 → null（不告诉调用方订单存在）", async () => {

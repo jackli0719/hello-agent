@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# 防止 fork PR 跑 CI（节省资源 + 安全）
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      # 1. TypeScript + 路径 lint（快速反馈）
+      - name: Check (TypeScript + 目录约定)
+        run: npm run check
+
+      # 2. ESLint
+      - name: Lint
+        run: npm run lint
+
+      # 3. Prettier 格式检查（不自动修，CI 仅 fail）
+      - name: Format check
+        run: npm run format:check
+
+      # 4. 单元 + 端到端测试（含真实 SQLite）
+      - name: Test
+        run: npm run test
+
+      # 5. 生产构建（验证可构建）
+      - name: Build
+        run: npm run build
+
+      # 4. 上传 build artifacts（30 天保留）
+      - name: Upload .next
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: next-build
+          path: .next/
+          retention-days: 7
+          if-no-files-found: ignore
