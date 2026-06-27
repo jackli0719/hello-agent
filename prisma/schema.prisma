@@ -1,0 +1,125 @@
+// Prisma schema — O2O MVP 第一版
+// 选 SQLite 是本地开发零配置、文件即数据库；将来迁 Postgres 主要改 datasource 即可。
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+// ============================================================
+// 服务类目（如：家政、家电清洗、维修、母婴、应急）
+// ============================================================
+model ServiceCategory {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  // 业务编码（如 "CLEAN"、"REPAIR"）— 比 cuid 更稳定，便于 API / 表单传输
+  // 大小写策略：应用层强制大写（src/lib/codes.ts 的 normalizeCode）；
+  // SQLite 不支持 @db.Collate，应用层是唯一防线。
+  categoryCode String  @unique
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  skus ServiceSku[]
+}
+
+// ============================================================
+// 服务 SKU（具体的服务项目）
+// ============================================================
+model ServiceSku {
+  id              String   @id @default(cuid())
+  // 业务编码（如 "CLEAN-DAILY-2H"）— 用户友好，比 cuid 短
+  // 大小写策略：应用层强制大写（src/lib/codes.ts 的 normalizeCode）；
+  // SQLite 不支持 @db.Collate，应用层是唯一防线。
+  skuCode         String   @unique
+  name            String
+  categoryId      String
+  category        ServiceCategory @relation(fields: [categoryId], references: [id])
+  basePrice       Int                       // 单位：分
+  durationMinutes Int
+  requiredSkills  String   @default("[]")
+  enabled         Boolean  @default(true)
+  createdAt       DateTime @default(now())
+
+  orders Order[]
+
+  @@index([categoryId])
+}
+
+// ============================================================
+// 师傅 / 服务者
+// skills 是 JSON 字符串：["保洁", "家电清洗"]
+// ============================================================
+model Master {
+  id            String   @id @default(cuid())
+  name          String
+  phone         String
+  skills        String                       // JSON 字符串
+  rating        Float    @default(5.0)
+  completedJobs Int      @default(0)
+  status        String   @default("available") // available | busy | offline
+  // 服务区域 — MVP 阶段存为自由文本（"上海" / "北京, 上海"）
+  serviceArea   String   @default("")
+  createdAt     DateTime @default(now())
+
+  orders Order[]
+
+  @@index([status])
+}
+
+// ============================================================
+// 订单
+// ============================================================
+model Order {
+  id              String   @id                 // 业务订单号
+  customerName    String
+  customerPhone   String   @default("")        // 下单时填的手机号
+  serviceSkuId    String?
+  serviceSku      ServiceSku? @relation(fields: [serviceSkuId], references: [id])
+  serviceName     String                       // 冗余快照
+  masterId        String?
+  master          Master? @relation(fields: [masterId], references: [id])
+  masterName      String?                      // 冗余快照
+  address         String
+  scheduledAt     DateTime
+  amount          Int                          // 单位：分
+  status          String   @default("pending") // pending | assigned | in_service | completed | cancelled
+  // 用户下单时填的备注（可选）— 加于 2026-06 师傅端/用户端 MVP
+  remark          String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([status])
+  @@index([scheduledAt])
+}
+
+// ============================================================
+// 派单规则
+// ruleJson 是结构化 JSON，dispatch.ts 解析它来匹配师傅。
+//
+// 约定的 schema（UI 字段 → ruleJson 映射）：
+//   {
+//     "match": {
+//       "skuId": "<ServiceSku.id>",       // 可选 — 精确 SKU 匹配
+//       "categoryId": "<ServiceCategory.id>"  // 可选 — 类目兜底匹配
+//     },
+//     "requiredSkills": ["空调维修"]
+//   }
+//
+// UI 层用 skuCode / categoryCode 业务编码，repo 层负责反查 ID 写入 ruleJson。
+// 同一订单先按 skuId 找；找不到再按 categoryId 兜底；都没有就不进派单。
+// ============================================================
+model DispatchRule {
+  id        String   @id @default(cuid())
+  name      String
+  priority  Int      @default(0)
+  enabled   Boolean  @default(true)
+  ruleJson  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([enabled, priority])
+}

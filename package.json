@@ -1,0 +1,36 @@
+{
+  "name": "o2o-admin-mvp",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "check": "tsc --noEmit && npm run lint:paths",
+    "lint:paths": "node scripts/check-paths.js",
+    "test": "vitest run",
+    "db:push": "prisma db push --accept-data-loss",
+    "db:generate": "prisma generate",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:reset": "rm -f prisma/dev.db && npm run db:push && npm run db:seed"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "5.22.0",
+    "next": "15.0.3",
+    "react": "19.0.0-rc-66855b96-20241106",
+    "react-dom": "19.0.0-rc-66855b96-20241106",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "prisma": "5.22.0",
+    "tsx": "^4.22.4",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9"
+  }
+}

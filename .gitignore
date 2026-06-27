@@ -1,0 +1,29 @@
+node_modules/
+.next/
+out/
+*.log
+.DS_Store
+.env*.local
+next-env.d.ts
+.tsbuildinfo
+tsconfig.tsbuildinfo
+
+# Prisma — SQLite 本地库文件不进版本库；prod 用云 DB 时这里要换成 .env
+prisma/dev.db
+prisma/dev.db-journal
+
+# 测试覆盖率
+coverage/
+
+# ESLint
+.eslintcache
+
+# Prettier
+.prettiercache
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
