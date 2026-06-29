@@ -10,11 +10,17 @@ import {
   type MasterField,
   parseSkillsString,
 } from "@/src/lib/masters";
+import { createActivityLog } from "@/src/lib/activity-log";
 
 // UI 错误类型（给客户端组件展示用）
 export type MasterActionResult =
   | { ok: true; masterId: string }
-  | { ok: false; category: "validation" | "system"; error: string; field?: MasterField };
+  | {
+      ok: false;
+      category: "validation" | "system";
+      error: string;
+      field?: MasterField;
+    };
 
 /**
  * 把 FormData → CreateMasterInput：
@@ -35,10 +41,21 @@ function formDataToInput(formData: FormData): Partial<CreateMasterInput> {
 /**
  * 新建师傅 server action。
  */
-export async function createMasterAction(formData: FormData): Promise<MasterActionResult | null> {
+export async function createMasterAction(
+  formData: FormData,
+): Promise<MasterActionResult | null> {
   const input = formDataToInput(formData);
   const result = await createMaster(input);
   if (!result.ok) return result;
+
+  // 写操作日志
+  await createActivityLog({
+    action: "master_created",
+    targetType: "master",
+    targetId: result.masterId,
+    message: `管理员新增师傅 ${input.name}（${input.phone}）`,
+    metadata: { skills: input.skills, serviceArea: input.serviceArea },
+  });
 
   try {
     revalidatePath("/masters");
@@ -52,14 +69,30 @@ export async function createMasterAction(formData: FormData): Promise<MasterActi
 /**
  * 编辑师傅 server action。
  */
-export async function updateMasterAction(formData: FormData): Promise<MasterActionResult | null> {
+export async function updateMasterAction(
+  formData: FormData,
+): Promise<MasterActionResult | null> {
   const input = formDataToInput(formData);
   const id = String(formData.get("id") ?? "").trim();
   if (!id) {
-    return { ok: false, category: "validation", error: "缺少师傅 id", field: "name" };
+    return {
+      ok: false,
+      category: "validation",
+      error: "缺少师傅 id",
+      field: "name",
+    };
   }
   const result = await updateMaster({ ...input, id });
   if (!result.ok) return result;
+
+  // 写操作日志
+  await createActivityLog({
+    action: "master_updated",
+    targetType: "master",
+    targetId: id,
+    message: `管理员更新师傅 ${input.name}（${input.phone}）`,
+    metadata: { skills: input.skills, serviceArea: input.serviceArea },
+  });
 
   try {
     revalidatePath("/masters");

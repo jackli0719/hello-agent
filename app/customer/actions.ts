@@ -14,6 +14,7 @@
 import { revalidatePath } from "next/cache";
 import { createOrder, type CreateOrderResult } from "@/src/lib/orders";
 import { getSkuBasePriceByCode } from "@/src/lib/customer";
+import { createActivityLog } from "@/src/lib/activity-log";
 
 export type CustomerCreateOrderResult = CreateOrderResult;
 
@@ -60,6 +61,20 @@ export async function customerCreateOrderAction(
   if (!result.ok) {
     return result;
   }
+
+  // 写操作日志（失败不影响主流程）
+  const customerName = String(formData.get("customerName") ?? "");
+  await createActivityLog({
+    action: "order_created",
+    targetType: "order",
+    targetId: result.orderId,
+    message: `客户 ${customerName}（手机 ${customerPhone}）创建了订单 ${result.orderId}`,
+    metadata: {
+      skuCode,
+      customerPhone,
+      amount: basePrice,
+    },
+  });
 
   // 刷新后台订单列表和 dashboard，让后台立刻看到
   try {

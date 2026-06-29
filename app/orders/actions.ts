@@ -11,14 +11,14 @@ import {
   type TransitionOrderResult,
 } from "@/src/lib/orders";
 import { releaseMaster, ReleaseOrderError } from "@/src/lib/repos/orders";
+import { createActivityLog } from "@/src/lib/activity-log";
 
 // 失败时返回的判别联合 — 成功路径通过 redirect 走，函数本身不返回。
 export type CreateOrderActionResult = Exclude<CreateOrderResult, { ok: true }>;
 
 // 派单失败时返回的判别联合 — 成功时返回 assigned=true 让 UI 给反馈
 export type AssignOrderActionResult =
-  | AssignOrderResult
-  | { ok: true; orderId: string; masterName: string };
+  AssignOrderResult | { ok: true; orderId: string; masterName: string };
 
 // 「取消派单」action 返回值
 export type CancelDispatchActionResult =
@@ -26,7 +26,9 @@ export type CancelDispatchActionResult =
   | { ok: false; category: "validation" | "system"; error: string };
 
 // 状态流转 action 返回值 — 三个 action 通用
-export type TransitionActionResult = Exclude<TransitionOrderResult, { ok: true }> | { ok: true; orderId: string; nextStatus: string };
+export type TransitionActionResult =
+  | Exclude<TransitionOrderResult, { ok: true }>
+  | { ok: true; orderId: string; nextStatus: string };
 
 /**
  * 新建订单 server action。
@@ -34,7 +36,9 @@ export type TransitionActionResult = Exclude<TransitionOrderResult, { ok: true }
  * 成功 → revalidate + redirect /orders
  * 失败 → 返回结构化错误给 UI 内联展示
  */
-export async function createOrderAction(formData: FormData): Promise<CreateOrderActionResult | null> {
+export async function createOrderAction(
+  formData: FormData,
+): Promise<CreateOrderActionResult | null> {
   const scheduledAtRaw = String(formData.get("scheduledAt") ?? "").trim();
   const amountRaw = String(formData.get("amount") ?? "").trim();
 
@@ -57,6 +61,20 @@ export async function createOrderAction(formData: FormData): Promise<CreateOrder
   if (!result.ok) {
     return result;
   }
+
+  // 写操作日志（失败不影响主流程）
+  const customerName = String(formData.get("customerName") ?? "");
+  await createActivityLog({
+    action: "order_created",
+    targetType: "order",
+    targetId: result.orderId,
+    message: `用户 ${customerName} 创建了订单 ${result.orderId}`,
+    metadata: {
+      skuCode: String(formData.get("skuCode") ?? ""),
+      customerPhone: String(formData.get("customerPhone") ?? ""),
+      amount,
+    },
+  });
 
   try {
     revalidatePath("/orders");
@@ -88,6 +106,15 @@ export async function assignOrderAction(
   const result = await assignOrder(orderId, masterId);
 
   if (result.ok) {
+    // 写操作日志
+    await createActivityLog({
+      action: "order_assigned",
+      targetType: "order",
+      targetId: result.orderId,
+      message: `管理员将订单 ${result.orderId} 派给师傅 ${result.masterName}`,
+      metadata: { masterId, masterName: result.masterName },
+    });
+
     try {
       revalidatePath("/orders");
       revalidatePath("/");
@@ -115,6 +142,20 @@ export async function cancelDispatchAction(
 ): Promise<CancelDispatchActionResult> {
   try {
     const order = await releaseMaster(orderId, "cancelled");
+    // 写操作日志
+    await createActivityLog({
+      action: "order_canceled",
+      targetType: "order",
+      targetId: order.id,
+      message: order.technicianName
+        ? `管理员取消了订单 ${order.id}（已释放师傅 ${order.technicianName}）`
+        : `管理员取消了订单 ${order.id}`,
+      metadata: {
+        reason: "cancel_dispatch",
+        technicianName: order.technicianName,
+      },
+    });
+
     try {
       revalidatePath("/orders");
       revalidatePath("/");
@@ -145,6 +186,29 @@ async function runTransition(
 ): Promise<TransitionActionResult> {
   const result = await transitionOrder(orderId, nextStatus);
   if (result.ok) {
+    // 写操作日志（按目标状态分支 action 类型）
+    const actionMap = {
+      in_service: "service_started",
+      completed: "order_completed",
+      cancelled: "order_canceled",
+    } as const;
+    const actionLabelMap = {
+      in_service: `师傅 ${result.masterName ?? ""} 开始服务订单 ${result.orderId}`,
+      completed: `师傅 ${result.masterName ?? ""} 完成订单 ${result.orderId}`,
+      cancelled: `订单 ${result.orderId} 被取消`,
+    } as const;
+    await createActivityLog({
+      action: actionMap[nextStatus],
+      targetType: "order",
+      targetId: result.orderId,
+      message: actionLabelMap[nextStatus],
+      metadata: {
+        fromStatus: result.fromStatus,
+        toStatus: nextStatus,
+        masterName: result.masterName,
+      },
+    });
+
     try {
       revalidatePath("/orders");
       revalidatePath("/");
@@ -157,7 +221,11 @@ async function runTransition(
   if (result.category === "validation") {
     return { ok: false, category: "validation", error: result.error };
   }
-  return { ok: false, category: "system", error: `${friendlyName}失败，请稍后再试` };
+  return {
+    ok: false,
+    category: "system",
+    error: `${friendlyName}失败，请稍后再试`,
+  };
 }
 
 /**

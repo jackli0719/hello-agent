@@ -152,3 +152,32 @@ model DispatchRule {
 
   @@index([enabled, priority])
 }
+
+// ============================================================
+// 操作日志（[v0.4.0] 2026-06-29 引入）
+// 用于后台 Dashboard「最近动态」展示 + 业务追溯。
+//
+// 设计要点：
+// - actor 可空（system 角色，如定时任务、seed 自动行为）
+// - targetType / targetId 联动：用于将来按对象查日志
+// - metadata 是 String（JSON 字符串）— 跨方言兼容
+// - 写入失败不抛错（工具函数 try/catch）— 不能影响主业务
+//
+// # MVP: 仅记录核心动作；不做复杂审计、不做搜索、不做导出、不做删除
+// ============================================================
+model ActivityLog {
+  id         String   @id @default(cuid())
+  actorId    String?                  // 操作人 User.id（可空 = system）
+  actorName  String                   // 冗余：避免 User 删除后日志失名
+  actorRole  String                   // admin | worker | customer | system
+  action     String                   // 动作类型：order_created / order_assigned / ...
+  targetType String                   // 对象类型：order / master / serviceSku / dispatchRule
+  targetId   String                   // 对象 id
+  message    String                   // 人类可读文案
+  metadata   String   @default("{}")  // JSON 字符串（可空）
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([targetType, targetId])
+  @@index([actorId])
+}

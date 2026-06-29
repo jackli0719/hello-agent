@@ -78,6 +78,7 @@ async function main() {
   }
 
   // ----- 1. 清表（按依赖倒序） -----
+  await prisma.activityLog.deleteMany();
   await prisma.user.deleteMany();
   await prisma.order.deleteMany();
   await prisma.serviceSku.deleteMany();
@@ -234,7 +235,67 @@ async function main() {
 
   console.log("  ✓ DispatchRule × 2");
 
-  // ----- 7. 校验 -----
+  // ----- 7. ActivityLog（操作日志示例）-----
+  // 仅 5 条示例，让 Dashboard 启动就有内容看
+  await prisma.activityLog.createMany({
+    data: [
+      {
+        actorId: null,
+        actorName: "system",
+        actorRole: "system",
+        action: "service_sku_created",
+        targetType: "serviceSku",
+        targetId: MOCK_SERVICES[0]?.id ?? "S001",
+        message: `初始化服务 SKU：${MOCK_SERVICES[0]?.name ?? ""}`,
+        metadata: JSON.stringify({ skuCode: MOCK_SERVICES[0]?.skuCode }),
+      },
+      {
+        actorId: null,
+        actorName: "system",
+        actorRole: "system",
+        action: "master_created",
+        targetType: "master",
+        targetId: MOCK_TECHNICIANS[0]?.id ?? "T001",
+        message: `初始化师傅：${MOCK_TECHNICIANS[0]?.name ?? ""}`,
+        metadata: JSON.stringify({ phone: MOCK_TECHNICIANS[0]?.phone }),
+      },
+      {
+        actorId: null,
+        actorName: "system",
+        actorRole: "system",
+        action: "order_created",
+        targetType: "order",
+        targetId: MOCK_ORDERS[0]?.id ?? "O0001",
+        message: `客户 ${MOCK_ORDERS[0]?.customerName ?? ""} 创建了订单 ${MOCK_ORDERS[0]?.id ?? ""}`,
+        metadata: JSON.stringify({ skuCode: MOCK_ORDERS[0]?.serviceName }),
+      },
+      {
+        actorId: null,
+        actorName: "system",
+        actorRole: "system",
+        action: "order_assigned",
+        targetType: "order",
+        targetId: MOCK_ORDERS[1]?.id ?? "O0002",
+        message: `管理员将订单 ${MOCK_ORDERS[1]?.id ?? ""} 派给师傅 ${MOCK_ORDERS[1]?.technicianName ?? ""}`,
+        metadata: JSON.stringify({
+          masterName: MOCK_ORDERS[1]?.technicianName,
+        }),
+      },
+      {
+        actorId: null,
+        actorName: "system",
+        actorRole: "system",
+        action: "dispatch_rule_created",
+        targetType: "dispatchRule",
+        targetId: "seed-rule-1",
+        message: "初始化派单规则：SKU 精确：S003 空调清洗（挂机）",
+        metadata: JSON.stringify({ priority: 100 }),
+      },
+    ],
+  });
+  console.log(`  ✓ ActivityLog × 5（示例）`);
+
+  // ----- 8. 校验 -----
   const counts = {
     categories: await prisma.serviceCategory.count(),
     skus: await prisma.serviceSku.count(),
@@ -242,6 +303,7 @@ async function main() {
     orders: await prisma.order.count(),
     rules: await prisma.dispatchRule.count(),
     users: await prisma.user.count(),
+    activityLogs: await prisma.activityLog.count(),
   };
   console.log("📊 当前数据：", counts);
 
@@ -250,7 +312,8 @@ async function main() {
     counts.skus !== MOCK_SERVICES.length ||
     counts.masters !== MOCK_TECHNICIANS.length ||
     counts.orders !== MOCK_ORDERS.length ||
-    counts.users !== 3
+    counts.users !== 3 ||
+    counts.activityLogs !== 5
   ) {
     throw new Error("seed 后行数对不上，请检查");
   }

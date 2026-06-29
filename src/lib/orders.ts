@@ -550,6 +550,9 @@ export type TransitionOrderResult =
       ok: true;
       orderId: string;
       nextStatus: "in_service" | "completed" | "cancelled";
+      // [v0.4.0] 暴露给 activity log 用
+      fromStatus: string;
+      masterName: string | null;
     }
   | {
       ok: false;
@@ -664,7 +667,13 @@ export async function transitionOrder(
   incrementCounter(METRIC.ORDER_TRANSITION_SUCCESS(nextStatus), {
     from: order.status,
   });
-  return { ok: true, orderId, nextStatus };
+  return {
+    ok: true,
+    orderId,
+    nextStatus,
+    fromStatus: order.status,
+    masterName: order.masterName ?? null,
+  };
 }
 
 // 合法流转表 — 用 lookup 代替一串 if
