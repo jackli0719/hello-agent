@@ -1,1 +1,4 @@
+# v0.2.6: pre-commit 接 B1.2（CLAUDE.md P2-3 决策回报提示）
+# 不阻断——开发者被噪音逼得写空话是更糟的结果（v0.2.1 决策回报原则）
+node scripts/lint-commit-message.js
 npx lint-staged

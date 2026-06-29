@@ -5,6 +5,24 @@ O2O 上门服务 MVP 的所有变更记录，按 [Keep a Changelog 1.1.0](https:
 
 ---
 
+## [v0.2.6] — 2026-06-29 — harness patch：husky pre-commit 自动跑 B1
+
+**Tag**：`harness-v0.2.6` · **变更类型**：harness patch（B1 工具卡真正生效）
+
+### Changed
+
+- `.husky/pre-commit` 加 `node scripts/lint-commit-message.js` 在 `npx lint-staged` 前面
+- commit 时自动跑 B1.2 决策回报提示（**不阻断**）
+
+### Score Change
+
+| 维度         | v0.2.5   | v0.2.6    | delta                        |
+| ------------ | -------- | --------- | ---------------------------- |
+| 流程纪律     | 8/10     | **10/10** | **+2**                       |
+| **加权平均** | **7.95** | **8.25**  | **+0.30** · **🎯 达标 8 分** |
+
+---
+
 ## [v0.2.5] — 2026-06-29 — harness patch：B1 流程纪律工具卡
 
 **Tag**：`harness-v0.2.5` · **变更类型**：harness patch（决策回报 + agent prompt 工具卡）
