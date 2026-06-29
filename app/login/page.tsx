@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { Suspense, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { loginAction } from "./actions";
 
@@ -13,9 +13,12 @@ import { loginAction } from "./actions";
  *   - customer1 / customer123 → 用户端（用手机号登录也可）
  *
  * 不接第三方登录、不做注册 / 忘记密码（按需求）。
+ *
+ * [Next.js 15] useSearchParams 必须包 Suspense boundary 才能静态预渲染。
  */
 
-export default function LoginPage() {
+// 内部组件：用 useSearchParams
+function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextPath = searchParams.get("next") || "";
@@ -163,6 +166,30 @@ export default function LoginPage() {
         </p>
       </form>
     </main>
+  );
+}
+
+// 外层：包 Suspense boundary — Next.js 15 静态预渲染要求
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <main
+          style={{
+            minHeight: "100vh",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "#f7f8fa",
+            color: "#9ca3af",
+          }}
+        >
+          加载中…
+        </main>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   );
 }
 

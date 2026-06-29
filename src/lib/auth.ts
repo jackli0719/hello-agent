@@ -115,7 +115,14 @@ export async function authenticate(
 // ============================================================
 
 export async function getSession(): Promise<AuthenticatedUser | null> {
-  const c = await cookies();
+  // [v0.4.0 修 #2] 非 Next.js request 上下文（seed 脚本 / 定时任务 / 单测）
+  //   cookies() 抛 NoSuchStoreError — 包 try/catch 返回 null
+  let c;
+  try {
+    c = await cookies();
+  } catch {
+    return null;
+  }
   const userId = c.get(SESSION_COOKIE)?.value;
   const role = c.get(ROLE_COOKIE)?.value as Role | undefined;
   if (!userId || !role) return null;
