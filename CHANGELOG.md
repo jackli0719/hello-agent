@@ -5,6 +5,36 @@ O2O 上门服务 MVP 的所有变更记录，按 [Keep a Changelog 1.1.0](https:
 
 ---
 
+## [v0.2.3] — 2026-06-29 — harness patch：P0-1 真收口 + 验证脚本实跑
+
+**Tag**：`harness-v0.2.3` · **变更类型**：harness patch（兑现 v0.2.1「未验证」承诺）
+
+### Added
+
+- `docs/adr-011-postgres-test-verification.md`：P0-1 真收口的决策记录
+
+### Verified
+
+- ✅ Postgres 容器 `o2o-pg-keepalive` 已起 + 5 张业务表存在
+- ✅ `npm run db:verify-migration` 捕获 SQLite vs PG 数据漂移（PG = db:seed，非迁移来）
+- ✅ `npm run test`：**222 测试在 PG 全过**（17 文件 / 222 测试）
+
+### Known Decisions（参考 ADR-011）
+
+- `prisma/scripts/migrate-sqlite-to-postgres.ts` v0.2.3 不实跑（PG 已有数据 + 脚本「存在则跳过」= 不能补全漂移）
+- PG 数据双向不一致（PG 缺 1 cat / 2 sku / 1 rule）：下次 db:reset 必须统一
+- CI Postgres service 实跑 history 仍未查
+
+### Score Change
+
+| 维度         | v0.2.2   | v0.2.3   | delta     |
+| ------------ | -------- | -------- | --------- |
+| DB 迁移先行  | 6/10     | **9/10** | **+3**    |
+| ADR 密度     | 7/10     | **8/10** | **+1**    |
+| **加权平均** | **7.20** | **7.25** | **+0.05** |
+
+---
+
 ## [v0.2.2] — 2026-06-29 — harness patch：真的卡点生效 + 算术修正
 
 **Tag**：`harness-v0.2.2` · **变更类型**：harness patch（修复 v0.2.1 的两个偏差 + 真卡点）
