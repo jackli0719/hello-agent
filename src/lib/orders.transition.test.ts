@@ -30,13 +30,23 @@ async function resetOrder(
   });
 }
 
+// # spec: 状态机合法路径 = pending→cancelled、assigned→in_service、assigned→cancelled（释放师傅）、in_service→completed（释放师傅回 available）、in_service→cancelled（释放）
 describe("transitionOrder — 合法流转", () => {
   beforeEach(async () => {
     await resetMasterStatuses();
     // 把 in_service / assigned 订单对应的师傅改成 busy（模拟真实接单场景）
-    await prisma.master.update({ where: { id: "T001" }, data: { status: "busy" } });
-    await prisma.master.update({ where: { id: "T002" }, data: { status: "busy" } });
-    await prisma.master.update({ where: { id: "T003" }, data: { status: "busy" } });
+    await prisma.master.update({
+      where: { id: "T001" },
+      data: { status: "busy" },
+    });
+    await prisma.master.update({
+      where: { id: "T002" },
+      data: { status: "busy" },
+    });
+    await prisma.master.update({
+      where: { id: "T003" },
+      data: { status: "busy" },
+    });
     await resetOrder("O20260624002", "pending", null, null); // pending
     await resetOrder("O20260624003", "assigned", "T002", "赵师傅"); // assigned
     await resetOrder("O20260624001", "in_service", "T001", "李师傅"); // in_service
@@ -58,7 +68,9 @@ describe("transitionOrder — 合法流转", () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
 
-    const order = await prisma.order.findUnique({ where: { id: "O20260624002" } });
+    const order = await prisma.order.findUnique({
+      where: { id: "O20260624002" },
+    });
     expect(order?.status).toBe("cancelled");
     // 没师傅，masterId 仍 null
     expect(order?.masterId).toBeNull();
@@ -69,7 +81,9 @@ describe("transitionOrder — 合法流转", () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
 
-    const order = await prisma.order.findUnique({ where: { id: "O20260624003" } });
+    const order = await prisma.order.findUnique({
+      where: { id: "O20260624003" },
+    });
     expect(order?.status).toBe("in_service");
     // 师傅保持 busy（in_service 不释放）
     const tech = await prisma.master.findUnique({ where: { id: "T002" } });
@@ -80,7 +94,9 @@ describe("transitionOrder — 合法流转", () => {
     const r = await transitionOrder("O20260624003", "cancelled");
     expect(r.ok).toBe(true);
 
-    const order = await prisma.order.findUnique({ where: { id: "O20260624003" } });
+    const order = await prisma.order.findUnique({
+      where: { id: "O20260624003" },
+    });
     expect(order?.status).toBe("cancelled");
     const tech = await prisma.master.findUnique({ where: { id: "T002" } });
     expect(tech?.status).toBe("available");
@@ -90,7 +106,9 @@ describe("transitionOrder — 合法流转", () => {
     const r = await transitionOrder("O20260624001", "completed");
     expect(r.ok).toBe(true);
 
-    const order = await prisma.order.findUnique({ where: { id: "O20260624001" } });
+    const order = await prisma.order.findUnique({
+      where: { id: "O20260624001" },
+    });
     expect(order?.status).toBe("completed");
     // 完成 = 这单做完了，师傅可以接下一单 → 释放回 available
     const tech = await prisma.master.findUnique({ where: { id: "T001" } });
@@ -101,13 +119,16 @@ describe("transitionOrder — 合法流转", () => {
     const r = await transitionOrder("O20260624001", "cancelled");
     expect(r.ok).toBe(true);
 
-    const order = await prisma.order.findUnique({ where: { id: "O20260624001" } });
+    const order = await prisma.order.findUnique({
+      where: { id: "O20260624001" },
+    });
     expect(order?.status).toBe("cancelled");
     const tech = await prisma.master.findUnique({ where: { id: "T001" } });
     expect(tech?.status).toBe("available");
   });
 });
 
+// # spec: 状态机拒绝规则 = pending 不能直接 in_service/completed、assigned 不能直接 completed、completed/cancelled 是终态不能再变、订单不存在拒绝
 describe("transitionOrder — 非法流转", () => {
   beforeEach(async () => {
     await resetMasterStatuses();
@@ -167,6 +188,7 @@ describe("transitionOrder — 非法流转", () => {
   });
 });
 
+// # spec: 乐观锁防并发 = 两个 transitionOrder 同时跑只能一个成功，另一个被 updateMany 条件拒绝，订单只被改一次
 describe("transitionOrder — 并发安全", () => {
   beforeEach(async () => {
     await resetMasterStatuses();
@@ -197,7 +219,9 @@ describe("transitionOrder — 并发安全", () => {
     }
 
     // 订单只被改一次
-    const order = await prisma.order.findUnique({ where: { id: "O20260624003" } });
+    const order = await prisma.order.findUnique({
+      where: { id: "O20260624003" },
+    });
     expect(["in_service", "cancelled"]).toContain(order?.status);
 
     // 师傅状态根据成功的那次决定

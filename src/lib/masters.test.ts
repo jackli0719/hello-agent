@@ -1,7 +1,13 @@
 // 师傅业务逻辑测试 — createMaster + updateMaster + validateMasterInput
 
 import { afterEach, describe, expect, it } from "vitest";
-import { createMaster, parseSkillsString, skillsToString, updateMaster, validateMasterInput } from "./masters";
+import {
+  createMaster,
+  parseSkillsString,
+  skillsToString,
+  updateMaster,
+  validateMasterInput,
+} from "./masters";
 import { prisma } from "@/src/lib/db";
 
 const valid = {
@@ -13,6 +19,7 @@ const valid = {
   serviceArea: "上海",
 };
 
+// # spec: 师傅字段校验 = name 必填且 50 字符内、phone 1xx 11 位格式、rating [0,5]、serviceArea 100 字符内
 describe("validateMasterInput", () => {
   it("完整合法输入通过", () => {
     const r = validateMasterInput(valid);
@@ -65,6 +72,7 @@ describe("validateMasterInput", () => {
   });
 });
 
+// # spec: 技能字符串解析 = 支持中英文/全角逗号分隔、trim + 去空 + 去重；反向序列化为 ", " 拼接
 describe("parseSkillsString / skillsToString", () => {
   it("英文逗号分隔", () => {
     expect(parseSkillsString("a,b,c")).toEqual(["a", "b", "c"]);
@@ -84,6 +92,7 @@ describe("parseSkillsString / skillsToString", () => {
   });
 });
 
+// # spec: 师傅创建 = 合法输入落库（skills JSON 字符串、status 默认 available、completedJobs 初始 0）、姓名空时拒绝
 describe("createMaster — 端到端", () => {
   // 每个测试创建后清理
   const createdIds: string[] = [];
@@ -128,6 +137,7 @@ describe("createMaster — 端到端", () => {
   });
 });
 
+// # spec: 新师傅进派单候选 = 创建后应被 recommendMastersForOrder 找到，且按 rating 排序时新师傅能排第一
 describe("createMaster — 新师傅能参与派单推荐", () => {
   const createdIds: string[] = [];
   afterEach(async () => {
@@ -159,13 +169,25 @@ describe("createMaster — 新师傅能参与派单推荐", () => {
 
     // 直接调 dispatch 看新师傅是否在候选里
     const { recommendMastersForOrder } = await import("@/lib/dispatch");
-    const masters = (await prisma.master.findMany({
-      select: { id: true, name: true, phone: true, skills: true, rating: true, completedJobs: true, status: true, serviceArea: true },
-    })).map((r) => {
+    const masters = (
+      await prisma.master.findMany({
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          skills: true,
+          rating: true,
+          completedJobs: true,
+          status: true,
+          serviceArea: true,
+        },
+      })
+    ).map((r) => {
       let skills: string[] = [];
       try {
         const parsed = JSON.parse(r.skills);
-        if (Array.isArray(parsed)) skills = parsed.filter((s) => typeof s === "string");
+        if (Array.isArray(parsed))
+          skills = parsed.filter((s) => typeof s === "string");
       } catch {}
       return {
         id: r.id,
@@ -181,10 +203,18 @@ describe("createMaster — 新师傅能参与派单推荐", () => {
 
     const result = recommendMastersForOrder({
       order: { skuId: "S001", categoryId: jiazhengCat.id }, // S001 = 日常保洁
-      rules: [{
-        id: "R-CAT", name: "家政类目", priority: 10, enabled: true,
-        spec: { match: { categoryId: jiazhengCat.id }, requiredSkills: ["保洁"] },
-      }],
+      rules: [
+        {
+          id: "R-CAT",
+          name: "家政类目",
+          priority: 10,
+          enabled: true,
+          spec: {
+            match: { categoryId: jiazhengCat.id },
+            requiredSkills: ["保洁"],
+          },
+        },
+      ],
       masters,
     });
     expect(result.rule?.id).toBe("R-CAT");
@@ -196,6 +226,7 @@ describe("createMaster — 新师傅能参与派单推荐", () => {
   });
 });
 
+// # spec: 师傅更新 = 改 name/phone/skills/rating/serviceArea，但不覆盖 status（保护 busy 师傅不被改成 available），不存在 id 拒绝
 describe("updateMaster", () => {
   const createdIds: string[] = [];
   afterEach(async () => {

@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import { checkCredentials, isProtectedPath } from "./auth";
 
+// # spec: checkCredentials 业务规则 = 管理员登录账号密码比对（演示版硬编码 admin/admin123），不能放宽
 describe("checkCredentials", () => {
   it("正确账号密码 → true", () => {
     expect(checkCredentials("admin", "admin123")).toBe(true);
@@ -22,6 +23,7 @@ describe("checkCredentials", () => {
   });
 });
 
+// # spec: 路由保护 = PROTECTED_PATHS 前缀命中、PUBLIC_PATHS 不命中；middleware 用此判断需登录
 describe("isProtectedPath", () => {
   it("受保护路径前缀 → true", () => {
     expect(isProtectedPath("/dashboard")).toBe(true);

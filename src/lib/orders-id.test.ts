@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { buildOrderId, createOrder, generateNextOrderId } from "./orders";
 import { prisma } from "@/src/lib/db";
 
+// # spec: 订单号格式 = O + YYYYMMDD + 4 位当日序号的拼装规则，月日单位数补 0
 describe("buildOrderId（纯函数）", () => {
   it("格式化：O + YYYYMMDD + 4 位 seq", () => {
     const d = new Date(2026, 5, 24, 10, 0, 0); // 2026-06-24
@@ -20,6 +21,7 @@ describe("buildOrderId（纯函数）", () => {
   });
 });
 
+// # spec: 当日下一个候选订单号 = O{YYYYMMDD}{4 位 seq}，按当日已有订单最大值递增
 describe("generateNextOrderId（真实 DB）", () => {
   it("返回形如 O{YYYYMMDD}{4 位} 的当日候选号", async () => {
     const id = await generateNextOrderId();
@@ -32,6 +34,7 @@ describe("generateNextOrderId（真实 DB）", () => {
   });
 });
 
+// # spec: 订单号撞号时自动重试到下一号，createOrder 遇到 P2002 unique 冲突应重新 generateNextOrderId 并落库成功
 describe("createOrder 撞号重试", () => {
   const createdIds: string[] = [];
 
@@ -80,7 +83,9 @@ describe("createOrder 撞号重试", () => {
     expect(r.orderId).not.toBe(collisionId);
 
     // 5. 验证：DB 里 collisionId 和 r.orderId 都存在（占位订单 + 真正订单）
-    const collisionRow = await prisma.order.findUnique({ where: { id: collisionId } });
+    const collisionRow = await prisma.order.findUnique({
+      where: { id: collisionId },
+    });
     const newRow = await prisma.order.findUnique({ where: { id: r.orderId } });
     expect(collisionRow?.id).toBe(collisionId);
     expect(newRow?.id).toBe(r.orderId);

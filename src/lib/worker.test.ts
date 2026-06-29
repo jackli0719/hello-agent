@@ -71,6 +71,7 @@ async function resetMastersToSeed() {
   }
 }
 
+// # spec: 师傅端订单按 masterId 过滤 = 只返回该师傅关联订单（含 assigned/in_service/completed），无订单师傅返回空数组
 describe("listOrdersForMaster — 按师傅过滤", () => {
   beforeEach(async () => {
     await Promise.all([resetOrdersToSeed(), resetMastersToSeed()]);
@@ -107,6 +108,7 @@ describe("listOrdersForMaster — 按师傅过滤", () => {
   });
 });
 
+// # spec: 师傅端排除 pending 订单 = 即使订单 masterId 是该师傅、status=pending 也不应出现（未派单的不该出现）
 describe("listOrdersForMaster — 排除 pending", () => {
   beforeEach(async () => {
     await Promise.all([resetOrdersToSeed(), resetMastersToSeed()]);
@@ -133,6 +135,7 @@ describe("listOrdersForMaster — 排除 pending", () => {
   });
 });
 
+// # spec: 师傅端保留 cancelled 订单 = 师傅看历史订单时 cancelled 也应展示，保留师傅服务记录
 describe("listOrdersForMaster — cancelled 订单保留展示", () => {
   beforeEach(async () => {
     await Promise.all([resetOrdersToSeed(), resetMastersToSeed()]);
@@ -156,6 +159,7 @@ describe("listOrdersForMaster — cancelled 订单保留展示", () => {
   });
 });
 
+// # spec: 师傅端边界 = 空 masterId / 不存在的 masterId 返回空数组，不查 DB 不报错
 describe("listOrdersForMaster — 边界", () => {
   it("空 masterId → 空数组（不查 DB）", async () => {
     const orders = await listOrdersForMaster("");
@@ -168,6 +172,7 @@ describe("listOrdersForMaster — 边界", () => {
   });
 });
 
+// # spec: 师傅端字段映射 = 金额分转元 + scheduledAt/createdAt 是 ISO 字符串且能被 Date 解析
 describe("listOrdersForMaster — 字段映射", () => {
   beforeEach(async () => {
     await Promise.all([resetOrdersToSeed(), resetMastersToSeed()]);
@@ -196,6 +201,7 @@ describe("listOrdersForMaster — 字段映射", () => {
   });
 });
 
+// # spec: 师傅选择列表 = 返回全量师傅含 offline、手机号脱敏到后 4 位（演示用不分离线）
 describe("listWorkerOptions", () => {
   it("返回所有师傅（含 offline），手机号脱敏到后 4 位", async () => {
     const options = await listWorkerOptions();
@@ -218,6 +224,7 @@ describe("listWorkerOptions", () => {
   });
 });
 
+// # spec: 师傅端订单详情 = 返回完整字段含品类名/师傅名/师傅电话、找不到/空 orderId/pending 订单返回 null
 describe("getOrderForWorker — 详情查询", () => {
   beforeEach(async () => {
     await Promise.all([resetOrdersToSeed(), resetMastersToSeed()]);
@@ -259,6 +266,7 @@ describe("getOrderForWorker — 详情查询", () => {
   });
 });
 
+// # spec: 跨师傅越权防护 = 订单归属师傅 T002 时，别的师傅 T001 查不到（返回 null，不告诉调用方订单存在），cancelled 订单同样校验归属
 describe("getOrderForWorker — 越权防护", () => {
   beforeEach(async () => {
     await Promise.all([resetOrdersToSeed(), resetMastersToSeed()]);

@@ -13,6 +13,7 @@ const baseValid = {
   scheduledAt: new Date("2026-06-26T10:00:00"),
 };
 
+// # spec: 字段校验规则 = 必填项、长度上限（姓名 50 / 地址 200 / 备注 500）、手机号 1xx 格式、金额范围、SKU/品类配对
 describe("validateCreateOrderInput", () => {
   it("完整合法输入通过", () => {
     const r = validateCreateOrderInput(baseValid);
@@ -37,7 +38,10 @@ describe("validateCreateOrderInput", () => {
   });
 
   it("customerName > 50 字符", () => {
-    const r = validateCreateOrderInput({ ...baseValid, customerName: "x".repeat(51) });
+    const r = validateCreateOrderInput({
+      ...baseValid,
+      customerName: "x".repeat(51),
+    });
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.error).toMatch(/50/);
@@ -51,21 +55,30 @@ describe("validateCreateOrderInput", () => {
   });
 
   it("customerPhone 格式不正确（非 11 位 1 开头）", () => {
-    const r = validateCreateOrderInput({ ...baseValid, customerPhone: "12345" });
+    const r = validateCreateOrderInput({
+      ...baseValid,
+      customerPhone: "12345",
+    });
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.field).toBe("customerPhone");
   });
 
   it("customerPhone 12 位数字但开头不是 1 → 拒", () => {
-    const r = validateCreateOrderInput({ ...baseValid, customerPhone: "23900000000" });
+    const r = validateCreateOrderInput({
+      ...baseValid,
+      customerPhone: "23900000000",
+    });
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.field).toBe("customerPhone");
   });
 
   it("customerPhone 含字母 → 拒", () => {
-    const r = validateCreateOrderInput({ ...baseValid, customerPhone: "1390000000a" });
+    const r = validateCreateOrderInput({
+      ...baseValid,
+      customerPhone: "1390000000a",
+    });
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.field).toBe("customerPhone");
@@ -79,7 +92,10 @@ describe("validateCreateOrderInput", () => {
   });
 
   it("address > 200 字符", () => {
-    const r = validateCreateOrderInput({ ...baseValid, address: "x".repeat(201) });
+    const r = validateCreateOrderInput({
+      ...baseValid,
+      address: "x".repeat(201),
+    });
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.field).toBe("address");
@@ -114,7 +130,10 @@ describe("validateCreateOrderInput", () => {
   });
 
   it("scheduledAt 是 Invalid Date", () => {
-    const r = validateCreateOrderInput({ ...baseValid, scheduledAt: new Date("not a date") });
+    const r = validateCreateOrderInput({
+      ...baseValid,
+      scheduledAt: new Date("not a date"),
+    });
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.field).toBe("scheduledAt");
@@ -135,7 +154,10 @@ describe("validateCreateOrderInput", () => {
   });
 
   it("trim 行为：customerName 前后空格被去掉", () => {
-    const r = validateCreateOrderInput({ ...baseValid, customerName: "  张三  " });
+    const r = validateCreateOrderInput({
+      ...baseValid,
+      customerName: "  张三  ",
+    });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.cleaned.customerName).toBe("张三");

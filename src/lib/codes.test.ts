@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { isValidCode, suggestCode, assertValidCode } from "./codes";
 
+// # spec: 业务编码格式 = 必须大写字母开头 + 字母数字连字符 + 2-32 字符（应用层唯一防线，SQLite 不支持 @db.Collate）
 describe("isValidCode", () => {
   it("合法编码通过", () => {
     expect(isValidCode("CLEAN")).toBe(true);
@@ -27,6 +28,7 @@ describe("isValidCode", () => {
   });
 });
 
+// # spec: 编码建议规则 = 纯 ASCII 规范化、非 ASCII 直接返回空不猜测；调用方按不合法处理
 describe("suggestCode", () => {
   it("含非 ASCII 字符 → 返回空（拒绝猜测）", () => {
     // 中文 / emoji / 全角字符一律不给建议，调用方按不合法处理
@@ -50,6 +52,7 @@ describe("suggestCode", () => {
   });
 });
 
+// # spec: 全 DB 写入路径必须经过 normalizeCode，应用层防线（大小写、非法字符、过长输入都不会污染 DB）
 describe("normalizeCode（应用层大小写防线）", () => {
   it("小写 → 大写", () => {
     expect(suggestCode("clean")).toBe("CLEAN");
@@ -71,6 +74,7 @@ describe("normalizeCode（应用层大小写防线）", () => {
   });
 });
 
+// # spec: seed / 内部调用方必须用 assertValidCode；UI 层不抛错（用 isValidCode 给友好提示）
 describe("assertValidCode", () => {
   it("合法编码不抛", () => {
     expect(() => assertValidCode("CLEAN")).not.toThrow();

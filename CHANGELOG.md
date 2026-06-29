@@ -5,6 +5,27 @@ O2O 上门服务 MVP 的所有变更记录，按 [Keep a Changelog 1.1.0](https:
 
 ---
 
+## [v0.2.1] — 2026-06-29 — harness patch：维度 3 spec 注释 100% 覆盖
+
+**Tag**：`harness-v0.2.1` · **变更类型**：harness patch（不动 P0 节奏）
+
+### Added
+
+- 12 个测试文件 / 46 个 describe 块新增 `// # spec: <业务语义>` 注释（标注率 0% → 100%）
+- `docs/HARNESS.md` 加 `[v0.2.1]` 节点
+
+### Changed
+
+- 测试 assertion 标注遵守 CLAUDE.md P0-2（**注释是文档层面，无强制卡点 = 诚实不动维度 6**）
+
+### Decision Report
+
+- **没做**：A2 check-spec-tags.js lint / B1 PR template / B3 .claude/CLAUDE.local.md
+- **理由**：CLAUDE.md P2-3「决策回报主动暴露」，见 `docs/HARNESS.md` `[v0.2.1]` 节点
+- **诚实涨分**：维度 3 3 → 6（+3）；维度 6 仍 3/10（未变）；加权 6.0 → 6.4
+
+---
+
 ## [v0.2.0] — 2026-06-29 — harness 评估体系建立
 
 **Tag**：`harness-v0.2.0` · **变更类型**：工程化

@@ -1,7 +1,13 @@
 // 派单规则业务逻辑测试 — createRule / updateRule + 校验 + 端到端。
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createRule, listRules, toggleRuleEnabled, updateRule, validateRuleInput } from "./dispatch-rules";
+import {
+  createRule,
+  listRules,
+  toggleRuleEnabled,
+  updateRule,
+  validateRuleInput,
+} from "./dispatch-rules";
 import { recommendMastersForOrder } from "@/lib/dispatch";
 import { prisma } from "@/src/lib/db";
 
@@ -14,6 +20,7 @@ const valid = {
   enabled: true,
 };
 
+// # spec: 派单规则校验 = name 必填、categoryCode/skuCode 至少填一个、priority 范围、小写编码 normalize 成大写、非 ASCII 编码拒绝
 describe("validateRuleInput", () => {
   it("合法输入通过（只填 categoryCode）", () => {
     const r = validateRuleInput(valid);
@@ -99,12 +106,15 @@ describe("validateRuleInput", () => {
   });
 });
 
+// # spec: 派单规则 CRUD = 合法创建写库（ruleJson 含 match + requiredSkills）、不存在的 SKU/类目拒绝、update 改 name/priority/enabled/skills
 describe("createRule / updateRule — 端到端", () => {
   // 我们用 priority 数字范围 [1000, 9999] 避免和 seed 冲突（seed 用了 10/100）
   const createdIds: string[] = [];
   beforeEach(async () => {
     // 重置 seed 之外的所有规则（priority >= 1000）
-    await prisma.dispatchRule.deleteMany({ where: { priority: { gte: 1000 } } });
+    await prisma.dispatchRule.deleteMany({
+      where: { priority: { gte: 1000 } },
+    });
   });
   afterEach(async () => {
     for (const id of createdIds.splice(0)) {
@@ -189,6 +199,7 @@ describe("createRule / updateRule — 端到端", () => {
   });
 });
 
+// # spec: 派单规则列表 = 返回带业务编码（skuCode/categoryCode）和中文名称的规则列表，含 SKU 精确规则和类目兜底规则
 describe("listRules — 端到端", () => {
   it("返回带 skuCode / categoryCode 业务编码的列表", async () => {
     // 用 seed 的 2 条规则验证 — 业务编码 + 名称都返回
@@ -203,10 +214,13 @@ describe("listRules — 端到端", () => {
   });
 });
 
+// # spec: 新增派单规则生效 = 新建高 priority 规则应覆盖旧规则被命中、disabled 规则不参与匹配，规则增删实时影响推荐
 describe("修复需求：新增规则生效后影响 recommendMastersForOrder", () => {
   const createdIds: string[] = [];
   beforeEach(async () => {
-    await prisma.dispatchRule.deleteMany({ where: { priority: { gte: 1000 } } });
+    await prisma.dispatchRule.deleteMany({
+      where: { priority: { gte: 1000 } },
+    });
   });
   afterEach(async () => {
     for (const id of createdIds.splice(0)) {
@@ -232,16 +246,38 @@ describe("修复需求：新增规则生效后影响 recommendMastersForOrder", 
     // 候选：T004 孙师傅（空调维修，available，rating 4.6）
     const result = recommendMastersForOrder({
       order: { skuId: "S003", categoryId: "CLEAN_ID" },
-      rules: await prisma.dispatchRule.findMany({
-        where: { enabled: true },
-        select: { id: true, name: true, priority: true, enabled: true, ruleJson: true },
-      }).then((rows) => rows.map((r) => ({
-        id: r.id, name: r.name, priority: r.priority, enabled: r.enabled,
-        spec: JSON.parse(r.ruleJson),
-      }))),
+      rules: await prisma.dispatchRule
+        .findMany({
+          where: { enabled: true },
+          select: {
+            id: true,
+            name: true,
+            priority: true,
+            enabled: true,
+            ruleJson: true,
+          },
+        })
+        .then((rows) =>
+          rows.map((r) => ({
+            id: r.id,
+            name: r.name,
+            priority: r.priority,
+            enabled: r.enabled,
+            spec: JSON.parse(r.ruleJson),
+          })),
+        ),
       masters: [
         // 只列 T004（孙师傅，available，会空调维修）
-        { id: "T004", name: "孙师傅", phone: "x", skills: ["空调维修", "家电维修"], rating: 4.6, completedJobs: 100, status: "available" as const, serviceArea: "" },
+        {
+          id: "T004",
+          name: "孙师傅",
+          phone: "x",
+          skills: ["空调维修", "家电维修"],
+          rating: 4.6,
+          completedJobs: 100,
+          status: "available" as const,
+          serviceArea: "",
+        },
       ],
     });
 
@@ -267,15 +303,37 @@ describe("修复需求：新增规则生效后影响 recommendMastersForOrder", 
     // 实际只跑 seed 那条
     const result = recommendMastersForOrder({
       order: { skuId: null, categoryId: "CLEAN_ID" },
-      rules: await prisma.dispatchRule.findMany({
-        where: { enabled: true }, // 关键：查询时已经过滤 enabled=true
-        select: { id: true, name: true, priority: true, enabled: true, ruleJson: true },
-      }).then((rows) => rows.map((r) => ({
-        id: r.id, name: r.name, priority: r.priority, enabled: r.enabled,
-        spec: JSON.parse(r.ruleJson),
-      }))),
+      rules: await prisma.dispatchRule
+        .findMany({
+          where: { enabled: true }, // 关键：查询时已经过滤 enabled=true
+          select: {
+            id: true,
+            name: true,
+            priority: true,
+            enabled: true,
+            ruleJson: true,
+          },
+        })
+        .then((rows) =>
+          rows.map((r) => ({
+            id: r.id,
+            name: r.name,
+            priority: r.priority,
+            enabled: r.enabled,
+            spec: JSON.parse(r.ruleJson),
+          })),
+        ),
       masters: [
-        { id: "T004", name: "孙师傅", phone: "x", skills: ["保洁"], rating: 4.6, completedJobs: 100, status: "available" as const, serviceArea: "" },
+        {
+          id: "T004",
+          name: "孙师傅",
+          phone: "x",
+          skills: ["保洁"],
+          rating: 4.6,
+          completedJobs: 100,
+          status: "available" as const,
+          serviceArea: "",
+        },
       ],
     });
 
@@ -284,11 +342,14 @@ describe("修复需求：新增规则生效后影响 recommendMastersForOrder", 
   });
 });
 
+// # spec: 规则启停开关 = toggle 来回切换 enabled 状态、不改 name/priority/ruleJson、不存在的 id 拒绝、空 id 拒绝
 describe("toggleRuleEnabled — 列表行启用/停用按钮", () => {
   // 用 priority >= 2000 避免和 seed + 其它 case 冲突
   const createdIds: string[] = [];
   beforeEach(async () => {
-    await prisma.dispatchRule.deleteMany({ where: { priority: { gte: 2000 } } });
+    await prisma.dispatchRule.deleteMany({
+      where: { priority: { gte: 2000 } },
+    });
   });
   afterEach(async () => {
     for (const id of createdIds.splice(0)) {
@@ -346,7 +407,9 @@ describe("toggleRuleEnabled — 列表行启用/停用按钮", () => {
     if (!c.ok) return;
     createdIds.push(c.id);
 
-    const before = await prisma.dispatchRule.findUnique({ where: { id: c.id } });
+    const before = await prisma.dispatchRule.findUnique({
+      where: { id: c.id },
+    });
     await toggleRuleEnabled(c.id);
     const after = await prisma.dispatchRule.findUnique({ where: { id: c.id } });
     expect(after?.name).toBe(before?.name);
@@ -356,6 +419,7 @@ describe("toggleRuleEnabled — 列表行启用/停用按钮", () => {
   });
 });
 
+// # spec: 脏数据防御 = ruleJson 非法 JSON 应被 listRules 过滤掉、空 spec 规则不应让推荐函数抛错
 describe("#2 修复：坏数据 ruleJson 不会让推荐挂掉", () => {
   // 手动建一个 ruleJson 坏掉的数据，模拟历史脏数据
   const brokenRuleId = "broken-rule-test-id";
@@ -401,13 +465,28 @@ describe("#2 修复：坏数据 ruleJson 不会让推荐挂掉", () => {
     });
 
     // 跑推荐：categoryId=某 ID 时这条空 spec 不会命中（skuId/categoryId 都空）
-    const ruleRows = await prisma.dispatchRule.findMany({ where: { enabled: true } });
+    const ruleRows = await prisma.dispatchRule.findMany({
+      where: { enabled: true },
+    });
     const rules = ruleRows
       .map((r) => ({
-        id: r.id, name: r.name, priority: r.priority, enabled: r.enabled,
+        id: r.id,
+        name: r.name,
+        priority: r.priority,
+        enabled: r.enabled,
         spec: parseRuleJsonLocal(r.ruleJson),
       }))
-      .filter((r): r is { id: string; name: string; priority: number; enabled: boolean; spec: { match: {}; requiredSkills: [] } } => r.spec !== null);
+      .filter(
+        (
+          r,
+        ): r is {
+          id: string;
+          name: string;
+          priority: number;
+          enabled: boolean;
+          spec: { match: {}; requiredSkills: [] };
+        } => r.spec !== null,
+      );
 
     // 这里重点：即使是空 spec，调用不会挂
     // 不报错，能正常返回结果（recommendMastersForOrder 会按 enabled=true 但不命中）
@@ -417,7 +496,16 @@ describe("#2 修复：坏数据 ruleJson 不会让推荐挂掉", () => {
         order: { skuId: "S003", categoryId: "fake-id" },
         rules,
         masters: [
-          { id: "T004", name: "孙师傅", phone: "x", skills: ["空调维修"], rating: 4.6, completedJobs: 100, status: "available" as const, serviceArea: "" },
+          {
+            id: "T004",
+            name: "孙师傅",
+            phone: "x",
+            skills: ["空调维修"],
+            rating: 4.6,
+            completedJobs: 100,
+            status: "available" as const,
+            serviceArea: "",
+          },
         ],
       });
     }).not.toThrow();

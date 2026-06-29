@@ -13,6 +13,7 @@ afterEach(async () => {
   }
 });
 
+// # spec: 订单创建 = 合法输入落库 pending + 金额元转分 + 状态初始 pending + SKU 查表 + 校验短路，skuCode/categoryCode 配对校验
 describe("createOrder — 走真实 DB", () => {
   it("合法输入 + SKU 存在 → 写入订单，状态 pending，订单号 O{YYYYMMDD}xxxx", async () => {
     const r = await createOrder({
@@ -135,6 +136,7 @@ describe("createOrder — 走真实 DB", () => {
   });
 });
 
+// # spec: 备注字段 = 可选写入、空字符串 trim 后视作未填存 null、长度上限 500 字符
 describe("createOrder — remark 字段", () => {
   it("带 remark 创建 → 写入 DB 成功", async () => {
     const r = await createOrder({
@@ -206,6 +208,7 @@ describe("createOrder — remark 字段", () => {
   });
 });
 
+// # spec: 新订单可被推荐引擎发现 = 订单状态 pending + SKU 仍在 enabled 列表里，remark 不影响派单匹配
 describe("createOrder — 新订单能参与推荐师傅（端到端）", () => {
   it("用 remark 创建的订单，状态 pending，能被 recommendMastersForOrder 找到师傅", async () => {
     const r = await createOrder({
@@ -236,6 +239,7 @@ describe("createOrder — 新订单能参与推荐师傅（端到端）", () => 
   });
 });
 
+// # spec: 用户端表单契约 = categoryCode 必须传业务编码（APPLIANCE/CLEAN...）而非 cuid，配对校验拒绝错误形态
 describe("createOrder — 用户端表单契约（防止 categoryCode 传错）", () => {
   // 用户端表单 <select name="categoryCode"> 必须传业务编码（APPLIANCE/CLEAN...），
   // 不是 cuid。如果传 cuid 会被配对校验拒绝。这是 2026-06 用户端 MVP 踩过的坑。

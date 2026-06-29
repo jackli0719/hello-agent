@@ -13,9 +13,14 @@ import {
 } from "./services";
 import { prisma } from "@/src/lib/db";
 
+// # spec: 服务品类校验 = name 必填、code 合法 ASCII 且小写 normalize 成大写、纯中文或非法字符拒绝
 describe("validateCategoryInput", () => {
   it("合法输入通过", () => {
-    const r = validateCategoryInput({ name: "家政", code: "CLEAN", enabled: true });
+    const r = validateCategoryInput({
+      name: "家政",
+      code: "CLEAN",
+      enabled: true,
+    });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.cleaned.code).toBe("CLEAN");
@@ -29,7 +34,11 @@ describe("validateCategoryInput", () => {
   });
 
   it("非法编码（纯中文 → normalize 后空 → 拒）", () => {
-    const r = validateCategoryInput({ name: "测试", code: "中文SKU", enabled: true });
+    const r = validateCategoryInput({
+      name: "测试",
+      code: "中文SKU",
+      enabled: true,
+    });
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.field).toBe("code");
@@ -37,20 +46,29 @@ describe("validateCategoryInput", () => {
 
   it("编码超长（normalize 截断后仍 >32 字符的非法字符）", () => {
     // 用 33 个非法字符（normalize 后会清空）→ 拒
-    const r = validateCategoryInput({ name: "测试", code: "!".repeat(33), enabled: true });
+    const r = validateCategoryInput({
+      name: "测试",
+      code: "!".repeat(33),
+      enabled: true,
+    });
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.field).toBe("code");
   });
 
   it("小写编码会被 normalize 成大写（不报错）", () => {
-    const r = validateCategoryInput({ name: "测试", code: "clean", enabled: true });
+    const r = validateCategoryInput({
+      name: "测试",
+      code: "clean",
+      enabled: true,
+    });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.cleaned.code).toBe("CLEAN"); // 大写
   });
 });
 
+// # spec: 服务 SKU 校验 = name/code/categoryCode 必填、basePrice 范围 [0, 100 万] 元
 describe("validateSkuInput", () => {
   it("合法输入通过", () => {
     const r = validateSkuInput({
@@ -64,29 +82,80 @@ describe("validateSkuInput", () => {
   });
 
   it("空 name / 空 code / 空 categoryCode", () => {
-    expect(validateSkuInput({ name: "", code: "X", categoryCode: "CLEAN", basePrice: 100, enabled: true }).ok).toBe(false);
-    expect(validateSkuInput({ name: "x", code: "", categoryCode: "CLEAN", basePrice: 100, enabled: true }).ok).toBe(false);
-    expect(validateSkuInput({ name: "x", code: "X", categoryCode: "", basePrice: 100, enabled: true }).ok).toBe(false);
+    expect(
+      validateSkuInput({
+        name: "",
+        code: "X",
+        categoryCode: "CLEAN",
+        basePrice: 100,
+        enabled: true,
+      }).ok,
+    ).toBe(false);
+    expect(
+      validateSkuInput({
+        name: "x",
+        code: "",
+        categoryCode: "CLEAN",
+        basePrice: 100,
+        enabled: true,
+      }).ok,
+    ).toBe(false);
+    expect(
+      validateSkuInput({
+        name: "x",
+        code: "X",
+        categoryCode: "",
+        basePrice: 100,
+        enabled: true,
+      }).ok,
+    ).toBe(false);
   });
 
   it("basePrice 负数 / 超限", () => {
-    expect(validateSkuInput({ name: "x", code: "X", categoryCode: "CLEAN", basePrice: -1, enabled: true }).ok).toBe(false);
-    expect(validateSkuInput({ name: "x", code: "X", categoryCode: "CLEAN", basePrice: 1_000_001, enabled: true }).ok).toBe(false);
+    expect(
+      validateSkuInput({
+        name: "x",
+        code: "X",
+        categoryCode: "CLEAN",
+        basePrice: -1,
+        enabled: true,
+      }).ok,
+    ).toBe(false);
+    expect(
+      validateSkuInput({
+        name: "x",
+        code: "X",
+        categoryCode: "CLEAN",
+        basePrice: 1_000_001,
+        enabled: true,
+      }).ok,
+    ).toBe(false);
   });
 });
 
+// # spec: 更新 SKU 校验 = 必须传 id 才能更新合法字段（name/basePrice/enabled）
 describe("validateUpdateSkuInput", () => {
   it("合法输入通过", () => {
-    const r = validateUpdateSkuInput({ id: "S001", name: "改名", basePrice: 999, enabled: false });
+    const r = validateUpdateSkuInput({
+      id: "S001",
+      name: "改名",
+      basePrice: 999,
+      enabled: false,
+    });
     expect(r.ok).toBe(true);
   });
 
   it("缺 id", () => {
-    const r = validateUpdateSkuInput({ name: "x", basePrice: 100, enabled: true });
+    const r = validateUpdateSkuInput({
+      name: "x",
+      basePrice: 100,
+      enabled: true,
+    });
     expect(r.ok).toBe(false);
   });
 });
 
+// # spec: 品类/SKU 端到端 CRUD = 创建写库（元转分 + durationMinutes 默认 60）、code 重复拒绝、小写 code normalize、categoryCode 不存在拒绝、更新不改 skuCode/categoryId/durationMinutes
 describe("createCategory / createSku / updateSku — 端到端", () => {
   const createdIds: { category?: string; sku?: string } = {};
 
@@ -96,18 +165,26 @@ describe("createCategory / createSku / updateSku — 端到端", () => {
       delete createdIds.sku;
     }
     if (createdIds.category) {
-      await prisma.serviceCategory.deleteMany({ where: { id: createdIds.category } });
+      await prisma.serviceCategory.deleteMany({
+        where: { id: createdIds.category },
+      });
       delete createdIds.category;
     }
   });
 
   it("createCategory：合法输入 → DB 写入 enabled=true", async () => {
-    const r = await createCategory({ name: "测试品类-A", code: "TEST-CAT-A", enabled: true });
+    const r = await createCategory({
+      name: "测试品类-A",
+      code: "TEST-CAT-A",
+      enabled: true,
+    });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     createdIds.category = r.id;
 
-    const row = await prisma.serviceCategory.findUnique({ where: { id: r.id } });
+    const row = await prisma.serviceCategory.findUnique({
+      where: { id: r.id },
+    });
     expect(row?.name).toBe("测试品类-A");
     expect(row?.categoryCode).toBe("TEST-CAT-A");
     expect(row?.enabled).toBe(true);
@@ -115,19 +192,29 @@ describe("createCategory / createSku / updateSku — 端到端", () => {
 
   it("createCategory：code 重复 → validation", async () => {
     // 用 seed 已有的 CLEAN
-    const r = await createCategory({ name: "重复", code: "CLEAN", enabled: true });
+    const r = await createCategory({
+      name: "重复",
+      code: "CLEAN",
+      enabled: true,
+    });
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.category).toBe("validation");
   });
 
   it("createCategory：小写 code 会被 normalize 成大写", async () => {
-    const r = await createCategory({ name: "小写测试", code: "test-lower", enabled: true });
+    const r = await createCategory({
+      name: "小写测试",
+      code: "test-lower",
+      enabled: true,
+    });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     createdIds.category = r.id;
 
-    const row = await prisma.serviceCategory.findUnique({ where: { id: r.id } });
+    const row = await prisma.serviceCategory.findUnique({
+      where: { id: r.id },
+    });
     expect(row?.categoryCode).toBe("TEST-LOWER");
   });
 
@@ -156,7 +243,12 @@ describe("createCategory / createSku / updateSku — 端到端", () => {
 
   it("createSku：categoryCode 不存在 → validation", async () => {
     const r = await createSku({
-      name: "测试", code: "TEST-SKU-X", categoryCode: "NON-EXISTENT", basePrice: 100, enabled: true, requiredSkills: [],
+      name: "测试",
+      code: "TEST-SKU-X",
+      categoryCode: "NON-EXISTENT",
+      basePrice: 100,
+      enabled: true,
+      requiredSkills: [],
     });
     expect(r.ok).toBe(false);
     if (r.ok) return;
@@ -166,13 +258,24 @@ describe("createCategory / createSku / updateSku — 端到端", () => {
 
   it("updateSku：合法输入 → 改名 + 改价格", async () => {
     const c = await createSku({
-      name: "原名", code: "TEST-SKU-UPD", categoryCode: "CLEAN", basePrice: 100, enabled: true, requiredSkills: [],
+      name: "原名",
+      code: "TEST-SKU-UPD",
+      categoryCode: "CLEAN",
+      basePrice: 100,
+      enabled: true,
+      requiredSkills: [],
     });
     expect(c.ok).toBe(true);
     if (!c.ok) return;
     createdIds.sku = c.id;
 
-    const u = await updateSku({ id: c.id, name: "新名", basePrice: 250.75, enabled: false, requiredSkills: ["保洁"] });
+    const u = await updateSku({
+      id: c.id,
+      name: "新名",
+      basePrice: 250.75,
+      enabled: false,
+      requiredSkills: ["保洁"],
+    });
     expect(u.ok).toBe(true);
 
     const row = await prisma.serviceSku.findUnique({ where: { id: c.id } });
@@ -185,13 +288,19 @@ describe("createCategory / createSku / updateSku — 端到端", () => {
   });
 
   it("updateSku：SKU 不存在 → validation", async () => {
-    const u = await updateSku({ id: "NOT-EXIST", name: "x", basePrice: 100, enabled: true });
+    const u = await updateSku({
+      id: "NOT-EXIST",
+      name: "x",
+      basePrice: 100,
+      enabled: true,
+    });
     expect(u.ok).toBe(false);
     if (u.ok) return;
     expect(u.category).toBe("validation");
   });
 });
 
+// # spec: 新建 SKU 立即可见 = createSku 后 listSkus 立即返回该 SKU，enabled=true 时 listEnabledServices 也能找到
 describe("新建的 SKU 能被 listSkus 查到，能出现在新建订单下拉", () => {
   const createdIds: { sku?: string } = {};
   afterEach(async () => {
@@ -203,7 +312,12 @@ describe("新建的 SKU 能被 listSkus 查到，能出现在新建订单下拉"
 
   it("createSku 后 listSkus 立即能找到", async () => {
     const r = await createSku({
-      name: "测试-查找", code: "TEST-LIST-SKU", categoryCode: "CLEAN", basePrice: 100, enabled: true, requiredSkills: [],
+      name: "测试-查找",
+      code: "TEST-LIST-SKU",
+      categoryCode: "CLEAN",
+      basePrice: 100,
+      enabled: true,
+      requiredSkills: [],
     });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -217,7 +331,12 @@ describe("新建的 SKU 能被 listSkus 查到，能出现在新建订单下拉"
 
   it("enabled=true 的新 SKU 出现在 listEnabledServices", async () => {
     const r = await createSku({
-      name: "测试-启用", code: "TEST-EN-SKU", categoryCode: "CLEAN", basePrice: 100, enabled: true, requiredSkills: [],
+      name: "测试-启用",
+      code: "TEST-EN-SKU",
+      categoryCode: "CLEAN",
+      basePrice: 100,
+      enabled: true,
+      requiredSkills: [],
     });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -230,6 +349,7 @@ describe("新建的 SKU 能被 listSkus 查到，能出现在新建订单下拉"
   });
 });
 
+// # spec: 品类列表 = 返回所有品类含 disabled 的全量列表
 describe("listCategories", () => {
   it("返回所有品类（含 disabled）", async () => {
     const all = await listCategories();
@@ -239,6 +359,7 @@ describe("listCategories", () => {
   });
 });
 
+// # spec: 新 SKU 必填 requiredSkills 才能参与派单匹配 = requiredSkills 非空时推荐能匹配到对应技能师傅、空数组时 DB 存 "[]" 且不参与派单
 describe("修复 #1：新 SKU 设置 requiredSkills 后能参与派单匹配", () => {
   const createdIds: { category?: string; sku?: string } = {};
   afterEach(async () => {
@@ -247,14 +368,20 @@ describe("修复 #1：新 SKU 设置 requiredSkills 后能参与派单匹配", (
       delete createdIds.sku;
     }
     if (createdIds.category) {
-      await prisma.serviceCategory.deleteMany({ where: { id: createdIds.category } });
+      await prisma.serviceCategory.deleteMany({
+        where: { id: createdIds.category },
+      });
       delete createdIds.category;
     }
   });
 
   it("新 SKU requiredSkills=['空调维修'] → 派单匹配时找得到「空调维修」师傅", async () => {
     // 1. 新建品类（避免污染 seed）
-    const c = await createCategory({ name: "测试类目-派单", code: "TEST-DISPATCH", enabled: true });
+    const c = await createCategory({
+      name: "测试类目-派单",
+      code: "TEST-DISPATCH",
+      enabled: true,
+    });
     expect(c.ok).toBe(true);
     if (!c.ok) return;
     createdIds.category = c.id;
@@ -274,23 +401,54 @@ describe("修复 #1：新 SKU 设置 requiredSkills 后能参与派单匹配", (
 
     // 3. 调 recommendMastersForOrder 看 T004（孙师傅，available + 会空调维修）能否在候选里
     const { recommendMastersForOrder } = await import("@/lib/dispatch");
-    const cat = await prisma.serviceCategory.findUnique({ where: { id: createdIds.category } });
-    const masters = await prisma.master.findMany({
-      where: { status: { not: "offline" } }, // available / busy 都参与匹配
-      select: { id: true, name: true, phone: true, skills: true, rating: true, completedJobs: true, status: true, serviceArea: true },
-    }).then((rows) => rows.map((r) => {
-      let skills: string[] = [];
-      try { const p = JSON.parse(r.skills); if (Array.isArray(p)) skills = p.filter((s: unknown) => typeof s === "string"); } catch {}
-      return { ...r, skills, status: r.status as "available" | "busy" | "offline" };
-    }));
+    const cat = await prisma.serviceCategory.findUnique({
+      where: { id: createdIds.category },
+    });
+    const masters = await prisma.master
+      .findMany({
+        where: { status: { not: "offline" } }, // available / busy 都参与匹配
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          skills: true,
+          rating: true,
+          completedJobs: true,
+          status: true,
+          serviceArea: true,
+        },
+      })
+      .then((rows) =>
+        rows.map((r) => {
+          let skills: string[] = [];
+          try {
+            const p = JSON.parse(r.skills);
+            if (Array.isArray(p))
+              skills = p.filter((s: unknown) => typeof s === "string");
+          } catch {}
+          return {
+            ...r,
+            skills,
+            status: r.status as "available" | "busy" | "offline",
+          };
+        }),
+      );
 
     // 加一个「匹配 SKU 规则」的 DispatchRule
     const result = recommendMastersForOrder({
       order: { skuId: createdIds.sku!, categoryId: cat!.id },
-      rules: [{
-        id: "R-NEW", name: "新 SKU 测试", priority: 100, enabled: true,
-        spec: { match: { skuId: createdIds.sku! }, requiredSkills: ["空调维修"] },
-      }],
+      rules: [
+        {
+          id: "R-NEW",
+          name: "新 SKU 测试",
+          priority: 100,
+          enabled: true,
+          spec: {
+            match: { skuId: createdIds.sku! },
+            requiredSkills: ["空调维修"],
+          },
+        },
+      ],
       masters,
     });
 
@@ -302,7 +460,11 @@ describe("修复 #1：新 SKU 设置 requiredSkills 后能参与派单匹配", (
   });
 
   it("新 SKU requiredSkills=[] → 派单匹配规则时返回「无候选」（不参与）", async () => {
-    const c = await createCategory({ name: "应急测试", code: "TEST-EMERGENCY", enabled: true });
+    const c = await createCategory({
+      name: "应急测试",
+      code: "TEST-EMERGENCY",
+      enabled: true,
+    });
     expect(c.ok).toBe(true);
     if (!c.ok) return;
     createdIds.category = c.id;

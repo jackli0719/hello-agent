@@ -32,6 +32,7 @@ async function resetOrder(
   });
 }
 
+// # spec: 派单业务规则 = pending 订单可派给推荐里 available 师傅、师傅转 busy、不能重复派单/派给 busy/offline/不符合规则，乐观锁防并发抢单
 describe("assignOrder — 端到端", () => {
   beforeEach(async () => {
     await resetMasterStatuses();
@@ -60,7 +61,9 @@ describe("assignOrder — 端到端", () => {
     expect(r.masterId).toBe("T004");
     expect(r.masterName).toBe("孙师傅");
 
-    const order = await prisma.order.findUnique({ where: { id: "O20260624002" } });
+    const order = await prisma.order.findUnique({
+      where: { id: "O20260624002" },
+    });
     expect(order?.status).toBe("assigned");
     expect(order?.masterId).toBe("T004");
     expect(order?.masterName).toBe("孙师傅");
@@ -74,7 +77,9 @@ describe("assignOrder — 端到端", () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
 
-    const order = await prisma.order.findUnique({ where: { id: "O20260625009" } });
+    const order = await prisma.order.findUnique({
+      where: { id: "O20260625009" },
+    });
     expect(order?.status).toBe("assigned");
     expect(order?.masterId).toBe("T001");
   });
@@ -102,7 +107,9 @@ describe("assignOrder — 端到端", () => {
     expect(r.error).toMatch(/不能重复派单/);
 
     // 状态没改
-    const order = await prisma.order.findUnique({ where: { id: "O20260624003" } });
+    const order = await prisma.order.findUnique({
+      where: { id: "O20260624003" },
+    });
     expect(order?.status).toBe("assigned");
     expect(order?.masterName).toBe("赵师傅");
   });
@@ -126,7 +133,10 @@ describe("assignOrder — 端到端", () => {
   it("师傅不符合推荐规则 → validation 错误（防止前端改包）", async () => {
     // T005 技能是 ["开锁","管道疏通"] — 不符合 S003 要求的 ["空调维修"]
     // 而且 T005 是 offline — 但即使改成 available 也应该被拒
-    await prisma.master.update({ where: { id: "T005" }, data: { status: "available" } });
+    await prisma.master.update({
+      where: { id: "T005" },
+      data: { status: "available" },
+    });
     try {
       const r = await assignOrder("O20260624002", "T005");
       expect(r.ok).toBe(false);
@@ -140,7 +150,10 @@ describe("assignOrder — 端到端", () => {
 
   it("并发安全：师傅刚好被别人改成 busy 时 updateMany 不报错", async () => {
     // 先把 T004 改回 available（reset 后本来就是），然后模拟「同时被改 busy」
-    await prisma.master.update({ where: { id: "T004" }, data: { status: "available" } });
+    await prisma.master.update({
+      where: { id: "T004" },
+      data: { status: "available" },
+    });
     // 派单 — 这一步完成
     const r = await assignOrder("O20260624002", "T004");
     expect(r.ok).toBe(true);
@@ -156,7 +169,10 @@ describe("assignOrder — 端到端", () => {
 
     // 现在订单已是 assigned + T004 busy — 模拟「第二个用户拿另一个 candidate」再派一次
     // 这里偷懒：把 T002 改成 available 让它进候选（不严格，但能模拟「候选里另一个师傅」）
-    await prisma.master.update({ where: { id: "T002" }, data: { status: "available" } });
+    await prisma.master.update({
+      where: { id: "T002" },
+      data: { status: "available" },
+    });
     try {
       const r = await assignOrder("O20260624002", "T002");
       // 应该被乐观锁拒
@@ -173,7 +189,9 @@ describe("assignOrder — 端到端", () => {
     expect(t2?.status).toBe("busy"); // reset 之前的初值就是 busy
 
     // 验证：原订单仍是 first 那次的派单结果（masterId=T004）
-    const order = await prisma.order.findUnique({ where: { id: "O20260624002" } });
+    const order = await prisma.order.findUnique({
+      where: { id: "O20260624002" },
+    });
     expect(order?.masterId).toBe("T004");
     expect(order?.masterName).toBe("孙师傅");
   });

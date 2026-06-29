@@ -22,6 +22,7 @@ beforeEach(async () => {
   });
 });
 
+// # spec: 订单列表 SKU 过滤 = 按 skuCode 只返回该 SKU 订单、未传 skuCode 不过滤、不存在的 SKU 返回 0 条
 describe("listOrdersForPage — skuCode 过滤", () => {
   it("按 SKU 过滤只返回该 SKU 的订单", async () => {
     // 1. 创建类目 + 2 个 SKU + 2 个订单
@@ -108,6 +109,7 @@ describe("listOrdersForPage — skuCode 过滤", () => {
   });
 });
 
+// # spec: 订单列表时间过滤 + 分页 = 按 createdAt/scheduledAt 时间范围、dateTo 不含次日 0 点、page/pageSize 控制分页且不重复
 describe("listOrdersForPage — 时间范围 + 分页", () => {
   it("按 createdAt 时间范围过滤（今天）", async () => {
     // seed 跑完时 createdAt 是今天
@@ -128,7 +130,11 @@ describe("listOrdersForPage — 时间范围 + 分页", () => {
     const dateFrom = new Date("2020-01-01T00:00:00");
     const dateTo = new Date("2020-01-01T00:00:00");
     const r = await listOrdersForPage({
-      dateFrom, dateTo, dateField: "createdAt", page: 1, pageSize: 100,
+      dateFrom,
+      dateTo,
+      dateField: "createdAt",
+      page: 1,
+      pageSize: 100,
     });
     expect(r.totalCount).toBe(0);
   });
@@ -138,7 +144,11 @@ describe("listOrdersForPage — 时间范围 + 分页", () => {
     const dateFrom = new Date("2026-06-23T00:00:00");
     const dateTo = new Date("2026-06-24T00:00:00");
     const r = await listOrdersForPage({
-      dateFrom, dateTo, dateField: "scheduledAt", page: 1, pageSize: 100,
+      dateFrom,
+      dateTo,
+      dateField: "scheduledAt",
+      page: 1,
+      pageSize: 100,
     });
     expect(r.orders.find((o) => o.id === "O20260623007")).toBeDefined();
     expect(r.orders.find((o) => o.id === "O20260624001")).toBeDefined();
@@ -151,7 +161,11 @@ describe("listOrdersForPage — 时间范围 + 分页", () => {
     const dateFrom = new Date("2026-06-23T00:00:00");
     const dateTo = new Date("2026-06-23T00:00:00");
     const r = await listOrdersForPage({
-      dateFrom, dateTo, dateField: "scheduledAt", page: 1, pageSize: 100,
+      dateFrom,
+      dateTo,
+      dateField: "scheduledAt",
+      page: 1,
+      pageSize: 100,
     });
     // 2026-06-23 当天预约的订单
     expect(r.orders.find((o) => o.id === "O20260623007")).toBeDefined();
