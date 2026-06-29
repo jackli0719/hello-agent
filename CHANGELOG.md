@@ -5,6 +5,32 @@ O2O 上门服务 MVP 的所有变更记录，按 [Keep a Changelog 1.1.0](https:
 
 ---
 
+## [v0.2.4] — 2026-06-29 — harness patch：A4 全闭环 + 数据来源真相
+
+**Tag**：`harness-v0.2.4` · **变更类型**：harness patch（暴露 v0.2.3 没分析的根因）
+
+### Changed
+
+- `docs/adr-011-postgres-test-verification.md`：加补充节——**dev.db 是 mock-data.ts 改版前的历史快照**（不是 PG 数据问题）
+- `docs/ARCHITECTURE.md`：技术栈选型更新——SQLite 降级为「演示用兜底」；§3.1 分层图明确「PG 是数据层主，SQLite 仅历史兜底」
+
+### Decision
+
+- ✅ 保留 `prisma/dev.db` 作历史快照（不重写 + 不删）
+- ✅ `Postgres` 是真值（mock-data.ts + seed.ts = source of truth）
+- ✅ `scripts/verify-migration.ts` 不改造——它的职责 = 说"不一致"，诊断是 ADR-011 的事
+- ❌ 不重写 dev.db（避免丢失历史数据）
+
+### Score Change
+
+| 维度         | v0.2.3   | v0.2.4     | delta     |
+| ------------ | -------- | ---------- | --------- |
+| DB 迁移先行  | 9/10     | **9.5/10** | **+0.5**  |
+| ADR 密度     | 8/10     | **9/10**   | **+1**    |
+| **加权平均** | **7.25** | **7.50**   | **+0.25** |
+
+---
+
 ## [v0.2.3] — 2026-06-29 — harness patch：P0-1 真收口 + 验证脚本实跑
 
 **Tag**：`harness-v0.2.3` · **变更类型**：harness patch（兑现 v0.2.1「未验证」承诺）

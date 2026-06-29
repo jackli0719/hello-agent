@@ -42,18 +42,19 @@
 
 ## 2. 技术栈选型
 
-| 层         | 选型                         | 理由                                                | 备选                           |
-| ---------- | ---------------------------- | --------------------------------------------------- | ------------------------------ |
-| **框架**   | Next.js 15（App Router）     | RSC + Server Actions 一站式；演示期单仓库即三端     | Remix、纯 React + Express      |
-| **语言**   | TypeScript 5（strict）       | 全栈类型安全；业务规则（状态机）类型签名兜底        | JavaScript（更松但易错）       |
-| **ORM**    | Prisma 5                     | 类型安全的 SQL；migration 工具齐全                  | Drizzle（更接近 SQL）、TypeORM |
-| **数据库** | SQLite（开发期）             | 零配置、文件即库、`db:reset` 一键回种子；演示版完美 | PostgreSQL（生产必须迁）       |
-| **样式**   | 内联 `style` 属性            | 零依赖、零配置；演示阶段不加 Tailwind 避免膨胀      | Tailwind CSS（生产再上）       |
-| **测试**   | Vitest                       | Vite 生态；连真实 SQLite 跑端到端                   | Jest（更老、配置繁琐）         |
-| **日志**   | 自研 JSON 结构化日志         | 演示阶段不需要接入 ELK；埋点够用即可                | Pino、Winston                  |
-| **指标**   | 自研 in-process 计数器       | 演示阶段不需要 Prom 导出；够看即可                  | prom-client、OpenTelemetry     |
-| **CI**     | GitHub Actions               | 跟代码仓库一起                                      | CircleCI、GitLab CI            |
-| **Lint**   | ESLint v9 + Prettier + husky | pre-commit 卡 lint + format                         | Biome（更快但生态新）          |
+| 层                       | 选型                         | 理由                                                                                               | 备选                                             |
+| ------------------------ | ---------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| **框架**                 | Next.js 15（App Router）     | RSC + Server Actions 一站式；演示期单仓库即三端                                                    | Remix、纯 React + Express                        |
+| **语言**                 | TypeScript 5（strict）       | 全栈类型安全；业务规则（状态机）类型签名兜底                                                       | JavaScript（更松但易错）                         |
+| **ORM**                  | Prisma 5                     | 类型安全的 SQL；migration 工具齐全                                                                 | Drizzle（更接近 SQL）、TypeORM                   |
+| **数据库（dev）**        | PostgreSQL 16 (docker)       | `db:start` 启 docker container；schema 用 `prisma migrate deploy`；真值 = mock-data.ts via seed.ts | SQLite dev.db（历史快照，**见 ADR-011 补充节**） |
+| **数据库（演示用兜底）** | SQLite `prisma/dev.db`       | **v0.2.3 起降级为历史快照**——不是真值。回滚方法：见 ARCHITECTURE [§3.2 目录约定]                   | —                                                |
+| **样式**                 | 内联 `style` 属性            | 零依赖、零配置；演示阶段不加 Tailwind 避免膨胀                                                     | Tailwind CSS（生产再上）                         |
+| **测试**                 | Vitest                       | v0.2.3 起跑真实 Postgres（CI 也跑 PG service）                                                     | Jest（更老、配置繁琐）                           |
+| **日志**                 | 自研 JSON 结构化日志         | 演示阶段不需要接入 ELK；埋点够用即可                                                               | Pino、Winston                                    |
+| **指标**                 | 自研 in-process 计数器       | 演示阶段不需要 Prom 导出；够看即可                                                                 | prom-client、OpenTelemetry                       |
+| **CI**                   | GitHub Actions               | 跟代码仓库一起                                                                                     | CircleCI、GitLab CI                              |
+| **Lint**                 | ESLint v9 + Prettier + husky | pre-commit 卡 lint + format                                                                        | Biome（更快但生态新）                            |
 
 **选型原则**：MVP 阶段任何引入需要 5+ 分钟配置的依赖都先不做，等真要用再补。
 
@@ -103,7 +104,8 @@
               │
               ▼
 ┌─────────────────────────────────────────────────────────┐
-│ SQLite（prisma/dev.db 文件）                              │
+│ PostgreSQL 16（docker:5433）— 真值（mock-data.ts + seed.ts）│
+│ SQLite（prisma/dev.db）— 历史快照，**仅作回滚兜底**        │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -299,12 +301,12 @@ in_service → completed | cancelled
 
 **222 个自动化测试**（截至 2026-06），分层如下：
 
-| 类型                   | 文件示例                                                                                       | 特点                                                          |
-| ---------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| **业务逻辑纯函数**     | `lib/dispatch.test.ts`、`src/lib/orders.test.ts`、`src/lib/codes.test.ts`                      | 无 DB 依赖、断言具体规格                                      |
-| **事务/集成测试**      | `src/lib/orders.assign.test.ts`、`src/lib/orders.transition.test.ts`、`src/lib/worker.test.ts` | 连真实 SQLite；`vitest.config.ts` 关 `fileParallelism` 防污染 |
-| **Server Action 测试** | `src/lib/orders.actions.test.ts`、`app/orders/actions.test.ts`                                 | 调 action 端到端                                              |
-| **辅助**               | `repos/orders.test.ts`（单表原子操作）、`dispatch-rules.test.ts`                               |                                                               |
+| 类型                   | 文件示例                                                                                       | 特点                                                            |
+| ---------------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| **业务逻辑纯函数**     | `lib/dispatch.test.ts`、`src/lib/orders.test.ts`、`src/lib/codes.test.ts`                      | 无 DB 依赖、断言具体规格                                        |
+| **事务/集成测试**      | `src/lib/orders.assign.test.ts`、`src/lib/orders.transition.test.ts`、`src/lib/worker.test.ts` | 连真实 Postgres；`vitest.config.ts` 关 `fileParallelism` 防污染 |
+| **Server Action 测试** | `src/lib/orders.actions.test.ts`、`app/orders/actions.test.ts`                                 | 调 action 端到端                                                |
+| **辅助**               | `repos/orders.test.ts`（单表原子操作）、`dispatch-rules.test.ts`                               |                                                                 |
 
 **测试隔离**：每个测试 `beforeEach` / `afterEach` 调 `resetMasterStatuses` + `resetOrder` 清状态。`src/lib/worker.test.ts` 用 `SEED_ORDER_IDS` + `deleteMany` + `resetMastersToSeed` 三步兜底。
 
