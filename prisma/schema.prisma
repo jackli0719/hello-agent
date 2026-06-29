@@ -69,8 +69,34 @@ model Master {
   createdAt     DateTime @default(now())
 
   orders Order[]
+  // 反向关系：worker 角色 User 通过 workerId 绑本表
+  user   User?
 
   @@index([status])
+}
+
+// ============================================================
+// 账号体系（[账号阶段] 2026-06-29 引入）
+// 三个角色：admin / worker / customer
+// - admin  : 后台管理员（workerId null）
+// - worker : 师傅账号（workerId 绑 Master.id）
+// - customer : 用户（按 phone 查订单）
+// # MVP: password 明文（按需求 — 不做哈希、不做注册）
+// ============================================================
+model User {
+  id        String   @id @default(cuid())
+  name      String   @unique               // 登录账号（admin / worker1 / customer1）
+  phone     String?                       // customer/worker 绑手机号；admin 可空
+  password  String                        // # MVP: 明文存（按需求）
+  role      String                        // admin | worker | customer
+  workerId  String?   @unique             // role=worker 时绑 Master.id
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  worker    Master?  @relation(fields: [workerId], references: [id])
+
+  @@index([role])
+  @@index([phone])
 }
 
 // ============================================================

@@ -5,25 +5,28 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { loginAction } from "./actions";
 
 /**
- * 登录页 — MVP 阶段固定账号 + cookie session。
+ * 登录页 — [账号阶段] 2026-06-29 升级为多角色。
  *
- * 不接第三方登录、不做用户管理 / 注册 / 忘记密码（按需求）。
+ * 三个测试账号：
+ *   - admin / admin123 → 后台管理
+ *   - worker1 / worker123 → 师傅端
+ *   - customer1 / customer123 → 用户端（用手机号登录也可）
+ *
+ * 不接第三方登录、不做注册 / 忘记密码（按需求）。
  */
 
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const nextPath = searchParams.get("next") || "/dashboard";
+  const nextPath = searchParams.get("next") || "";
 
-  const [username, setUsername] = useState("admin");
+  const [account, setAccount] = useState("admin");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   function handleSubmit(formData: FormData) {
     setError(null);
-    // 直接把 formData 整个传给 server action — 校验由 server action 负责
-    // 不要 client 端重复校验（之前的硬编码 admin/admin123 容易和 server action 不一致）
     startTransition(async () => {
       const r = await loginAction(formData);
       if (r.ok) {
@@ -55,63 +58,71 @@ export default function LoginPage() {
           border: "1px solid #e5e7eb",
           borderRadius: 12,
           padding: 32,
-          width: 360,
+          width: 380,
           boxShadow: "0 4px 12px rgba(0,0,0,0.04)",
         }}
       >
         <h1 style={{ fontSize: 22, fontWeight: 600, margin: "0 0 4px 0" }}>
-          管理员登录
+          账号登录
         </h1>
         <p style={{ color: "#6b7280", fontSize: 13, margin: "0 0 24px 0" }}>
-          演示账号 <code style={codeStyle}>admin</code> / 密码{" "}
-          <code style={codeStyle}>admin123</code>
+          演示账号（密码对应）
         </p>
 
-        <div style={{ marginBottom: 12 }}>
-          <label
-            style={{
-              display: "block",
-              fontSize: 13,
-              color: "#374151",
-              marginBottom: 6,
-              fontWeight: 500,
+        {/* 三个测试账号快捷按钮 */}
+        <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+          <button
+            type="button"
+            onClick={() => {
+              setAccount("admin");
+              setPassword("admin123");
             }}
-            htmlFor="username"
+            style={quickBtn}
           >
-            用户名
+            admin
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setAccount("worker1");
+              setPassword("worker123");
+            }}
+            style={quickBtn}
+          >
+            worker1
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setAccount("customer1");
+              setPassword("customer123");
+            }}
+            style={quickBtn}
+          >
+            customer1
+          </button>
+        </div>
+
+        <input type="hidden" name="next" value={nextPath} />
+
+        <div style={{ marginBottom: 12 }}>
+          <label style={labelStyle} htmlFor="account">
+            账号（用户名或手机号）
           </label>
           <input
-            id="username"
-            name="username"
+            id="account"
+            name="account"
             type="text"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            style={{
-              width: "100%",
-              padding: "8px 12px",
-              border: "1px solid #d1d5db",
-              borderRadius: 6,
-              fontSize: 14,
-              background: "#fff",
-              outline: "none",
-              boxSizing: "border-box",
-            }}
+            value={account}
+            onChange={(e) => setAccount(e.target.value)}
+            style={inputStyle}
             required
             autoComplete="username"
           />
         </div>
 
         <div style={{ marginBottom: 12 }}>
-          <label
-            style={{
-              display: "block",
-              fontSize: 13,
-              color: "#374151",
-              marginBottom: 6,
-              fontWeight: 500,
-            }}
-            htmlFor="password"
-          >
+          <label style={labelStyle} htmlFor="password">
             密码
           </label>
           <input
@@ -120,50 +131,21 @@ export default function LoginPage() {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            style={{
-              width: "100%",
-              padding: "8px 12px",
-              border: "1px solid #d1d5db",
-              borderRadius: 6,
-              fontSize: 14,
-              background: "#fff",
-              outline: "none",
-              boxSizing: "border-box",
-            }}
+            style={inputStyle}
             required
             autoComplete="current-password"
           />
         </div>
 
-        {error && (
-          <div
-            style={{
-              padding: "8px 12px",
-              background: "#fee2e2",
-              color: "#b91c1c",
-              borderRadius: 6,
-              fontSize: 13,
-              marginBottom: 12,
-            }}
-          >
-            {error}
-          </div>
-        )}
+        {error && <div style={errorStyle}>{error}</div>}
 
         <button
           type="submit"
           disabled={isPending}
           style={{
-            width: "100%",
-            padding: "10px 16px",
+            ...submitBtn,
             background: isPending ? "#9ca3af" : "#2563eb",
-            color: "#fff",
-            border: "none",
-            borderRadius: 6,
-            fontSize: 14,
-            fontWeight: 500,
             cursor: isPending ? "not-allowed" : "pointer",
-            marginTop: 4,
           }}
         >
           {isPending ? "登录中…" : "登录"}
@@ -177,19 +159,59 @@ export default function LoginPage() {
             textAlign: "center",
           }}
         >
-          演示阶段 — 账号硬编码在源码
+          演示阶段 — 密码明文存（生产前必须哈希）
         </p>
       </form>
     </main>
   );
 }
 
-const codeStyle: React.CSSProperties = {
-  background: "#f3f4f6",
-  padding: "1px 6px",
-  borderRadius: 3,
-  fontFamily: "ui-monospace, SFMono-Regular, monospace",
+const labelStyle: React.CSSProperties = {
+  display: "block",
+  fontSize: 13,
+  color: "#374151",
+  marginBottom: 6,
+  fontWeight: 500,
+};
+
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  padding: "8px 12px",
+  border: "1px solid #d1d5db",
+  borderRadius: 6,
+  fontSize: 14,
+  background: "#fff",
+  outline: "none",
+  boxSizing: "border-box",
+};
+
+const quickBtn: React.CSSProperties = {
+  flex: 1,
+  padding: "6px 8px",
   fontSize: 12,
-  border: "1px solid #e5e7eb",
-  color: "#111827",
+  background: "#f3f4f6",
+  border: "1px solid #d1d5db",
+  borderRadius: 4,
+  cursor: "pointer",
+  color: "#374151",
+};
+
+const errorStyle: React.CSSProperties = {
+  padding: "8px 12px",
+  background: "#fee2e2",
+  color: "#b91c1c",
+  borderRadius: 6,
+  fontSize: 13,
+  marginBottom: 12,
+};
+
+const submitBtn: React.CSSProperties = {
+  width: "100%",
+  padding: "10px 16px",
+  color: "#fff",
+  border: "none",
+  borderRadius: 6,
+  fontSize: 14,
+  fontWeight: 500,
+  marginTop: 4,
 };

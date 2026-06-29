@@ -13,34 +13,36 @@
 // - 不复用 OrderCard：详情页字段更多（品类、师傅、创建时间），UI 不一样
 // - 操作按钮完全复用 WorkerOrderActions — 列表页和详情页用同一个 client 组件
 
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { getOrderForWorker } from "@/src/lib/worker";
 import { StatusBadge, ORDER_TONE } from "@/components/ui";
 import { ORDER_STATUS_LABEL } from "@/lib/mock-data";
+import { getCurrentUser } from "@/src/lib/auth";
 import { WorkerOrderActions } from "../../WorkerOrderActions";
+import { logoutAction } from "@/app/login/actions";
 
 interface PageProps {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ masterId?: string }>;
 }
 
-export default async function WorkerOrderDetailPage({
-  params,
-  searchParams,
-}: PageProps) {
+export default async function WorkerOrderDetailPage({ params }: PageProps) {
   const { id } = await params;
-  const { masterId } = await searchParams;
 
-  // masterId 缺省：演示期允许（不校验），但页面应该提示
-  // masterId 存在：用它做越权校验
-  const order = await getOrderForWorker(id, masterId);
+  // 1. 当前登录 worker
+  const user = await getCurrentUser();
+  if (!user) {
+    redirect(`/login?next=/worker/orders/${encodeURIComponent(id)}`);
+  }
+  if (user.role !== "worker" || !user.workerId) {
+    redirect("/dashboard");
+  }
+
+  // 2. 拉订单（按登录 workerId 强校验 — 越权返回 null）
+  const order = await getOrderForWorker(id, user.workerId);
   if (!order) notFound();
 
-  // 返回链接 — 永远带 masterId 保留上下文；没 masterId 时回到 /worker 让用户重选
-  const backHref = masterId
-    ? `/worker?masterId=${encodeURIComponent(masterId)}`
-    : "/worker";
+  const backHref = "/worker";
 
   // 时间格式：YYYY-MM-DD HH:mm
   const formatDateTime = (iso: string) => {
@@ -62,7 +64,7 @@ export default async function WorkerOrderDetailPage({
         margin: "0 auto",
       }}
     >
-      {/* 极简顶部 — 含返回 */}
+      {/* 极简顶部 — 含返回 + 退出 */}
       <header
         style={{
           background: "#fff",
@@ -89,7 +91,11 @@ export default async function WorkerOrderDetailPage({
           ← 返回
         </Link>
         <div style={{ fontSize: 13, color: "#6b7280" }}>订单详情</div>
-        <div style={{ width: 56 }} />
+        <form action={logoutAction}>
+          <button type="submit" style={logoutBtnStyle}>
+            退出
+          </button>
+        </form>
       </header>
 
       {/* 订单主卡 — 顶部订单号 + 状态 */}
@@ -114,7 +120,9 @@ export default async function WorkerOrderDetailPage({
         >
           <div>
             <div style={{ fontSize: 12, color: "#6b7280" }}>订单号</div>
-            <div style={{ fontSize: 16, fontWeight: 600, marginTop: 4 }}>{order.id}</div>
+            <div style={{ fontSize: 16, fontWeight: 600, marginTop: 4 }}>
+              {order.id}
+            </div>
           </div>
           <StatusBadge
             label={ORDER_STATUS_LABEL[order.status]}
@@ -167,7 +175,9 @@ export default async function WorkerOrderDetailPage({
               textAlign: "center",
             }}
           >
-            {order.status === "completed" ? "✓ 订单已完成，不可再操作" : "订单已取消，不可再操作"}
+            {order.status === "completed"
+              ? "✓ 订单已完成，不可再操作"
+              : "订单已取消，不可再操作"}
           </div>
         ) : null}
       </section>
@@ -219,3 +229,13 @@ function Field({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
+const logoutBtnStyle: React.CSSProperties = {
+  fontSize: 13,
+  color: "#6b7280",
+  background: "#f3f4f6",
+  border: "1px solid #d1d5db",
+  borderRadius: 6,
+  padding: "6px 12px",
+  cursor: "pointer",
+};

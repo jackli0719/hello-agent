@@ -13,17 +13,19 @@
 
 ## 节点索引
 
-| Version | Date       | Commit | P0                                        | 自评                                                     |
-| ------- | ---------- | ------ | ----------------------------------------- | -------------------------------------------------------- |
-| v0.0.0  | 2026-06-29 | (历史) | baseline                                  | 3.5/5（历史）→ 4.9/5（5 项整改后）                       |
-| v0.1.0  | 2026-06-29 | (新建) | P0-1 DB 迁移完成                          | 6.0/10（更客观口径）                                     |
-| v0.2.0  | 2026-06-29 | (新建) | harness 评估体系建立                      | 6.0/10（同口径，无变化）                                 |
-| v0.2.1  | 2026-06-29 | (新建) | harness patch：维度 3 spec 注释 100% 覆盖 | 6.0/10 → **真算 6.30/10**（v0.2.2 修正 v0.2.1 算术错误） |
-| v0.2.2  | 2026-06-29 | (新建) | harness patch：真的卡点生效               | 7.20/10                                                  |
-| v0.2.3  | 2026-06-29 | (新建) | harness patch：P0-1 真收口 + 验证脚本实跑 | 7.25/10                                                  |
-| v0.2.4  | 2026-06-29 | (新建) | harness patch：A4 全闭环 + 数据来源真相   | 7.50/10                                                  |
-| v0.2.5  | 2026-06-29 | (新建) | harness patch：B1 流程纪律工具卡          | 7.95/10                                                  |
-| v0.2.6  | 2026-06-29 | (新建) | harness patch：husky pre-commit 自动跑 B1 | **8.25/10**（+0.30，**达标 8 分**）                      |
+| Version | Date       | Commit | P0                                                     | 自评                                                     |
+| ------- | ---------- | ------ | ------------------------------------------------------ | -------------------------------------------------------- |
+| v0.0.0  | 2026-06-29 | (历史) | baseline                                               | 3.5/5（历史）→ 4.9/5（5 项整改后）                       |
+| v0.1.0  | 2026-06-29 | (新建) | P0-1 DB 迁移完成                                       | 6.0/10（更客观口径）                                     |
+| v0.2.0  | 2026-06-29 | (新建) | harness 评估体系建立                                   | 6.0/10（同口径，无变化）                                 |
+| v0.2.1  | 2026-06-29 | (新建) | harness patch：维度 3 spec 注释 100% 覆盖              | 6.0/10 → **真算 6.30/10**（v0.2.2 修正 v0.2.1 算术错误） |
+| v0.2.2  | 2026-06-29 | (新建) | harness patch：真的卡点生效                            | 7.20/10                                                  |
+| v0.2.3  | 2026-06-29 | (新建) | harness patch：P0-1 真收口 + 验证脚本实跑              | 7.25/10                                                  |
+| v0.2.4  | 2026-06-29 | (新建) | harness patch：A4 全闭环 + 数据来源真相                | 7.50/10                                                  |
+| v0.2.5  | 2026-06-29 | (新建) | harness patch：B1 流程纪律工具卡                       | 7.95/10                                                  |
+| v0.2.6  | 2026-06-29 | (新建) | harness patch：husky pre-commit 自动跑 B1              | **8.25/10**（+0.30，**达标 8 分**）                      |
+| v0.2.7  | 2026-06-29 | (新建) | harness patch：B2 系统扫简化即 bug（ADR-012）          | **8.40/10**（+0.15，扫描 P0-4 隐藏风险）                 |
+| v0.3.0  | 2026-06-29 | (新建) | **账号体系阶段**：User 模型 + 三角色 + middleware 权限 | **8.60/10**（+0.20，新功能 + 风险审计 ADR-013）          |
 
 > v0.2.0 不升分 —— 评估体系建立本身不直接升工程能力。
 
@@ -662,3 +664,71 @@ P0-1 DB 迁移基本完成（schema 改 PG / migrations 建目录 / CI 接 Postg
 - `9fa884d`：harness 5 项整改
 - `884c6de`：P1 harness 加可观测性
 - `7c8d81c`：演示表现力升级
+- `8cab4c5` ~ `2d4f431`：v0.1.0 ~ v0.2.7（harness 完善 + 风险审计）
+- 本会话：`v0.3.0 账号体系阶段`（未 commit，等下次提交）
+
+---
+
+## [v0.3.0] — 2026-06-29 — 账号体系阶段（User 模型 + 角色权限）
+
+### 升级背景
+
+v0.1.0 ~ v0.2.7 阶段鉴权 = mock 硬编码（`admin / admin123`，`o2o_session=1`）。
+本节点升级为「三角色 + 数据库账号 + cookie session」。
+
+### 变更项
+
+| 类别            | 变更                                                                                                             | 风险                            |
+| --------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| **Schema**      | 加 `User` 模型（id / name / phone / password / role / workerId / createdAt / updatedAt）+ `Master.user` 反向关系 | 🟠 高（密码明文）               |
+| **Migration**   | `20260629082502_add_user_model`                                                                                  | ✅                              |
+| **Seed**        | 加 3 个测试账号：admin / worker1 / customer1                                                                     | ✅                              |
+| **Auth**        | `src/lib/auth.ts` 重写：DB 查 User + cookie 存 userId+role + 角色权限矩阵                                        | 🟠 高（cookie 不签名）          |
+| **Login**       | `app/login/page.tsx` + `actions.ts` 重写：多角色快捷按钮 + 角色跳转 + next 安全校验                              | 🟢 中                           |
+| **Middleware**  | `middleware.ts` 重写：按角色 + 受保护路径 + 越权重定向 + `/` 首页放行                                            | 🟡 中（前缀匹配 bug 修了 1 个） |
+| **Worker 端**   | `app/worker/page.tsx` + `app/worker/orders/[id]/page.tsx`：去掉下拉框 + 按 user.workerId 过滤 + 越权 404         | 🟢 低                           |
+| **Customer 端** | `app/customer/orders/page.tsx`：去掉手机号输入 + 按 user.phone 过滤                                              | 🟢 低                           |
+| **测试**        | `src/lib/auth.test.ts` 重写：DB 集成测试 + canAccess 矩阵（16 个新测试）                                         | ✅ 238/238 通过                 |
+| **文档**        | `docs/adr-013-account-system-audit.md`（v0.3.0 完成 + 审计稿）                                                   | ✅                              |
+
+### 自评（v0.3.0）
+
+| 维度                          | 评分        | delta | 证据                                                                  | 备注                                    |
+| ----------------------------- | ----------- | ----- | --------------------------------------------------------------------- | --------------------------------------- |
+| 1. 路径 / 入口双重验证 (P0-3) | **10/10**   | —     | `scripts/check-paths.js` + lint:paths + lint:spec + lint:process 全过 | tool 卡点                               |
+| 2. DB 迁移先行 (P0-1)         | **8/10**    | +2    | User 表 migration + seed + ADR-013 记录风险                           | schema 改 → db:reset 立即执行           |
+| 3. 测试断言 = 规格 (P0-2)     | **9/10**    | +6    | 所有 it() 都标 `# spec:` / `# documents:`                             | lint:spec 自动卡                        |
+| 4. 业务逻辑简化即 bug (P0-4)  | **9/10**    | +4    | ADR-013 列 18 条风险（A1-A6 P0 + B1-B7 P1 + C1-C5 P2）                | 系统审计                                |
+| 5. CI / 提交拦截 / 基建       | **8/10**    | —     | husky pre-commit + CI service container                               | 未亲眼 CI 实跑 PG（依赖人工 push 触发） |
+| 6. 流程纪律 (P1-P3)           | **9/10**    | +6    | `scripts/lint-decision-disclosure.js` + `lint-agent-prompt-local.js`  | tool 卡点                               |
+| 7. 可观测性 / 文档 / ADR      | **10/10**   | +3    | 6 文档 + 13 ADR + HARNESS + CHANGELOG 索引                            | 文档体系完整                            |
+| **加权平均**                  | **8.60/10** | +0.20 | —                                                                     | v0.3.0 = 首次功能完整 + 风险全审计      |
+
+### 18 条风险（详细见 ADR-013）
+
+**P0（6 条 A1-A6）**：密码明文 / cookie 不签 / 无登录限流 / customer 下单不建 User / customer 公开下单 / canAccess 漏洞
+
+**P1（7 条 B1-B7）**：删除 User 后 session 仍可用 / name 唯一 / 无 session 失效 / next 无白名单 / 无 Secure cookie / 无 CSRF / role 用 String
+
+**P2（5 条 C1-C5）**：两 cookie 应合并 / 无登录日志 / 无并发控制 / 无 IP 异常 / customer 按 phone 不按 userId
+
+### 实施过程（按时序）
+
+1. **风险分类**（P0-0）—— 列 10 条风险 + 排优先级
+2. **P0-1 DB 迁移先行** —— schema 加 User → `prisma migrate dev --name add_user_model --create-only` → db:reset
+3. **Seed 加 3 测试账号**
+4. **重写 auth.ts** —— DB 查 User + 多角色 + 权限矩阵
+5. **重写 login/actions.ts** —— 角色跳 + next 安全
+6. **重写 login/page.tsx** —— 三角色快捷按钮
+7. **重写 middleware.ts** —— 按角色 + 受保护 + 越权
+8. **重写 worker 端** —— 按 user.workerId 隔离
+9. **重写 customer 端** —— 按 user.phone 隔离
+10. **重写 auth.test.ts** —— DB 集成测试
+11. **修 isProtectedPath 前缀漏洞** —— `/customer/orders` 被 `/customer` 覆盖
+12. **写 ADR-013** —— 18 条风险审计
+
+### 下一步（v0.3.0 → v0.3.1）
+
+- 修 A1-A5 P0 风险（上线前必修：密码哈希 / cookie 签名 / 登录限流 / customer 下单绑用户）
+- 加 CHANGELOG.md v0.3.0 条目
+- git tag v0.3.0

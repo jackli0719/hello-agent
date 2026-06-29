@@ -143,7 +143,7 @@
 
 ## 4. 数据模型
 
-详见 `prisma/schema.prisma`（带完整注释）。下面是 5 张表的核心要点：
+详见 `prisma/schema.prisma`（带完整注释）。下面是 6 张表的核心要点（**[v0.3.0]** 新增 `User` 表）：
 
 ### 4.1 关系图
 
@@ -152,12 +152,22 @@ ServiceCategory 1 ──── N ServiceSku
                             │
                             │  N
                             ▼
-                          Order N ──── 1 Master
-                            │            ▲
-                            │            │ (冗余快照 serviceName / masterName)
-                            ▼
-                       DispatchRule (间接：ruleJson.match.skuId|categoryId)
+                          Order N ──── 1 Master ──── 0..1 User (worker 账号)
+                            │            ▲              │
+                            │            │              │ (冗余快照 serviceName / masterName)
+                            ▼            │              │
+                       DispatchRule       │            1:1 (role=worker)
+                       (间接：ruleJson.   │
+                        match.skuId       │
+                        |categoryId)      │
+                                          ▼
+                                       User (admin / customer)
 ```
+
+**[v0.3.0]** `User` 表新增：
+
+- `User.workerId → Master.id`（role=worker 时一对一）
+- `Master.user → User?`（反向关系）
 
 ### 4.2 字段要点
 
@@ -168,6 +178,7 @@ ServiceCategory 1 ──── N ServiceSku
 | **Master**          | `skills`（JSON 字符串）、`status`、`serviceArea`（自由文本）          | `status` UI 不暴露（系统自动管）；`serviceArea` 字段已存但匹配逻辑没做 |
 | **Order**           | `id`（业务号 `O+YYYYMMDD+xxxx`）、`amount`（分）、`status`            | `serviceName`/`masterName` **冗余快照**，防止 SKU/师傅改名影响历史     |
 | **DispatchRule**    | `ruleJson`（JSON：`{match, requiredSkills}`）                         | UI 字段（skuCode/categoryCode）→ repo 层反查 ID 写入                   |
+| **[v0.3.0] User**   | `name`（unique）、`role`、`workerId?`、`phone?`                       | 密码明文存（# MVP）；三角色：admin/worker/customer                     |
 
 ### 4.3 核心约束
 
@@ -704,5 +715,10 @@ P0-1 DB迁移 [3.4h]
 - [README.md](../README.md) — 30s hook + 5 分钟快速上手 + FAQ
 - [docs/DEMO.md](DEMO.md) — 4 步演示脚本 + 验收打勾
 - [docs/DEPLOYMENT.md](DEPLOYMENT.md) — 部署 / SQLite 限制 / Postgres 迁移
+- [docs/HARNESS.md](HARNESS.md) — 工程化能力评估（HARNESS 自评 + 节点历史）
 - [docs/FEEDBACK.md](FEEDBACK.md) — 试用反馈模板
+- [docs/adr-012-simplification-audit.md](adr-012-simplification-audit.md) — v0.2.7 简化即 bug 系统审计
+- [docs/adr-013-account-system-audit.md](adr-013-account-system-audit.md) — v0.3.0 账号体系 + 18 条风险审计
+- [docs/postgresql-migration.md](postgresql-migration.md) — SQLite → PostgreSQL 迁移评估
+- [docs/sqlite-to-postgres-data-migration.md](sqlite-to-postgres-data-migration.md) — 数据迁移实操手册
 - **本文档** — 系统架构 + ADR + 路线图

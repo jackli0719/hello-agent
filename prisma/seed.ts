@@ -2,11 +2,7 @@
 // 运行：`npm run db:seed`（依赖 db:push 先建好表）
 
 import { PrismaClient } from "@prisma/client";
-import {
-  MOCK_ORDERS,
-  MOCK_SERVICES,
-  MOCK_TECHNICIANS,
-} from "../lib/mock-data";
+import { MOCK_ORDERS, MOCK_SERVICES, MOCK_TECHNICIANS } from "../lib/mock-data";
 import { assertValidCode } from "../src/lib/codes";
 
 const prisma = new PrismaClient();
@@ -20,7 +16,10 @@ const prisma = new PrismaClient();
  *
  * db:reset 路径（先 deleteMany 再 seed）这个函数返回空数组，不影响流程。
  */
-async function checkOrphanedReferences(): Promise<{ sku: string[]; category: string[] }> {
+async function checkOrphanedReferences(): Promise<{
+  sku: string[];
+  category: string[];
+}> {
   const newSkuCodes = new Set(MOCK_SERVICES.map((s) => s.skuCode));
   const newCategoryCodes = new Set(MOCK_SERVICES.map((s) => s.categoryCode));
 
@@ -31,7 +30,9 @@ async function checkOrphanedReferences(): Promise<{ sku: string[]; category: str
   });
   const orphanedSkus = usedSkuCodes
     .map((r) => r.serviceSku?.skuCode)
-    .filter((code): code is string => code !== undefined && !newSkuCodes.has(code));
+    .filter(
+      (code): code is string => code !== undefined && !newSkuCodes.has(code),
+    );
   const uniqueOrphanedSkus = Array.from(new Set(orphanedSkus));
 
   // 同理检查 category（Order 不直接引 category，但 Master.skills 可能引；
@@ -52,7 +53,10 @@ async function main() {
 
   // ----- 0. 校验所有业务编码格式（先报错，不要让坏数据进 DB） -----
   for (const s of MOCK_SERVICES) {
-    assertValidCode(s.categoryCode, `ServiceCategory.categoryCode for "${s.name}"`);
+    assertValidCode(
+      s.categoryCode,
+      `ServiceCategory.categoryCode for "${s.name}"`,
+    );
     assertValidCode(s.skuCode, `ServiceSku.skuCode for "${s.name}"`);
   }
 
@@ -61,7 +65,9 @@ async function main() {
   if (orphans.sku.length > 0 || orphans.category.length > 0) {
     const lines: string[] = [];
     if (orphans.sku.length > 0) {
-      lines.push(`  被订单引用的 SKU code（seed 中已不存在）: ${orphans.sku.join(", ")}`);
+      lines.push(
+        `  被订单引用的 SKU code（seed 中已不存在）: ${orphans.sku.join(", ")}`,
+      );
     }
     if (orphans.category.length > 0) {
       lines.push(`  已下架的类目 code: ${orphans.category.join(", ")}`);
@@ -72,6 +78,7 @@ async function main() {
   }
 
   // ----- 1. 清表（按依赖倒序） -----
+  await prisma.user.deleteMany();
   await prisma.order.deleteMany();
   await prisma.serviceSku.deleteMany();
   await prisma.serviceCategory.deleteMany();
@@ -81,7 +88,9 @@ async function main() {
 
   // ----- 2. ServiceCategory -----
   // 同一类目名共享一个 categoryCode（从 SKU 上拿第一个）
-  const categoryNames = Array.from(new Set(MOCK_SERVICES.map((s) => s.category)));
+  const categoryNames = Array.from(
+    new Set(MOCK_SERVICES.map((s) => s.category)),
+  );
   const categoryCodeByName = new Map<string, string>();
   for (const s of MOCK_SERVICES) {
     if (!categoryCodeByName.has(s.category)) {
@@ -134,6 +143,38 @@ async function main() {
   }
   console.log(`  ✓ Master × ${MOCK_TECHNICIANS.length}`);
 
+  // ----- 4.5. User（账号体系）-----
+  // 测试账号：admin / worker1 / customer1
+  // # MVP: password 明文存（按需求）
+  await prisma.user.createMany({
+    data: [
+      {
+        name: "admin",
+        phone: null,
+        password: "admin123",
+        role: "admin",
+        workerId: null,
+      },
+      {
+        // 绑第一个 Master（演示用）
+        name: "worker1",
+        phone: MOCK_TECHNICIANS[0]?.phone ?? "13900000001",
+        password: "worker123",
+        role: "worker",
+        workerId: MOCK_TECHNICIANS[0]?.id ?? null,
+      },
+      {
+        name: "customer1",
+        // 用一个测试手机号（seed 订单里也用这个号，方便演示）
+        phone: "13900000099",
+        password: "customer123",
+        role: "customer",
+        workerId: null,
+      },
+    ],
+  });
+  console.log(`  ✓ User × 3（admin / worker1 / customer1）`);
+
   // ----- 5. Order -----
   const skuByName = new Map(MOCK_SERVICES.map((s) => [s.name, s.id]));
   const masterByName = new Map(MOCK_TECHNICIANS.map((m) => [m.name, m.id]));
@@ -146,7 +187,9 @@ async function main() {
         customerPhone: o.customerPhone,
         serviceSkuId: skuByName.get(o.serviceName) ?? null,
         serviceName: o.serviceName,
-        masterId: o.technicianName ? masterByName.get(o.technicianName) ?? null : null,
+        masterId: o.technicianName
+          ? (masterByName.get(o.technicianName) ?? null)
+          : null,
         masterName: o.technicianName,
         address: o.address,
         scheduledAt: new Date(o.scheduledAt),
@@ -198,6 +241,7 @@ async function main() {
     masters: await prisma.master.count(),
     orders: await prisma.order.count(),
     rules: await prisma.dispatchRule.count(),
+    users: await prisma.user.count(),
   };
   console.log("📊 当前数据：", counts);
 
@@ -205,7 +249,8 @@ async function main() {
     counts.categories !== categoryNames.length ||
     counts.skus !== MOCK_SERVICES.length ||
     counts.masters !== MOCK_TECHNICIANS.length ||
-    counts.orders !== MOCK_ORDERS.length
+    counts.orders !== MOCK_ORDERS.length ||
+    counts.users !== 3
   ) {
     throw new Error("seed 后行数对不上，请检查");
   }
