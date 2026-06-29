@@ -5,6 +5,36 @@ O2O 上门服务 MVP 的所有变更记录，按 [Keep a Changelog 1.1.0](https:
 
 ---
 
+## [v0.2.2] — 2026-06-29 — harness patch：真的卡点生效 + 算术修正
+
+**Tag**：`harness-v0.2.2` · **变更类型**：harness patch（修复 v0.2.1 的两个偏差 + 真卡点）
+
+### Added
+
+- `scripts/check-spec-tags.js` —— 强制每个 it() 块必须有 # spec: 或 # documents: 注释
+- `npm run lint:spec` script + 接入 `npm run check` 链
+- 222 个 it 级 spec 注释（覆盖 100%） + 14 个 describe 注释（新发现的 6 个测试文件）
+- `.github/PULL_REQUEST_TEMPLATE.md` —— CLAUDE.md P2-3 强制 4 段
+- `.claude/CLAUDE.local.md` —— 实验性 P1-P3 工具卡文件（**未验证是否生效**）
+
+### Changed
+
+- `package.json` —— `check` 链改 `tsc + lint:paths + lint:spec`
+
+### Fixed
+
+- **v0.2.1 算术错误**：维度 3 自评 6.40 → 真实 6.30（本节修正）
+- **v0.2.1 describe 级 = 自我欺骗**：v0.2.1 我说「100% 覆盖」，**只对了 describe**，**171 个 it 块 0 标**——本节真补到 it 级 100%
+- **v0.2.1 决策回报编造数字**：「lib/dispatch.test.ts 31 处 spec」是错的——实际 0 标，v0.2.2 补到 14 it + 2 describe
+
+### Known Risks（v0.2.2 节点）
+
+- `.claude/CLAUDE.local.md` 是否真被 Claude Code 加载**未经实跑验证**——下次会话观察；若不生效 → v0.2.3 回滚
+- `.github/PULL_REQUEST_TEMPLATE.md` 项目未推 GitHub，模板就位但**未生效**
+- coverage baseline 数据 vitest 工具限制未真提取
+
+---
+
 ## [v0.2.1] — 2026-06-29 — harness patch：维度 3 spec 注释 100% 覆盖
 
 **Tag**：`harness-v0.2.1` · **变更类型**：harness patch（不动 P0 节奏）

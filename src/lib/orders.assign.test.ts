@@ -53,6 +53,7 @@ describe("assignOrder — 端到端", () => {
     await resetOrder("O20260624003", "assigned", "T002", "赵师傅");
   });
 
+  // # spec: 派单核心路径 — pending + 推荐里 available 师傅 → 订单 assigned + 师傅转 busy
   it("pending + 推荐里的师傅 → 派单成功：订单 assigned，师傅变 busy", async () => {
     const r = await assignOrder("O20260624002", "T004");
     expect(r.ok).toBe(true);
@@ -72,6 +73,7 @@ describe("assignOrder — 端到端", () => {
     expect(tech?.status).toBe("busy");
   });
 
+  // # spec: 派单规则命中 — 类目兜底规则 + 保洁技能师傅能正常被派单
   it("类目兜底规则下的派单：日常保洁 → 李师傅", async () => {
     const r = await assignOrder("O20260625009", "T001");
     expect(r.ok).toBe(true);
@@ -84,6 +86,7 @@ describe("assignOrder — 端到端", () => {
     expect(order?.masterId).toBe("T001");
   });
 
+  // # spec: 派单拒绝 — 订单 id 不存在时拒绝（category=validation，错误信息含「不存在」）
   it("订单不存在 → validation 错误", async () => {
     const r = await assignOrder("NOT-EXIST", "T004");
     expect(r.ok).toBe(false);
@@ -92,6 +95,7 @@ describe("assignOrder — 端到端", () => {
     expect(r.error).toMatch(/不存在/);
   });
 
+  // # spec: 派单拒绝 — 师傅 id 不存在时拒绝（category=validation）
   it("师傅不存在 → validation 错误", async () => {
     const r = await assignOrder("O20260624002", "NOT-A-MASTER");
     expect(r.ok).toBe(false);
@@ -99,6 +103,7 @@ describe("assignOrder — 端到端", () => {
     expect(r.category).toBe("validation");
   });
 
+  // # spec: 派单拒绝 — 已派单订单不能重复派单，原师傅信息保留不变
   it("已派单订单 → validation 错误「不能重复派单」", async () => {
     const r = await assignOrder("O20260624003", "T004");
     expect(r.ok).toBe(false);
@@ -114,6 +119,7 @@ describe("assignOrder — 端到端", () => {
     expect(order?.masterName).toBe("赵师傅");
   });
 
+  // # spec: 派单拒绝 — busy 师傅即使技能匹配也不能被派单
   it("师傅 busy → validation 错误", async () => {
     // T002 是 busy（resetMasterStatuses 设的）— 即使技能对也不让派
     const r = await assignOrder("O20260624002", "T002");
@@ -123,6 +129,7 @@ describe("assignOrder — 端到端", () => {
     expect(r.error).toMatch(/不可派单|busy/);
   });
 
+  // # spec: 派单拒绝 — offline 师傅不能被派单
   it("师傅 offline → validation 错误", async () => {
     const r = await assignOrder("O20260624002", "T005"); // T005 是 offline
     expect(r.ok).toBe(false);
@@ -130,6 +137,7 @@ describe("assignOrder — 端到端", () => {
     expect(r.category).toBe("validation");
   });
 
+  // # spec: 派单规则二次校验 — 师傅即使 available 但不符合规则也被拒（防前端改包）
   it("师傅不符合推荐规则 → validation 错误（防止前端改包）", async () => {
     // T005 技能是 ["开锁","管道疏通"] — 不符合 S003 要求的 ["空调维修"]
     // 而且 T005 是 offline — 但即使改成 available 也应该被拒
@@ -148,6 +156,7 @@ describe("assignOrder — 端到端", () => {
     }
   });
 
+  // # spec: 派单并发安全 — 师傅被并发改成 busy 时 updateMany 仍能完成派单
   it("并发安全：师傅刚好被别人改成 busy 时 updateMany 不报错", async () => {
     // 先把 T004 改回 available（reset 后本来就是），然后模拟「同时被改 busy」
     await prisma.master.update({
@@ -162,6 +171,7 @@ describe("assignOrder — 端到端", () => {
     expect(after?.status).toBe("busy");
   });
 
+  // # spec: 派单乐观锁防并发抢单 — 订单已 assigned 时第二个 assignOrder 被拒
   it("并发抢单：订单已被另一个 assignOrder 改成 assigned → 第二个 assignOrder 失败", async () => {
     // 模拟「第一个用户先派单成功」
     const first = await assignOrder("O20260624002", "T004");

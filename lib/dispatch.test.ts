@@ -33,6 +33,7 @@ function makeRule(overrides: Partial<DispatchRuleRow>): DispatchRuleRow {
 }
 
 describe("parseRuleJson", () => {
+  // # spec: parseRuleJson 把 JSON 字符串转成 {match, requiredSkills}，不合法或非 JSON 返回 null
   it("解析完整 ruleJson", () => {
     const spec = parseRuleJson(
       JSON.stringify({
@@ -47,6 +48,7 @@ describe("parseRuleJson", () => {
     expect(spec.requiredSkills).toEqual(["空调维修"]);
   });
 
+  // # spec: 缺 match/requiredSkills 时用默认值（match={}，requiredSkills=[]）
   it("空字段用默认值", () => {
     const spec = parseRuleJson("{}");
     expect(spec).not.toBeNull();
@@ -55,6 +57,7 @@ describe("parseRuleJson", () => {
     expect(spec.requiredSkills).toEqual([]);
   });
 
+  // # spec: requiredSkills 非字符串元素必须被过滤掉，只保留字符串
   it("requiredSkills 里塞非字符串会被过滤", () => {
     const spec = parseRuleJson(
       JSON.stringify({ match: {}, requiredSkills: ["保洁", 42, null, "家电"] }),
@@ -64,24 +67,33 @@ describe("parseRuleJson", () => {
     expect(spec.requiredSkills).toEqual(["保洁", "家电"]);
   });
 
+  // # documents current behavior: 之前 throw，现在返 null（让上游过滤）
   it("非 JSON 字符串 → 返回 null", () => {
     // 关键：之前是 throw，现在返回 null 让上游过滤
     const spec = parseRuleJson("这不是 JSON");
     expect(spec).toBeNull();
   });
 
+  // # documents current behavior: match 非对象也返 null（不抛），上游过滤
   it("不匹配 schema → 返回 null", () => {
     // match 应该是对象，但传了字符串
-    const spec = parseRuleJson(JSON.stringify({ match: "not-an-object", requiredSkills: [] }));
+    const spec = parseRuleJson(
+      JSON.stringify({ match: "not-an-object", requiredSkills: [] }),
+    );
     expect(spec).toBeNull();
   });
 });
 
 describe("recommendMastersForOrder", () => {
+  // # spec: 派单按规则匹配师傅，无规则命中时返人工指派（rule=null, candidates=[]）
   it("没有规则覆盖 → rule=null, candidates=[]", () => {
     const r = recommendMastersForOrder({
       order: { skuId: "S003", categoryId: "cat-1" },
-      rules: [makeRule({ spec: { match: { categoryId: "other" }, requiredSkills: [] } })],
+      rules: [
+        makeRule({
+          spec: { match: { categoryId: "other" }, requiredSkills: [] },
+        }),
+      ],
       masters: [makeMaster({ skills: ["空调维修"] })],
     });
     expect(r.rule).toBeNull();
@@ -89,6 +101,7 @@ describe("recommendMastersForOrder", () => {
     expect(r.reason).toMatch(/人工指派/);
   });
 
+  // # spec: SKU 规则命中时，候选人按 rating 降序、reason 含规则名
   it("SKU 精确规则命中：requiredSkills=['空调维修']，师傅技能覆盖", () => {
     const r = recommendMastersForOrder({
       order: { skuId: "S003", categoryId: "cat-1" },
@@ -101,8 +114,20 @@ describe("recommendMastersForOrder", () => {
         }),
       ],
       masters: [
-        makeMaster({ id: "M1", name: "孙师傅", skills: ["空调维修", "家电维修"], rating: 4.6, status: "available" }),
-        makeMaster({ id: "M2", name: "王师傅", skills: ["空调维修"], rating: 4.9, status: "available" }),
+        makeMaster({
+          id: "M1",
+          name: "孙师傅",
+          skills: ["空调维修", "家电维修"],
+          rating: 4.6,
+          status: "available",
+        }),
+        makeMaster({
+          id: "M2",
+          name: "王师傅",
+          skills: ["空调维修"],
+          rating: 4.9,
+          status: "available",
+        }),
       ],
     });
     expect(r.rule?.id).toBe("R-SKU");
@@ -113,6 +138,7 @@ describe("recommendMastersForOrder", () => {
     expect(r.reason).toMatch(/R-SKU/);
   });
 
+  // # spec: 同类规则多条时，按 priority 降序选第一（SKU 精确 > 类目兜底）
   it("SKU 精确优先于类目兜底", () => {
     const r = recommendMastersForOrder({
       order: { skuId: "S003", categoryId: "cat-1" },
@@ -135,6 +161,7 @@ describe("recommendMastersForOrder", () => {
     expect(r.rule?.id).toBe("R-SKU");
   });
 
+  // # spec: 无 SKU 规则命中时退到 categoryId 规则（类目兜底）
   it("没 SKU 规则时走类目兜底", () => {
     const r = recommendMastersForOrder({
       order: { skuId: "S001", categoryId: "cat-jiazheng" },
@@ -143,7 +170,10 @@ describe("recommendMastersForOrder", () => {
           id: "R-CAT",
           name: "家政类目",
           priority: 10,
-          spec: { match: { categoryId: "cat-jiazheng" }, requiredSkills: ["保洁"] },
+          spec: {
+            match: { categoryId: "cat-jiazheng" },
+            requiredSkills: ["保洁"],
+          },
         }),
       ],
       masters: [
@@ -157,29 +187,46 @@ describe("recommendMastersForOrder", () => {
     expect(r.candidates[0].id).toBe("M1");
   });
 
+  // # spec: 师傅技能集合是 requiredSkills 的超集（every 都包含）才算候选
   it("师傅技能必须**覆盖** requiredSkills（多技能要求）", () => {
     const r = recommendMastersForOrder({
       order: { skuId: "S-x", categoryId: "cat-x" },
       rules: [
         makeRule({
-          spec: { match: { skuId: "S-x" }, requiredSkills: ["保洁", "家电清洗"] },
+          spec: {
+            match: { skuId: "S-x" },
+            requiredSkills: ["保洁", "家电清洗"],
+          },
         }),
       ],
       masters: [
         // 只会有一个师傅覆盖两个技能
-        makeMaster({ id: "M-LI", name: "李师傅", skills: ["保洁", "家电清洗"], status: "available" }),
-        makeMaster({ id: "M-WANG", name: "王师傅", skills: ["保洁"], status: "available" }),
+        makeMaster({
+          id: "M-LI",
+          name: "李师傅",
+          skills: ["保洁", "家电清洗"],
+          status: "available",
+        }),
+        makeMaster({
+          id: "M-WANG",
+          name: "王师傅",
+          skills: ["保洁"],
+          status: "available",
+        }),
       ],
     });
     expect(r.candidates.length).toBe(1);
     expect(r.candidates[0].id).toBe("M-LI");
   });
 
+  // # spec: 候选只取 status=available 的师傅，busy/offline 不进池
   it("师傅 status 必须 available", () => {
     const r = recommendMastersForOrder({
       order: { skuId: "S003", categoryId: null },
       rules: [
-        makeRule({ spec: { match: { skuId: "S003" }, requiredSkills: ["空调维修"] } }),
+        makeRule({
+          spec: { match: { skuId: "S003" }, requiredSkills: ["空调维修"] },
+        }),
       ],
       masters: [
         makeMaster({ id: "BUSY", skills: ["空调维修"], status: "busy" }),
@@ -191,6 +238,7 @@ describe("recommendMastersForOrder", () => {
     expect(r.candidates[0].id).toBe("FREE");
   });
 
+  // # spec: 候选为空时 reason 必须含规则名和 requiredSkills，方便排查
   it("没候选时 reason 包含规则名 + 技能要求", () => {
     const r = recommendMastersForOrder({
       order: { skuId: "S003", categoryId: null },
@@ -208,6 +256,7 @@ describe("recommendMastersForOrder", () => {
     expect(r.reason).toMatch(/空调维修/);
   });
 
+  // # spec: 派单匹配只看 enabled=true 的规则，disabled 不进候选池
   it("disabled 规则被忽略", () => {
     const r = recommendMastersForOrder({
       order: { skuId: "S003", categoryId: null },
@@ -222,12 +271,21 @@ describe("recommendMastersForOrder", () => {
     expect(r.rule).toBeNull();
   });
 
+  // # spec: 同优先级多条规则，priority 降序排第一，相同时按 id 字典序
   it("同类型多条规则按 priority 降序，再按 id 字典序", () => {
     const r = recommendMastersForOrder({
       order: { skuId: "S003", categoryId: null },
       rules: [
-        makeRule({ id: "R-A", priority: 50, spec: { match: { skuId: "S003" }, requiredSkills: ["空调维修"] } }),
-        makeRule({ id: "R-B", priority: 100, spec: { match: { skuId: "S003" }, requiredSkills: ["空调维修"] } }),
+        makeRule({
+          id: "R-A",
+          priority: 50,
+          spec: { match: { skuId: "S003" }, requiredSkills: ["空调维修"] },
+        }),
+        makeRule({
+          id: "R-B",
+          priority: 100,
+          spec: { match: { skuId: "S003" }, requiredSkills: ["空调维修"] },
+        }),
       ],
       masters: [makeMaster({ skills: ["空调维修"] })],
     });

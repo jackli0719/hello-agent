@@ -64,6 +64,7 @@ const validOrder = {
 // ============================================================
 
 describe("createOrderAction — FormData 解析", () => {
+  // # spec: createOrderAction 把 FormData 解析 + 校验，非法字段返 ok:false+field，不抛
   it("空表单 → 字段级错误（first fail 是 customerName）", async () => {
     const r = await createOrderAction(fd({}));
     expect(r).not.toBeNull();
@@ -71,6 +72,7 @@ describe("createOrderAction — FormData 解析", () => {
     expect(r.ok).toBe(false);
   });
 
+  // # documents current behavior: categoryCode="" → normalizeCode → "" → undefined（向后兼容）
   it("categoryCode 空字符串被 normalize 成 undefined", async () => {
     // 合法 + categoryCode="" → 服务端跳过配对校验 → 应该走到 SKU 查表 + 写库 + redirect
     // redirect 在单测环境抛错 — 抓住「走到 redirect 了」的事实
@@ -83,6 +85,7 @@ describe("createOrderAction — FormData 解析", () => {
     expect(threwRedirectLikeError).toBe(true);
   });
 
+  // # documents current behavior: 合法 FormData 走完校验 → DB 写入 → redirect（redirect 抛错间接证明走到了）
   it("categoryCode 传值 → 走到 redirect 路径", async () => {
     let threwRedirectLikeError = false;
     try {
@@ -93,8 +96,11 @@ describe("createOrderAction — FormData 解析", () => {
     expect(threwRedirectLikeError).toBe(true);
   });
 
+  // # spec: scheduledAt 必须是合法日期字符串，否则返 ok:false + field=scheduledAt
   it("scheduledAt 非日期字符串 → 校验失败回返（不抛）", async () => {
-    const r = await createOrderAction(fd({ ...validOrder, scheduledAt: "不是日期" }));
+    const r = await createOrderAction(
+      fd({ ...validOrder, scheduledAt: "不是日期" }),
+    );
     expect(r).not.toBeNull();
     if (!r) return;
     expect(r.ok).toBe(false);
@@ -102,6 +108,7 @@ describe("createOrderAction — FormData 解析", () => {
     expect(r.field).toBe("scheduledAt");
   });
 
+  // # spec: scheduledAt 必须能解析成 Date，非法字符串返 field=scheduledAt
   it("amount 非数字字符串 → 校验失败回返", async () => {
     const r = await createOrderAction(fd({ ...validOrder, amount: "abc" }));
     expect(r).not.toBeNull();
@@ -111,6 +118,7 @@ describe("createOrderAction — FormData 解析", () => {
     expect(r.field).toBe("amount");
   });
 
+  // # spec: amount 必须可转 Number，非法字符串返 field=amount
   it("skuCode 和 categoryCode 配对错误 → 校验失败回返", async () => {
     const r = await createOrderAction(
       fd({ ...validOrder, skuCode: "CLEAN-DAILY-2H", categoryCode: "REPAIR" }),
@@ -128,21 +136,26 @@ describe("createOrderAction — FormData 解析", () => {
 // ============================================================
 
 describe("cancelDispatchAction", () => {
+  // # spec: cancelDispatchAction 撤销已派单：order→cancelled，master busy→available，释放前 masterName 快照
   beforeEach(() => resetOrder("O20260624003", "assigned", "T002", "赵师傅"));
   afterEach(() => resetOrder("O20260624003", "assigned", "T002", "赵师傅"));
 
+  // # spec: assigned 订单撤销派单：order→cancelled，master busy→available，masterName 快照返回
   it("assigned 订单 → 订单回 cancelled，师傅回 available", async () => {
     const r = await cancelDispatchAction("O20260624003");
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.masterName).toBe("赵师傅"); // 释放前的名字（snapshot）
 
-    const order = await prisma.order.findUnique({ where: { id: "O20260624003" } });
+    const order = await prisma.order.findUnique({
+      where: { id: "O20260624003" },
+    });
     expect(order?.status).toBe("cancelled");
     const tech = await prisma.master.findUnique({ where: { id: "T002" } });
     expect(tech?.status).toBe("available");
   });
 
+  // # spec: 撤销派单只能撤 assigned；pending 没派单则返「没有需要释放」
   it("pending 订单 → validation「没有需要释放」", async () => {
     const r = await cancelDispatchAction("O20260624002"); // pending
     expect(r.ok).toBe(false);
@@ -151,6 +164,7 @@ describe("cancelDispatchAction", () => {
     expect(r.error).toMatch(/没有需要释放/);
   });
 
+  // # spec: 订单 ID 不存在时返 validation，不抛
   it("订单不存在 → validation", async () => {
     const r = await cancelDispatchAction("NOT-EXIST");
     expect(r.ok).toBe(false);
@@ -158,6 +172,7 @@ describe("cancelDispatchAction", () => {
     expect(r.error).toMatch(/不存在/);
   });
 
+  // # spec: 终态订单（completed/cancelled）不能再退派单
   it("completed 订单 → validation（已终态，不能再退）", async () => {
     const r = await cancelDispatchAction("O20260623007"); // completed
     expect(r.ok).toBe(false);
@@ -171,6 +186,7 @@ describe("cancelDispatchAction", () => {
 // ============================================================
 
 describe("startServiceAction", () => {
+  // # spec: startServiceAction 把 assigned→in_service，master 保持 busy（服务中不释放）
   beforeEach(async () => {
     await resetMasterStatuses();
     await resetOrder("O20260624003", "assigned", "T002", "赵师傅");
@@ -180,17 +196,21 @@ describe("startServiceAction", () => {
     await resetOrder("O20260624003", "assigned", "T002", "赵师傅");
   });
 
+  // # spec: assigned 订单开始服务：order→in_service，master 保持 busy（服务中不释放）
   it("assigned 订单 → in_service（师傅保持 busy）", async () => {
     const r = await startServiceAction("O20260624003");
     expect(r.ok).toBe(true);
     if (!r.ok) return;
 
-    const order = await prisma.order.findUnique({ where: { id: "O20260624003" } });
+    const order = await prisma.order.findUnique({
+      where: { id: "O20260624003" },
+    });
     expect(order?.status).toBe("in_service");
     const tech = await prisma.master.findUnique({ where: { id: "T002" } });
     expect(tech?.status).toBe("busy"); // in_service 不释放
   });
 
+  // # spec: 必须先派单（assigned）才能开始服务，pending 直接拒
   it("pending 订单 → validation 拒", async () => {
     const r = await startServiceAction("O20260624002");
     expect(r.ok).toBe(false);
@@ -198,6 +218,7 @@ describe("startServiceAction", () => {
     expect(r.category).toBe("validation");
   });
 
+  // # spec: startService 订单不存在时返 validation「不存在」，不抛
   it("订单不存在 → validation", async () => {
     const r = await startServiceAction("NOT-EXIST");
     expect(r.ok).toBe(false);
@@ -207,6 +228,7 @@ describe("startServiceAction", () => {
 });
 
 describe("completeOrderAction", () => {
+  // # spec: completeOrderAction 把 in_service→completed，并释放 master busy→available
   beforeEach(async () => {
     await resetMasterStatuses();
     await resetOrder("O20260624001", "in_service", "T001", "李师傅");
@@ -216,16 +238,20 @@ describe("completeOrderAction", () => {
     await resetOrder("O20260624001", "in_service", "T001", "李师傅");
   });
 
+  // # spec: in_service 订单完成：order→completed，master busy→available（关键：完成必须释放）
   it("in_service 订单 → completed（师傅释放 busy → available）", async () => {
     const r = await completeOrderAction("O20260624001");
     expect(r.ok).toBe(true);
 
-    const order = await prisma.order.findUnique({ where: { id: "O20260624001" } });
+    const order = await prisma.order.findUnique({
+      where: { id: "O20260624001" },
+    });
     expect(order?.status).toBe("completed");
     const tech = await prisma.master.findUnique({ where: { id: "T001" } });
     expect(tech?.status).toBe("available"); // 关键：完成释放
   });
 
+  // # spec: 必须先 startService（in_service）才能完成，assigned 直接拒
   it("assigned 订单 → validation 拒（必须先开始服务）", async () => {
     const r = await completeOrderAction("O20260624003"); // assigned
     expect(r.ok).toBe(false);
@@ -235,6 +261,7 @@ describe("completeOrderAction", () => {
 });
 
 describe("cancelOrderAction", () => {
+  // # spec: cancelOrderAction 把订单→cancelled，并释放 master busy→available（任意非终态都可）
   beforeEach(async () => {
     await resetMasterStatuses();
     await resetOrder("O20260624003", "assigned", "T002", "赵师傅");
@@ -244,16 +271,20 @@ describe("cancelOrderAction", () => {
     await resetOrder("O20260624003", "assigned", "T002", "赵师傅");
   });
 
+  // # spec: assigned 订单取消：order→cancelled，master busy→available
   it("assigned 订单 → cancelled + 师傅释放", async () => {
     const r = await cancelOrderAction("O20260624003");
     expect(r.ok).toBe(true);
 
-    const order = await prisma.order.findUnique({ where: { id: "O20260624003" } });
+    const order = await prisma.order.findUnique({
+      where: { id: "O20260624003" },
+    });
     expect(order?.status).toBe("cancelled");
     const tech = await prisma.master.findUnique({ where: { id: "T002" } });
     expect(tech?.status).toBe("available");
   });
 
+  // # spec: 已终态订单（completed）不能取消，返 validation
   it("completed 订单 → validation 拒", async () => {
     const r = await cancelOrderAction("O20260623007");
     expect(r.ok).toBe(false);

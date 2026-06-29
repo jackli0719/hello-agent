@@ -4,7 +4,9 @@
 import { describe, expect, it } from "vitest";
 import { toLocalISOString } from "./orders";
 
+// # spec: 时区序列化 = Date 转 ISO 字符串带本机时区偏移，避免 8 小时漂移
 describe("toLocalISOString", () => {
+  // # spec: 时区序列化格式 — 形如 YYYY-MM-DDTHH:mm:ss+HH:mm，包含本机时区偏移
   it("输出形如 2026-06-24T10:00:00+08:00（带时区偏移）", () => {
     const d = new Date(2026, 5, 24, 10, 0, 0); // 本地时间 10:00
     const iso = toLocalISOString(d);
@@ -15,14 +17,18 @@ describe("toLocalISOString", () => {
     expect(iso).toContain("T10:00:00");
   });
 
+  // # spec: 时区序列化稳定 — 同一 Date 对象多次调用输出一致
   it("UTC 时间和本地时间的 hour 字段反映测试机的 getHours()", () => {
     // 同样一个时间点，本地解释 vs UTC 解释，hour 字段可能不同
     // 但 toLocalISOString 用的是 Date 的本地方法，所以结果应一致
     const d1 = new Date(2026, 5, 24, 10, 0, 0);
     const d2 = new Date(2026, 5, 24, 10, 0, 0);
-    expect(toLocalISOString(d1).slice(0, 19)).toBe(toLocalISOString(d2).slice(0, 19));
+    expect(toLocalISOString(d1).slice(0, 19)).toBe(
+      toLocalISOString(d2).slice(0, 19),
+    );
   });
 
+  // # spec: 时区序列化补零 — 个位数月/日/时/分/秒都补 0 到两位
   it("个位数月日 / 时分秒自动补 0", () => {
     const d = new Date(2026, 0, 5, 3, 4, 9); // 2026-01-05 03:04:09
     const iso = toLocalISOString(d);
@@ -30,18 +36,22 @@ describe("toLocalISOString", () => {
   });
 });
 
+// # spec: 金额分转元 = DB 存分、展示 /100 拿元，不能丢精度
 describe("分→元转换（订单 amount）", () => {
   // 不通过 repo 函数测（要连 DB），直接验证转换契约
+  // # spec: 金额精度 — ¥128 订单 DB 存 12800 分，/100 得 128 不丢精度
   it("¥128 的订单在 DB 存 12800 分，展示时 /100 得 128", () => {
     const fenInDb = 12800;
     const yuan = fenInDb / 100;
     expect(yuan).toBe(128);
   });
 
+  // # spec: 金额边界 — ¥0 订单 0/100 仍为 0（不出现 NaN/Infinity）
   it("¥0 订单 amount=0 不丢精度", () => {
     expect(0 / 100).toBe(0);
   });
 
+  // # spec: 金额大额精度 — ¥12800（1280000 分）转换结果精确
   it("¥12800 大额订单金额精确", () => {
     expect(1280000 / 100).toBe(12800);
   });

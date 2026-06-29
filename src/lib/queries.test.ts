@@ -24,6 +24,7 @@ beforeEach(async () => {
 
 // # spec: 订单列表 SKU 过滤 = 按 skuCode 只返回该 SKU 订单、未传 skuCode 不过滤、不存在的 SKU 返回 0 条
 describe("listOrdersForPage — skuCode 过滤", () => {
+  // # spec: 订单列表 SKU 过滤 — 按 skuCode 只返回该 SKU 订单；不存在的 SKU 返回 0 条
   it("按 SKU 过滤只返回该 SKU 的订单", async () => {
     // 1. 创建类目 + 2 个 SKU + 2 个订单
     const cat = await prisma.serviceCategory.create({
@@ -103,6 +104,7 @@ describe("listOrdersForPage — skuCode 过滤", () => {
     expect(empty.totalCount).toBe(0);
   });
 
+  // # documents current behavior: 不传 skuCode 不过滤，返回全量订单
   it("skuCode 不传 → 不应用过滤（全量订单）", async () => {
     const all = await listOrdersForPage();
     expect(all.totalCount).toBeGreaterThan(0);
@@ -111,6 +113,7 @@ describe("listOrdersForPage — skuCode 过滤", () => {
 
 // # spec: 订单列表时间过滤 + 分页 = 按 createdAt/scheduledAt 时间范围、dateTo 不含次日 0 点、page/pageSize 控制分页且不重复
 describe("listOrdersForPage — 时间范围 + 分页", () => {
+  // # spec: 订单列表时间过滤 — dateField=createdAt 时按 createdAt 时间范围过滤
   it("按 createdAt 时间范围过滤（今天）", async () => {
     // seed 跑完时 createdAt 是今天
     const today = new Date();
@@ -126,6 +129,7 @@ describe("listOrdersForPage — 时间范围 + 分页", () => {
     expect(r.totalCount).toBeGreaterThan(0);
   });
 
+  // # spec: 订单列表时间过滤 — 远古日期范围匹配不到任何订单时 totalCount=0
   it("按 createdAt 时间范围（远古）→ 应该 0（seed 都是今天创建的）", async () => {
     const dateFrom = new Date("2020-01-01T00:00:00");
     const dateTo = new Date("2020-01-01T00:00:00");
@@ -139,6 +143,7 @@ describe("listOrdersForPage — 时间范围 + 分页", () => {
     expect(r.totalCount).toBe(0);
   });
 
+  // # spec: 订单列表时间过滤 — dateField=scheduledAt 时按预约时间范围过滤
   it("按 scheduledAt 时间范围过滤", async () => {
     // O20260623007 预约时间 2026-06-23，O20260624001 预约 2026-06-24
     const dateFrom = new Date("2026-06-23T00:00:00");
@@ -156,6 +161,7 @@ describe("listOrdersForPage — 时间范围 + 分页", () => {
     expect(r.orders.find((o) => o.id === "O20260624002")).toBeDefined();
   });
 
+  // # spec: 订单列表时间边界 — dateTo 是「含当天 < 次日 00:00」不包含次日
   it("dateTo 不含当天（< 次日 00:00）", async () => {
     // dateTo = 2026-06-23 → 只包含 2026-06-23 当天
     const dateFrom = new Date("2026-06-23T00:00:00");
@@ -173,6 +179,7 @@ describe("listOrdersForPage — 时间范围 + 分页", () => {
     expect(r.orders.find((o) => o.id === "O20260624001")).toBeUndefined();
   });
 
+  // # spec: 订单列表分页 — page + pageSize 控制分页且不同页 ID 不重复
   it("分页 page + pageSize", async () => {
     const r1 = await listOrdersForPage({ page: 1, pageSize: 2 });
     expect(r1.orders.length).toBeLessThanOrEqual(2);

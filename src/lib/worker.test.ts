@@ -81,6 +81,7 @@ describe("listOrdersForMaster — 按师傅过滤", () => {
     await Promise.all([resetOrdersToSeed(), resetMastersToSeed()]);
   });
 
+  // # spec: 师傅过滤 — T001 是订单 O20260624001 的接单师傅，应只返回这一单（in_service）
   it("T001 (李师傅) → 只返回 O20260624001（in_service）", async () => {
     const orders = await listOrdersForMaster("T001");
     expect(orders).toHaveLength(1);
@@ -88,6 +89,7 @@ describe("listOrdersForMaster — 按师傅过滤", () => {
     expect(orders[0].status).toBe("in_service");
   });
 
+  // # spec: 师傅过滤 — T002 是订单 O20260624003 的接单师傅，应只返回这一单（assigned）
   it("T002 (赵师傅) → 只返回 O20260624003（assigned）", async () => {
     const orders = await listOrdersForMaster("T002");
     expect(orders).toHaveLength(1);
@@ -95,6 +97,7 @@ describe("listOrdersForMaster — 按师傅过滤", () => {
     expect(orders[0].status).toBe("assigned");
   });
 
+  // # spec: 师傅过滤 — T003 是订单 O20260623007 的接单师傅，应只返回这一单（completed）
   it("T003 (周姐) → 只返回 O20260623007（completed）", async () => {
     const orders = await listOrdersForMaster("T003");
     expect(orders).toHaveLength(1);
@@ -102,6 +105,7 @@ describe("listOrdersForMaster — 按师傅过滤", () => {
     expect(orders[0].status).toBe("completed");
   });
 
+  // # spec: 师傅过滤 — T004 没有任何关联订单，应返回空数组
   it("T004 (无订单) → 空数组", async () => {
     const orders = await listOrdersForMaster("T004");
     expect(orders).toHaveLength(0);
@@ -118,6 +122,7 @@ describe("listOrdersForMaster — 排除 pending", () => {
     await Promise.all([resetOrdersToSeed(), resetMastersToSeed()]);
   });
 
+  // # spec: 排除 pending — 即使 pending 订单被挂上 masterId，师傅端也不应展示（未派单不属于师傅）
   it("即使订单被改成 pending + masterId=T001，也不该返回", async () => {
     // 把 in_service 订单改回 pending 且 masterId 设为 T001
     // 师傅端逻辑：没派单的订单不该出现
@@ -129,6 +134,7 @@ describe("listOrdersForMaster — 排除 pending", () => {
     expect(orders).toHaveLength(0);
   });
 
+  // # spec: 排除 pending — pending 订单不属于任何师傅，师傅端不应出现
   it("不会返回 T004 的 pending 订单（O20260624002 / O20260625009 都是 pending）", async () => {
     const orders = await listOrdersForMaster("T004");
     expect(orders).toHaveLength(0);
@@ -145,6 +151,7 @@ describe("listOrdersForMaster — cancelled 订单保留展示", () => {
     await Promise.all([resetOrdersToSeed(), resetMastersToSeed()]);
   });
 
+  // # documents current behavior: cancelled 订单即使关联 masterId 也会展示（师傅能看历史服务记录）
   it("cancelled 订单如果有关联 masterId，仍能展示", async () => {
     // 模拟「订单被取消」时 masterId 还在（实际 releaseMaster 会清掉 masterId，
     // 但这里只测过滤逻辑 — 师傅端不区分 cancelled 的 masterId 是不是 null）
@@ -161,11 +168,13 @@ describe("listOrdersForMaster — cancelled 订单保留展示", () => {
 
 // # spec: 师傅端边界 = 空 masterId / 不存在的 masterId 返回空数组，不查 DB 不报错
 describe("listOrdersForMaster — 边界", () => {
+  // # documents current behavior: 空 masterId 防御性短路，直接返回空数组不打 DB
   it("空 masterId → 空数组（不查 DB）", async () => {
     const orders = await listOrdersForMaster("");
     expect(orders).toHaveLength(0);
   });
 
+  // # documents current behavior: 不存在的 masterId 返回空数组（防御性判空，不抛错）
   it("不存在的 masterId → 空数组", async () => {
     const orders = await listOrdersForMaster("non-existent-id");
     expect(orders).toHaveLength(0);
@@ -182,6 +191,7 @@ describe("listOrdersForMaster — 字段映射", () => {
     await Promise.all([resetOrdersToSeed(), resetMastersToSeed()]);
   });
 
+  // # spec: 字段映射 — DB 金额分转成元展示，保证 number 类型不丢精度
   it("金额：分 → 元", async () => {
     // O20260624001 amount 在 seed 里是 20000 分（看 mock-data.ts）
     const orders = await listOrdersForMaster("T001");
@@ -192,6 +202,7 @@ describe("listOrdersForMaster — 字段映射", () => {
     ).toBe(true);
   });
 
+  // # spec: 字段映射 — scheduledAt/createdAt 输出 ISO 字符串，能被 Date 正确解析
   it("scheduledAt / createdAt 是 ISO 字符串", async () => {
     const orders = await listOrdersForMaster("T001");
     expect(typeof orders[0].scheduledAt).toBe("string");
@@ -203,6 +214,7 @@ describe("listOrdersForMaster — 字段映射", () => {
 
 // # spec: 师傅选择列表 = 返回全量师傅含 offline、手机号脱敏到后 4 位（演示用不分离线）
 describe("listWorkerOptions", () => {
+  // # spec: 师傅选择列表 — 含全部师傅（含 offline），手机号脱敏到后 4 位
   it("返回所有师傅（含 offline），手机号脱敏到后 4 位", async () => {
     const options = await listWorkerOptions();
     // seed >= 5 个师傅（开发期间可能手动加师傅；不写死数量）
@@ -215,6 +227,7 @@ describe("listWorkerOptions", () => {
     }
   });
 
+  // # documents current behavior: 演示用列表不分离线师傅，offline 也展示给管理员
   it("包含 offline 师傅（演示用，不分离线）", async () => {
     const options = await listWorkerOptions();
     const offline = options.find((o) => o.status === "offline");
@@ -234,6 +247,7 @@ describe("getOrderForWorker — 详情查询", () => {
     await Promise.all([resetOrdersToSeed(), resetMastersToSeed()]);
   });
 
+  // # spec: 订单详情 — 合法订单返回完整字段（含品类名 + 师傅 + 师傅电话）
   it("合法订单返回完整字段（含品类名 + 师傅）", async () => {
     const o = await getOrderForWorker("O20260624003");
     expect(o).not.toBeNull();
@@ -250,16 +264,19 @@ describe("getOrderForWorker — 详情查询", () => {
     expect(o!.masterPhone).toBeTruthy();
   });
 
+  // # documents current behavior: 找不到订单防御性返回 null，不抛错
   it("找不到订单 → null", async () => {
     const o = await getOrderForWorker("DOES-NOT-EXIST");
     expect(o).toBeNull();
   });
 
+  // # documents current behavior: 空 orderId 短路返回 null，不打 DB
   it("空 orderId → null", async () => {
     const o = await getOrderForWorker("");
     expect(o).toBeNull();
   });
 
+  // # documents current behavior: pending 订单在师傅端防御性返回 null（不该出现）
   it("pending 订单防御性返回 null（不该出现在师傅端）", async () => {
     const o = await getOrderForWorker("O20260624002"); // seed 里 pending
     expect(o).toBeNull();
@@ -276,17 +293,20 @@ describe("getOrderForWorker — 越权防护", () => {
     await Promise.all([resetOrdersToSeed(), resetMastersToSeed()]);
   });
 
+  // # spec: 跨师傅越权 — 订单归属 T002 时别的师傅查不到，返回 null（不暴露订单存在）
   it("订单归 T002，但传 masterId=T001 → null（不告诉调用方订单存在）", async () => {
     const o = await getOrderForWorker("O20260624003", "T001");
     expect(o).toBeNull();
   });
 
+  // # spec: 跨师傅越权 — 订单归属 T002 + 传正确 masterId=T002 时正常返回详情
   it("订单归 T002，传 masterId=T002 → 返回详情", async () => {
     const o = await getOrderForWorker("O20260624003", "T002");
     expect(o).not.toBeNull();
     expect(o!.masterId).toBe("T002");
   });
 
+  // # spec: 跨师傅越权 — cancelled 订单同样校验归属；正确 masterId 允许看历史
   it("cancelled 订单 + 正确的 masterId → 返回详情（允许看历史）", async () => {
     // 给 cancelled 订单挂 T002
     await prisma.order.update({
@@ -298,6 +318,7 @@ describe("getOrderForWorker — 越权防护", () => {
     expect(o!.status).toBe("cancelled");
   });
 
+  // # spec: 跨师傅越权 — cancelled 订单 + 错的 masterId 同样返回 null
   it("cancelled 订单 + 错的 masterId → null", async () => {
     await prisma.order.update({
       where: { id: "O20260623005" },

@@ -19,13 +19,19 @@ async function resetMasterStatuses() {
   }
 }
 
-async function resetOrder(orderId: string, status: string, masterId: string | null, masterName: string | null) {
+async function resetOrder(
+  orderId: string,
+  status: string,
+  masterId: string | null,
+  masterName: string | null,
+) {
   await prisma.order.update({
     where: { id: orderId },
     data: { status, masterId, masterName },
   });
 }
 
+// # spec: 自动派单 action = pending 订单按推荐规则找师傅派单，订单 assigned + 师傅转 busy
 describe("dispatchOrderAction", () => {
   beforeEach(async () => {
     await resetMasterStatuses();
@@ -42,6 +48,7 @@ describe("dispatchOrderAction", () => {
     await resetOrder("O20260624003", "assigned", "T002", "赵师傅");
   });
 
+  // # spec: 自动派单 — pending + 有匹配技能师傅时正常派单（reason 含师傅名）
   it("待派单 + 有合适师傅 → 派单成功，订单 assigned，师傅变 busy", async () => {
     // O20260624002 是「空调清洗（挂机）」，匹配技能 = 「空调维修」
     // 只有 T004（孙师傅）available 且会空调维修
@@ -52,7 +59,9 @@ describe("dispatchOrderAction", () => {
     expect(r.technicianName).toBe("孙师傅");
     expect(r.reason).toMatch(/孙师傅/);
 
-    const order = await prisma.order.findUnique({ where: { id: "O20260624002" } });
+    const order = await prisma.order.findUnique({
+      where: { id: "O20260624002" },
+    });
     expect(order?.status).toBe("assigned");
     expect(order?.masterId).toBe("T004");
     expect(order?.masterName).toBe("孙师傅");
@@ -61,6 +70,7 @@ describe("dispatchOrderAction", () => {
     expect(tech?.status).toBe("busy");
   });
 
+  // # spec: 自动派单拒绝 — 订单不存在时拒绝（category=validation，错误信息含「不存在」）
   it("订单不存在 → validation 错误", async () => {
     const r = await dispatchOrderAction("NOT-EXIST");
     expect(r.ok).toBe(false);
@@ -69,6 +79,7 @@ describe("dispatchOrderAction", () => {
     expect(r.error).toMatch(/不存在/);
   });
 
+  // # spec: 自动派单拒绝 — 已 assigned 订单不能再派单，原师傅信息保留不变
   it("已派单的订单不能重复派单 → validation 错误，状态不变", async () => {
     const r = await dispatchOrderAction("O20260624003");
     expect(r.ok).toBe(false);
@@ -77,11 +88,14 @@ describe("dispatchOrderAction", () => {
     expect(r.error).toMatch(/不可重复派单/);
 
     // 状态没坏
-    const order = await prisma.order.findUnique({ where: { id: "O20260624003" } });
+    const order = await prisma.order.findUnique({
+      where: { id: "O20260624003" },
+    });
     expect(order?.status).toBe("assigned");
     expect(order?.masterName).toBe("赵师傅");
   });
 
+  // # spec: 自动派单拒绝 — cancelled 订单不能再派单
   it("已取消订单不能派单 → validation 错误", async () => {
     const r = await dispatchOrderAction("O20260623005");
     expect(r.ok).toBe(false);
@@ -89,9 +103,13 @@ describe("dispatchOrderAction", () => {
     expect(r.category).toBe("validation");
   });
 
+  // # spec: 自动派单拒绝 — 没有空闲师傅时订单保持 pending，不分配
   it("所有 available 师傅都 busy → validation 错误，订单保持 pending", async () => {
     // 把唯一 available 的 T004 也搞成 busy
-    await prisma.master.update({ where: { id: "T004" }, data: { status: "busy" } });
+    await prisma.master.update({
+      where: { id: "T004" },
+      data: { status: "busy" },
+    });
     try {
       const r = await dispatchOrderAction("O20260624002");
       expect(r.ok).toBe(false);
@@ -99,7 +117,9 @@ describe("dispatchOrderAction", () => {
       expect(r.category).toBe("validation");
       expect(r.error).toMatch(/没有空闲师傅/);
 
-      const order = await prisma.order.findUnique({ where: { id: "O20260624002" } });
+      const order = await prisma.order.findUnique({
+        where: { id: "O20260624002" },
+      });
       expect(order?.status).toBe("pending");
       expect(order?.masterId).toBeNull();
     } finally {
@@ -107,10 +127,14 @@ describe("dispatchOrderAction", () => {
     }
   });
 
+  // # spec: 自动派单拒绝 — 没有掌握所需技能的师傅时拒绝（理由说明原因）
   it("没有掌握所需技能的师傅 → validation 错误（理由含技能名）", async () => {
     // 暂时给 T004 加个奇怪的状态：busy。但其他师傅都没「空调维修」技能。
     // 让 T004 离线（也不算 available），就找不到任何候选
-    await prisma.master.update({ where: { id: "T004" }, data: { status: "offline" } });
+    await prisma.master.update({
+      where: { id: "T004" },
+      data: { status: "offline" },
+    });
     try {
       const r = await dispatchOrderAction("O20260624002");
       expect(r.ok).toBe(false);

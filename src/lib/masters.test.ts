@@ -21,6 +21,7 @@ const valid = {
 
 // # spec: 师傅字段校验 = name 必填且 50 字符内、phone 1xx 11 位格式、rating [0,5]、serviceArea 100 字符内
 describe("validateMasterInput", () => {
+  // # spec: 师傅合法校验 — 完整输入通过且 cleaned 字段（name/skills）原样保留
   it("完整合法输入通过", () => {
     const r = validateMasterInput(valid);
     expect(r.ok).toBe(true);
@@ -29,6 +30,7 @@ describe("validateMasterInput", () => {
     expect(r.cleaned.skills).toEqual(["空调维修"]);
   });
 
+  // # spec: 师傅字段校验 — name 必填，空串拒绝并指向 field=name
   it("空姓名 → field=name", () => {
     const r = validateMasterInput({ ...valid, name: "" });
     expect(r.ok).toBe(false);
@@ -36,6 +38,7 @@ describe("validateMasterInput", () => {
     expect(r.field).toBe("name");
   });
 
+  // # spec: 师傅字段校验 — name 长度上限 50 字符，超长拒绝并指向 field=name
   it("姓名超过 50 字符", () => {
     const r = validateMasterInput({ ...valid, name: "x".repeat(51) });
     expect(r.ok).toBe(false);
@@ -43,6 +46,7 @@ describe("validateMasterInput", () => {
     expect(r.field).toBe("name");
   });
 
+  // # spec: 师傅手机号格式 — 必须 1 开头 11 位数字，否则拒绝并指向 field=phone
   it("手机号格式错（不是 1 开头）", () => {
     const r = validateMasterInput({ ...valid, phone: "23900000000" });
     expect(r.ok).toBe(false);
@@ -50,6 +54,7 @@ describe("validateMasterInput", () => {
     expect(r.field).toBe("phone");
   });
 
+  // # spec: 师傅评分范围 — rating > 5 拒绝并指向 field=rating
   it("评分 > 5", () => {
     const r = validateMasterInput({ ...valid, rating: 5.5 });
     expect(r.ok).toBe(false);
@@ -57,6 +62,7 @@ describe("validateMasterInput", () => {
     expect(r.field).toBe("rating");
   });
 
+  // # spec: 师傅评分范围 — rating < 0 拒绝并指向 field=rating
   it("评分 < 0", () => {
     const r = validateMasterInput({ ...valid, rating: -0.1 });
     expect(r.ok).toBe(false);
@@ -64,6 +70,7 @@ describe("validateMasterInput", () => {
     expect(r.field).toBe("rating");
   });
 
+  // # spec: 服务区域长度 — serviceArea 上限 100 字符，超长拒绝并指向 field=serviceArea
   it("服务区域 > 100 字符", () => {
     const r = validateMasterInput({ ...valid, serviceArea: "x".repeat(101) });
     expect(r.ok).toBe(false);
@@ -74,18 +81,22 @@ describe("validateMasterInput", () => {
 
 // # spec: 技能字符串解析 = 支持中英文/全角逗号分隔、trim + 去空 + 去重；反向序列化为 ", " 拼接
 describe("parseSkillsString / skillsToString", () => {
+  // # spec: 技能解析 — 英文逗号分隔的标准输入拆成数组
   it("英文逗号分隔", () => {
     expect(parseSkillsString("a,b,c")).toEqual(["a", "b", "c"]);
   });
 
+  // # spec: 技能解析 — 支持中文逗号 + 全角逗号 + 顿号多种分隔符
   it("中文逗号 + 全角逗号", () => {
     expect(parseSkillsString("a，b、c")).toEqual(["a", "b", "c"]);
   });
 
+  // # spec: 技能解析 — 自动 trim + 去空 + 去重，保证数组元素干净
   it("trim + 去空 + 去重", () => {
     expect(parseSkillsString(" a , b , a ,, ")).toEqual(["a", "b"]);
   });
 
+  // # spec: 技能序列化 — skillsToString 用 ", " 拼接；空数组返回空串
   it("反向：数组 → 字符串", () => {
     expect(skillsToString(["a", "b", "c"])).toBe("a, b, c"); // 实现是 ", " 分隔
     expect(skillsToString([])).toBe("");
@@ -102,6 +113,7 @@ describe("createMaster — 端到端", () => {
     }
   });
 
+  // # spec: 师傅创建 — 合法输入落库，skills JSON 字符串 + status 默认 available + completedJobs=0
   it("合法输入 → 创建成功，skills 是 JSON 字符串，status 由 available 决定", async () => {
     const r = await createMaster(valid);
     expect(r.ok).toBe(true);
@@ -118,6 +130,7 @@ describe("createMaster — 端到端", () => {
     expect(row?.completedJobs).toBe(0);
   });
 
+  // # spec: 师傅创建 — 新师傅 status 永远是 available（表单不暴露 status 字段）
   it("新师傅默认 status=available（不可在表单里设置 offline）", async () => {
     const r = await createMaster({ ...valid, name: "新师傅-A" });
     expect(r.ok).toBe(true);
@@ -128,6 +141,7 @@ describe("createMaster — 端到端", () => {
     expect(row?.status).toBe("available");
   });
 
+  // # spec: 师傅创建 — 空 name 拒绝创建（category=validation, field=name）
   it("空姓名 → validation 错误", async () => {
     const r = await createMaster({ ...valid, name: "" });
     expect(r.ok).toBe(false);
@@ -146,6 +160,7 @@ describe("createMaster — 新师傅能参与派单推荐", () => {
     }
   });
 
+  // # spec: 新师傅进派单候选 — 技能匹配 + rating 高时排在候选第一位
   it("新师傅技能匹配 → 出现在 recommendMastersForOrder 结果中", async () => {
     // 查「家政」类目的真实 ID（不能写死，否则 schema 改了测试就挂）
     const jiazhengCat = await prisma.serviceCategory.findUnique({
@@ -235,6 +250,7 @@ describe("updateMaster", () => {
     }
   });
 
+  // # spec: 师傅更新 — 改 name/phone/skills/rating/serviceArea，但不动 status
   it("更新已有师傅信息", async () => {
     const c = await createMaster({ ...valid, name: "原名" });
     expect(c.ok).toBe(true);
@@ -261,6 +277,7 @@ describe("updateMaster", () => {
     expect(row?.serviceArea).toBe("北京");
   });
 
+  // # documents current behavior: updateMaster 故意不动 status，保护接单中的 busy 师傅不被覆盖
   it("updateMaster 不改 status（保护 busy 师傅不被覆盖）", async () => {
     // 准备：创建师傅，手动把 status 改成 busy（模拟「接单中」）
     const c = await createMaster({ ...valid, name: "忙碌师傅" });
@@ -289,6 +306,7 @@ describe("updateMaster", () => {
     expect(row?.name).toBe("忙碌师傅改名"); // 其它字段确实更新了
   });
 
+  // # spec: 师傅更新 — id 不存在时拒绝更新（category=validation）
   it("更新不存在的师傅 → validation 错误", async () => {
     const u = await updateMaster({ ...valid, id: "NOT-EXIST" });
     expect(u.ok).toBe(false);
@@ -296,6 +314,7 @@ describe("updateMaster", () => {
     expect(u.category).toBe("validation");
   });
 
+  // # spec: 师傅更新 — 缺 id 拒绝更新（category=validation）
   it("缺 id → validation 错误", async () => {
     const u = await updateMaster({ ...valid });
     expect(u.ok).toBe(false);

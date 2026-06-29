@@ -7,6 +7,7 @@ import { prisma } from "@/src/lib/db";
 
 // # spec: 订单号格式 = O + YYYYMMDD + 4 位当日序号的拼装规则，月日单位数补 0
 describe("buildOrderId（纯函数）", () => {
+  // # spec: 订单号格式 — O + YYYYMMDD + 4 位当日序号，超过 4 位不截断
   it("格式化：O + YYYYMMDD + 4 位 seq", () => {
     const d = new Date(2026, 5, 24, 10, 0, 0); // 2026-06-24
     expect(buildOrderId(d, 1)).toBe("O202606240001");
@@ -15,6 +16,7 @@ describe("buildOrderId（纯函数）", () => {
     expect(buildOrderId(d, 12345)).toBe("O2026062412345"); // 超过 4 位也不截断
   });
 
+  // # spec: 订单号格式 — 月日单位数补 0（避免 2026-1-5 → 202615）
   it("月日单位数补 0", () => {
     const d = new Date(2026, 0, 5, 10, 0, 0); // 2026-01-05
     expect(buildOrderId(d, 1)).toBe("O202601050001");
@@ -23,6 +25,7 @@ describe("buildOrderId（纯函数）", () => {
 
 // # spec: 当日下一个候选订单号 = O{YYYYMMDD}{4 位 seq}，按当日已有订单最大值递增
 describe("generateNextOrderId（真实 DB）", () => {
+  // # spec: 当日候选号 — generateNextOrderId 返回 O{YYYYMMDD}{4 位} 当日最大号 + 1
   it("返回形如 O{YYYYMMDD}{4 位} 的当日候选号", async () => {
     const id = await generateNextOrderId();
     // 只断言格式（不硬编码 0001 — 跟其它测试的创建顺序有关）
@@ -44,6 +47,7 @@ describe("createOrder 撞号重试", () => {
     }
   });
 
+  // # spec: 订单号撞号重试 — 候选号被占时 createOrder 自动重试 +1 号并落库
   it("预先占位「下一个候选号」→ createOrder 应该自动重试到 +1 的号", async () => {
     // 1. 先调一次拿到当日「下一个候选号」
     const collisionId = await generateNextOrderId();

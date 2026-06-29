@@ -22,6 +22,7 @@ const valid = {
 
 // # spec: 派单规则校验 = name 必填、categoryCode/skuCode 至少填一个、priority 范围、小写编码 normalize 成大写、非 ASCII 编码拒绝
 describe("validateRuleInput", () => {
+  // # spec: 合法校验 — 只填 categoryCode + 其他字段齐全 → 校验通过且 cleaned 字段原样保留
   it("合法输入通过（只填 categoryCode）", () => {
     const r = validateRuleInput(valid);
     expect(r.ok).toBe(true);
@@ -31,6 +32,7 @@ describe("validateRuleInput", () => {
     expect(r.cleaned.skuCode).toBe(null);
   });
 
+  // # spec: 合法校验 — 只填 skuCode 也算合法，categoryCode 不必填
   it("合法输入（只填 skuCode）", () => {
     const r = validateRuleInput({
       ...valid,
@@ -42,6 +44,7 @@ describe("validateRuleInput", () => {
     expect(r.cleaned.skuCode).toBe("CLEAN-DAILY-2H");
   });
 
+  // # spec: 双选规则 — 两个都填也合法（实际匹配优先级在派单层处理）
   it("SKU + categoryCode 都填：优先 SKU 精确", () => {
     const r = validateRuleInput({
       ...valid,
@@ -51,6 +54,7 @@ describe("validateRuleInput", () => {
     expect(r.ok).toBe(true);
   });
 
+  // # spec: 双选规则 — categoryCode 和 skuCode 必须至少填一个，都空拒绝
   it("两个都为空 → validation 拒绝", () => {
     const r = validateRuleInput({
       ...valid,
@@ -62,6 +66,7 @@ describe("validateRuleInput", () => {
     expect(r.error).toMatch(/至少填一个/);
   });
 
+  // # spec: 字段校验 — name 必填，空串拒绝并指向 field=name
   it("空 name → field=name", () => {
     const r = validateRuleInput({ ...valid, name: "" });
     expect(r.ok).toBe(false);
@@ -69,6 +74,7 @@ describe("validateRuleInput", () => {
     expect(r.field).toBe("name");
   });
 
+  // # spec: 字段校验 — priority 必须是有效数字，NaN 拒绝并指向 field=priority
   it("priority 非数字 → field=priority", () => {
     const r = validateRuleInput({ ...valid, priority: NaN });
     expect(r.ok).toBe(false);
@@ -76,6 +82,7 @@ describe("validateRuleInput", () => {
     expect(r.field).toBe("priority");
   });
 
+  // # spec: 字段校验 — priority 有上限，超限拒绝并指向 field=priority
   it("priority 超限 → field=priority", () => {
     const r = validateRuleInput({ ...valid, priority: 99999 });
     expect(r.ok).toBe(false);
@@ -83,6 +90,7 @@ describe("validateRuleInput", () => {
     expect(r.field).toBe("priority");
   });
 
+  // # spec: 编码规范化 — 小写 skuCode 输入应用层 normalize 成大写，不报错
   it("小写 skuCode 会被 normalize 成大写", () => {
     const r = validateRuleInput({
       ...valid,
@@ -94,6 +102,7 @@ describe("validateRuleInput", () => {
     expect(r.cleaned.skuCode).toBe("CLEAN-DAILY-2H");
   });
 
+  // # spec: 编码合法性 — 非 ASCII 字符的 skuCode 直接拒绝（业务编码必须纯 ASCII）
   it("含非 ASCII 的 skuCode → 拒", () => {
     const r = validateRuleInput({
       ...valid,
@@ -122,6 +131,7 @@ describe("createRule / updateRule — 端到端", () => {
     }
   });
 
+  // # spec: 派单规则创建 — 合法输入落库，ruleJson 解析出 match.categoryId（cuid）+ requiredSkills
   it("createRule：合法 → DB 写入 ruleJson 含 match + requiredSkills", async () => {
     const r = await createRule({
       ...valid,
@@ -141,6 +151,7 @@ describe("createRule / updateRule — 端到端", () => {
     expect(parsed.requiredSkills).toEqual(["保洁"]);
   });
 
+  // # spec: 派单规则创建 — skuCode 在 SKU 表里查不到 → 拒绝创建（field=skuCode）
   it("createRule：skuCode 不存在 → validation 错误", async () => {
     const r = await createRule({
       ...valid,
@@ -155,6 +166,7 @@ describe("createRule / updateRule — 端到端", () => {
     expect(r.error).toMatch(/SKU 编码不存在/);
   });
 
+  // # spec: 派单规则创建 — categoryCode 在品类表里查不到 → 拒绝创建（field=categoryCode）
   it("createRule：categoryCode 不存在 → validation 错误", async () => {
     const r = await createRule({
       ...valid,
@@ -166,6 +178,7 @@ describe("createRule / updateRule — 端到端", () => {
     expect(r.field).toBe("categoryCode");
   });
 
+  // # spec: 派单规则更新 — name/priority/enabled/requiredSkills 都能改，且 ruleJson 同步更新
   it("updateRule：合法 → 改 name + priority + enabled", async () => {
     const c = await createRule({ ...valid, priority: 1003 });
     expect(c.ok).toBe(true);
@@ -191,6 +204,7 @@ describe("createRule / updateRule — 端到端", () => {
     expect(parsed.requiredSkills).toEqual(["保洁", "家电清洗"]);
   });
 
+  // # spec: 派单规则更新 — id 在 DB 找不到 → 拒绝更新（category=validation）
   it("updateRule：规则不存在 → validation", async () => {
     const u = await updateRule({ ...valid, id: "NOT-EXIST", priority: 1004 });
     expect(u.ok).toBe(false);
@@ -201,6 +215,7 @@ describe("createRule / updateRule — 端到端", () => {
 
 // # spec: 派单规则列表 = 返回带业务编码（skuCode/categoryCode）和中文名称的规则列表，含 SKU 精确规则和类目兜底规则
 describe("listRules — 端到端", () => {
+  // # spec: 派单规则列表 — 返回业务编码（skuCode/categoryCode）+ 中文名称，含 SKU 精确规则和类目兜底
   it("返回带 skuCode / categoryCode 业务编码的列表", async () => {
     // 用 seed 的 2 条规则验证 — 业务编码 + 名称都返回
     const all = await listRules();
@@ -228,6 +243,7 @@ describe("修复需求：新增规则生效后影响 recommendMastersForOrder", 
     }
   });
 
+  // # spec: 派单规则优先级 — 新建更高 priority 的规则应被命中，覆盖 seed 旧规则
   it("新增 SKU 精确规则 → 派单匹配到这条（而不是 seed 的旧规则）", async () => {
     // 新建一条「SUPER」SKU 精确规则：priority=5000 最高，覆盖 seed 的 priority=100
     const c = await createRule({
@@ -286,6 +302,7 @@ describe("修复需求：新增规则生效后影响 recommendMastersForOrder", 
     expect(result.rule?.name).toBe("SUPER - S003 优先");
   });
 
+  // # spec: 派单规则启停 — disabled 规则不参与推荐匹配（即使 priority 最高）
   it("disabled 规则不参与匹配", async () => {
     // 新建一条「应被禁用」规则
     const c = await createRule({
@@ -357,6 +374,7 @@ describe("toggleRuleEnabled — 列表行启用/停用按钮", () => {
     }
   });
 
+  // # spec: 规则启停开关 — 创建时 enabled=true，第一次 toggle 翻成 false
   it("创建 enabled=true → 第一次 toggle 变 false", async () => {
     const c = await createRule({ ...valid, priority: 2000 });
     expect(c.ok).toBe(true);
@@ -372,6 +390,7 @@ describe("toggleRuleEnabled — 列表行启用/停用按钮", () => {
     expect(row?.enabled).toBe(false);
   });
 
+  // # spec: 规则启停开关 — 连续 toggle 来回翻转（true→false→true→false）
   it("来回 toggle 状态正确（true → false → true → false）", async () => {
     const c = await createRule({ ...valid, priority: 2001 });
     expect(c.ok).toBe(true);
@@ -387,6 +406,7 @@ describe("toggleRuleEnabled — 列表行启用/停用按钮", () => {
     expect(r3.ok && r3.enabled === false).toBe(true); // 第 3 次：true → false
   });
 
+  // # spec: 规则启停开关 — 不存在的 id 拒绝 toggle，category=validation
   it("不存在的 id → validation 错误", async () => {
     const r = await toggleRuleEnabled("NOT-EXIST");
     expect(r.ok).toBe(false);
@@ -394,6 +414,7 @@ describe("toggleRuleEnabled — 列表行启用/停用按钮", () => {
     expect(r.category).toBe("validation");
   });
 
+  // # spec: 规则启停开关 — 空 id 拒绝 toggle，category=validation
   it("空 id → validation 错误", async () => {
     const r = await toggleRuleEnabled("");
     expect(r.ok).toBe(false);
@@ -401,6 +422,7 @@ describe("toggleRuleEnabled — 列表行启用/停用按钮", () => {
     expect(r.category).toBe("validation");
   });
 
+  // # spec: 规则启停开关 — toggle 只切 enabled，不动 name/priority/ruleJson
   it("toggleRuleEnabled 不动 ruleJson / name / priority（只切 enabled）", async () => {
     const c = await createRule({ ...valid, priority: 2002 });
     expect(c.ok).toBe(true);
@@ -433,6 +455,7 @@ describe("#2 修复：坏数据 ruleJson 不会让推荐挂掉", () => {
     await prisma.dispatchRule.deleteMany({ where: { id: brokenRuleId } });
   });
 
+  // # spec: 脏数据防御 — 非法 JSON 的 ruleJson 在 listRules 时直接过滤掉，不暴露给前端
   it("listRules 不返回坏数据（直接过滤掉）", async () => {
     // 写一条 ruleJson 是非法 JSON 的规则
     await prisma.dispatchRule.create({
@@ -450,6 +473,7 @@ describe("#2 修复：坏数据 ruleJson 不会让推荐挂掉", () => {
     expect(found).toBeUndefined(); // 坏数据被过滤
   });
 
+  // # spec: 脏数据防御 — 有效 JSON 但 spec 为空的规则不应让 recommendMastersForOrder 抛错
   it("坏数据规则不会污染推荐结果", async () => {
     // 写一条 spec 是空对象（match 都没字段）的规则 — 行为类似坏数据（不会命中）
     // 注意这不是真正的"坏 JSON"，是"有效 JSON 但业务上无效"

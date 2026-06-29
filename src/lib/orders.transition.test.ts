@@ -63,6 +63,7 @@ describe("transitionOrder — 合法流转", () => {
     await resetOrder("O20260623005", "cancelled", null, null);
   });
 
+  // # spec: 状态流转 — pending 可直接 cancelled，不释放师傅（无师傅可释放）
   it("pending → cancelled（无师傅，单纯改 status）", async () => {
     const r = await transitionOrder("O20260624002", "cancelled");
     expect(r.ok).toBe(true);
@@ -76,6 +77,7 @@ describe("transitionOrder — 合法流转", () => {
     expect(order?.masterId).toBeNull();
   });
 
+  // # spec: 状态流转 — assigned → in_service，师傅保持 busy（不释放）
   it("assigned → in_service（开始服务）", async () => {
     const r = await transitionOrder("O20260624003", "in_service");
     expect(r.ok).toBe(true);
@@ -90,6 +92,7 @@ describe("transitionOrder — 合法流转", () => {
     expect(tech?.status).toBe("busy");
   });
 
+  // # spec: 状态流转 — assigned → cancelled 必须释放师傅（busy → available）
   it("assigned → cancelled（释放师傅 busy → available）", async () => {
     const r = await transitionOrder("O20260624003", "cancelled");
     expect(r.ok).toBe(true);
@@ -102,6 +105,7 @@ describe("transitionOrder — 合法流转", () => {
     expect(tech?.status).toBe("available");
   });
 
+  // # spec: 状态流转 — in_service → completed 师傅释放回 available（可接下一单）
   it("in_service → completed（完成订单，师傅释放回 available）", async () => {
     const r = await transitionOrder("O20260624001", "completed");
     expect(r.ok).toBe(true);
@@ -115,6 +119,7 @@ describe("transitionOrder — 合法流转", () => {
     expect(tech?.status).toBe("available");
   });
 
+  // # spec: 状态流转 — in_service → cancelled 也释放师傅（busy → available）
   it("in_service → cancelled（释放师傅）", async () => {
     const r = await transitionOrder("O20260624001", "cancelled");
     expect(r.ok).toBe(true);
@@ -148,6 +153,7 @@ describe("transitionOrder — 非法流转", () => {
     await resetOrder("O20260623005", "cancelled", null, null);
   });
 
+  // # spec: 状态机拒绝 — pending 不能直接进 in_service（必须先派单 assigned）
   it("pending → in_service 不允许（必须先派单）", async () => {
     const r = await transitionOrder("O20260624002", "in_service");
     expect(r.ok).toBe(false);
@@ -155,16 +161,19 @@ describe("transitionOrder — 非法流转", () => {
     expect(r.category).toBe("validation");
   });
 
+  // # spec: 状态机拒绝 — pending 不能直接 completed（必须走 assigned → in_service → completed）
   it("pending → completed 不允许", async () => {
     const r = await transitionOrder("O20260624002", "completed");
     expect(r.ok).toBe(false);
   });
 
+  // # spec: 状态机拒绝 — assigned 不能直接 completed（必须先开始服务 in_service）
   it("assigned → completed 不允许（必须先开始服务）", async () => {
     const r = await transitionOrder("O20260624003", "completed");
     expect(r.ok).toBe(false);
   });
 
+  // # spec: 终态不可变 — completed 订单不能再变（cancelled/in_service 都拒绝）
   it("completed 不能再变", async () => {
     const r1 = await transitionOrder("O20260623007", "cancelled");
     expect(r1.ok).toBe(false);
@@ -172,6 +181,7 @@ describe("transitionOrder — 非法流转", () => {
     expect(r2.ok).toBe(false);
   });
 
+  // # spec: 终态不可变 — cancelled 订单不能再变（in_service/completed 都拒绝）
   it("cancelled 不能再变", async () => {
     const r1 = await transitionOrder("O20260623005", "in_service");
     expect(r1.ok).toBe(false);
@@ -179,6 +189,7 @@ describe("transitionOrder — 非法流转", () => {
     expect(r2.ok).toBe(false);
   });
 
+  // # spec: 状态流转 — 不存在的订单 id 拒绝流转（错误信息含「不存在」）
   it("订单不存在 → validation", async () => {
     const r = await transitionOrder("NOT-EXIST", "in_service");
     expect(r.ok).toBe(false);
@@ -199,6 +210,7 @@ describe("transitionOrder — 并发安全", () => {
     await resetOrder("O20260624003", "assigned", "T002", "赵师傅");
   });
 
+  // # spec: 乐观锁并发安全 — 同时两个 transitionOrder 只一个成功，另一个被 updateMany 拒绝
   it("两个 transitionOrder 同时跑：一个成功一个被乐观锁拒", async () => {
     const [r1, r2] = await Promise.all([
       transitionOrder("O20260624003", "in_service"),
