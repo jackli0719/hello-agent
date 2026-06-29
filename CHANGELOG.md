@@ -5,6 +5,32 @@ O2O 上门服务 MVP 的所有变更记录，按 [Keep a Changelog 1.1.0](https:
 
 ---
 
+## [v0.2.7] — 2026-06-29 — harness patch：B2 系统扫简化即 bug
+
+**Tag**：`harness-v0.2.7` · **变更类型**：harness patch（ADR 暴露 P0 bug 候选）
+
+### Added
+
+- `docs/adr-012-simplification-audit.md` —— 5 个「简化即 bug」候选
+  - 🔴 F1 客户手机号查询无验证（**P0 必修**）
+  - 🔴 F2 师傅 masterId 缺省不校验越权（**P0 必修**）
+  - 🟡 F3 预约时间兜底明天 10:00
+  - 🟡 F4 `/admin/metrics` HMR 清零（指标不可信）
+  - 🟢 F5 `serviceArea` 字段空跑
+
+### Decision
+
+- **不修代码**——按 v0.2.1 决策回报「假 fix = 自我欺骗」；F1 + F2 留给 v0.3.0 P0-2 认证一并修
+
+### Score Change
+
+| 维度           | v0.2.6   | v0.2.7   | delta     |
+| -------------- | -------- | -------- | --------- |
+| 业务简化即 bug | 5/10     | **6/10** | **+1**    |
+| **加权平均**   | **8.25** | **8.30** | **+0.05** |
+
+---
+
 ## [v0.2.6] — 2026-06-29 — harness patch：husky pre-commit 自动跑 B1
 
 **Tag**：`harness-v0.2.6` · **变更类型**：harness patch（B1 工具卡真正生效）
