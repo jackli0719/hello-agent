@@ -1,7 +1,20 @@
 # O2O 上门服务 MVP（三端版）
 
-> 第一版最小可演示版本 —— 验证 O2O 上门服务平台的「用户下单 → 后台派单 → 师傅履约 → 状态同步」最小闭环。
-> 三端独立路由：用户端 H5 (`/customer`)、后台管理 (`/dashboard` 等)、师傅端 H5 (`/worker`)。
+> **为中小上门服务团队（家政 / 家电清洗 / 维修 / 母婴 / 应急）打造的 SaaS 雏形 —— 一个平台，三个角色，一套数据。**
+>
+> 客户在小程序下单，运营在后台派单，师傅在手机上接单。三端数据实时同步：从「待派单」到「已完成」全链路可见。
+>
+> 这是**第一版 MVP** —— 验证 O2O 业务闭环能跑通；不是「最终版产品」。
+
+## 🚀 30 秒看懂（演示开场 hook）
+
+| 角色        | 做什么                             | 在哪               |
+| ----------- | ---------------------------------- | ------------------ |
+| 👤 **客户** | 选服务 → 填联系方式 → 下单         | 用户端 `/customer` |
+| 🛠️ **运营** | 看新订单 → 系统推荐师傅 → 一键派单 | 后台 `/orders`     |
+| 🚗 **师傅** | 看分配订单 → 到场 → 完成           | 师傅端 `/worker`   |
+
+**演示怎么跑**（4 步，15 分钟）：客户在小程序下个空调清洗单 → 运营在后台看到推荐师傅（孙师傅，技能匹配）→ 派给他 → 师傅在小程序看到「已派单」→ 点开始服务 → 完成 → 客户再打开查订单看到「已完成」。**4 步走完，全链路通了。**
 
 ## 🚀 5 分钟快速上手（新手只看这个）
 
@@ -105,9 +118,119 @@ npm run dev
 - **Prisma 5 + SQLite** —— ORM + 本地文件型数据库（dev.db）
 - **Vitest** —— 单元 + 端到端测试
 - **tsx** —— 跑 seed 和 verify 脚本
+- **GitHub Actions** —— CI（check + lint + test + build）
+- **ESLint + Prettier + husky** —— pre-commit 自动 lint + format
+- **@vitest/coverage-v8** —— 测试覆盖率报告（当前 81%+）
 
 > 样式**未使用 Tailwind CSS** —— 全部用内联 `style` 属性（演示阶段简化，零配置）。
 > 跑 `npm run lint:paths` 自动检查目录约定（防 `src/app/` 等踩坑）。
+
+---
+
+## 3.1 架构图
+
+```mermaid
+flowchart TB
+  subgraph Client["客户端（演示者 + 用户/师傅）"]
+    Browser["浏览器\n（H5 / Desktop）"]
+  end
+
+  subgraph Next["Next.js 15 (App Router)"]
+    Pages["app/*/page.tsx\n(Server Components)"]
+    Actions["app/*/actions.ts\n(Server Actions)"]
+    Middleware["middleware.ts\n（路由保护）"]
+  end
+
+  subgraph Business["业务层（src/lib/）"]
+    Orders["orders.ts\ncreate / assign / transition"]
+    Queries["queries.ts\n页面级组装"]
+    Repos["repos/*.ts\nPrisma 原子操作"]
+    Auth["auth.ts\ncookie session"]
+  end
+
+  subgraph Data["数据层"]
+    Prisma["Prisma Client\n（单例 globalThis）"]
+    SQLite[("SQLite\nprisma/dev.db")]
+  end
+
+  Browser -->|HTTP| Middleware
+  Middleware --> Pages
+  Pages -->|调用| Business
+  Actions -->|调用| Business
+  Queries --> Repos
+  Orders --> Repos
+  Repos --> Prisma
+  Prisma --> SQLite
+```
+
+**关键设计**：
+
+- `app/` 路由（Next.js 只认根，不认 `src/app/`）
+- `actions/` 是写操作入口（form action 直接调）
+- `src/lib/` 业务逻辑（pure functions + DB 调用）
+- `repos/` 单表原子操作（Prisma 唯一入口）
+- `middleware.ts` 路由保护（`PROTECTED_PATHS`）
+
+---
+
+## 3.2 数据模型（ER 图）
+
+```mermaid
+erDiagram
+  ServiceCategory ||--o{ ServiceSku : "has"
+  ServiceSku      ||--o{ Order       : "下单选"
+  Master          ||--o{ Order       : "派单给"
+  DispatchRule    ||..|| ServiceSku : "match.skuId"
+  DispatchRule    ||..|| ServiceCategory : "match.categoryId"
+
+  ServiceCategory {
+    string id PK
+    string name UK
+    string categoryCode UK
+    bool enabled
+  }
+  ServiceSku {
+    string id PK
+    string skuCode UK
+    string name
+    int basePrice
+    int durationMinutes
+    string requiredSkills "JSON"
+    bool enabled
+  }
+  Master {
+    string id PK
+    string name
+    string phone
+    string skills "JSON"
+    float rating
+    int completedJobs
+    string status "available/busy/offline"
+  }
+  Order {
+    string id PK "业务号 O+YYYYMMDD+xxxx"
+    string customerName
+    string customerPhone
+    string status "pending/assigned/in_service/completed/cancelled"
+    int amount "单位：分"
+    string remark "用户备注"
+    datetime scheduledAt
+  }
+  DispatchRule {
+    string id PK
+    string name
+    int priority
+    bool enabled
+    string ruleJson "JSON: match+requiredSkills"
+  }
+```
+
+**核心约束**：
+
+- `skuCode / categoryCode` 业务编码（应用层强制大写，SQLite 不支持 @db.Collate）
+- `Order.amount` 单位是**分**（避免浮点）
+- `Order.status` 终态：`completed` / `cancelled`
+- `Master.status` 系统自动管（available → busy → available），UI 不暴露
 
 ---
 

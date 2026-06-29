@@ -60,10 +60,11 @@ export default function LoginPage() {
         }}
       >
         <h1 style={{ fontSize: 22, fontWeight: 600, margin: "0 0 4px 0" }}>
-          登录
+          管理员登录
         </h1>
         <p style={{ color: "#6b7280", fontSize: 13, margin: "0 0 24px 0" }}>
-          O2O 管理后台 MVP — 固定账号 admin / admin123
+          演示账号 <code style={codeStyle}>admin</code> / 密码{" "}
+          <code style={codeStyle}>admin123</code>
         </p>
 
         <div style={{ marginBottom: 12 }}>
@@ -168,10 +169,27 @@ export default function LoginPage() {
           {isPending ? "登录中…" : "登录"}
         </button>
 
-        <p style={{ color: "#9ca3af", fontSize: 11, marginTop: 16, textAlign: "center" }}>
+        <p
+          style={{
+            color: "#9ca3af",
+            fontSize: 11,
+            marginTop: 16,
+            textAlign: "center",
+          }}
+        >
           演示阶段 — 账号硬编码在源码
         </p>
       </form>
     </main>
   );
 }
+
+const codeStyle: React.CSSProperties = {
+  background: "#f3f4f6",
+  padding: "1px 6px",
+  borderRadius: 3,
+  fontFamily: "ui-monospace, SFMono-Regular, monospace",
+  fontSize: 12,
+  border: "1px solid #e5e7eb",
+  color: "#111827",
+};
