@@ -199,8 +199,8 @@ describe("listOrdersForMaster — 字段映射", () => {
 describe("listWorkerOptions", () => {
   it("返回所有师傅（含 offline），手机号脱敏到后 4 位", async () => {
     const options = await listWorkerOptions();
-    // seed 5 个师傅
-    expect(options).toHaveLength(5);
+    // seed >= 5 个师傅（开发期间可能手动加师傅；不写死数量）
+    expect(options.length).toBeGreaterThanOrEqual(5);
     for (const o of options) {
       expect(o.id).toBeTruthy();
       expect(o.name).toBeTruthy();

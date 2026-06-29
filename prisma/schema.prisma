@@ -1,13 +1,16 @@
 // Prisma schema — O2O MVP 第一版
 // 选 SQLite 是本地开发零配置、文件即数据库；将来迁 Postgres 主要改 datasource 即可。
+//
+// [阶段 1 — 2026-06-29] 已迁到 PostgreSQL。SQLite 文件 prisma/dev.db 留作回滚兜底。
+//   切回 SQLite: 把 provider 改回 "sqlite"、url 改回 "file:./dev.db"、删 migrations/ 即可。
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 // ============================================================

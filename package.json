@@ -16,10 +16,14 @@
     "db:push": "prisma db push --accept-data-loss",
     "db:migrate:dev": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
+    "db:migrate:sqlite-to-postgres": "tsx prisma/scripts/migrate-sqlite-to-postgres.ts",
+    "db:verify-migration": "tsx prisma/scripts/verify-migration.ts",
+    "db:verify-chain": "tsx scripts/verify-chain.ts",
     "db:studio": "prisma studio",
     "db:generate": "prisma generate",
     "db:seed": "tsx prisma/seed.ts",
-    "db:reset": "rm -f prisma/dev.db && npm run db:push && npm run db:seed",
+    "db:reset": "prisma migrate reset --force",
+    "db:start": "bash scripts/db-start.sh",
     "prepare": "husky"
   },
   "lint-staged": {
@@ -42,10 +46,12 @@
     "zod": "3.25.76"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.9.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitest/coverage-v8": "^2.1.9",
+    "better-sqlite3": "^12.11.1",
     "eslint": "^9.39.4",
     "eslint-config-next": "^16.2.9",
     "husky": "^9.1.7",

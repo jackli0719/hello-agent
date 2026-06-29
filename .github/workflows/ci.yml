@@ -16,6 +16,28 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
+    # Postgres service container — 项目从 SQLite 迁过来后必须
+    # 端口 5432 不用避开（CI 环境干净）
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: o2o
+          POSTGRES_PASSWORD: o2o
+          POSTGRES_DB: o2o
+        ports:
+          - 5432:5432
+        # 拉镜像慢的话加 cache，alpine 已经够快
+        options: >-
+          --health-cmd "pg_isready -U o2o"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      # CI 用 5432（避免本地 5433 习惯污染）
+      DATABASE_URL: "postgresql://o2o:o2o@localhost:5432/o2o?schema=public"
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,27 +51,43 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # 1. TypeScript + 路径 lint（快速反馈）
+      # 0. 等 Postgres ready（service container healthcheck 之后）
+      - name: Wait for Postgres
+        run: |
+          for i in {1..30}; do
+            if pg_isready -h localhost -p 5432 -U o2o; then
+              echo "Postgres ready"
+              break
+            fi
+            echo "Waiting for Postgres... ($i/30)"
+            sleep 2
+          done
+
+      # 1. Apply migrations（建表 + apply 已有 migration）
+      - name: Apply migrations
+        run: npx prisma migrate deploy
+
+      # 2. TypeScript + 路径 lint（快速反馈）
       - name: Check (TypeScript + 目录约定)
         run: npm run check
 
-      # 2. ESLint
+      # 3. ESLint
       - name: Lint
         run: npm run lint
 
-      # 3. Prettier 格式检查（不自动修，CI 仅 fail）
+      # 4. Prettier 格式检查（不自动修，CI 仅 fail）
       - name: Format check
         run: npm run format:check
 
-      # 4. 单元 + 端到端测试（含真实 SQLite）
+      # 5. 单元 + 端到端测试（连真 Postgres）
       - name: Test
         run: npm run test
 
-      # 5. 生产构建（验证可构建）
+      # 6. 生产构建（验证可构建）
       - name: Build
         run: npm run build
 
-      # 4. 上传 build artifacts（30 天保留）
+      # 7. 上传 build artifacts
       - name: Upload .next
         if: success()
         uses: actions/upload-artifact@v4

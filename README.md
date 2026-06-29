@@ -512,4 +512,6 @@ npm run test
 
 - [docs/DEMO.md](docs/DEMO.md) — 4 步演示脚本（用户下单 → 后台派单 → 师傅履约 → 用户查询）
 - [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — 部署 / 限制 / PostgreSQL 迁移
+- [docs/postgresql-migration.md](docs/postgresql-migration.md) — SQLite → PostgreSQL 迁移评估 + 部署平台选型（推荐 Railway）
+- [docs/sqlite-to-postgres-data-migration.md](docs/sqlite-to-postgres-data-migration.md) — 数据迁移实操手册（步骤 / 验证 / 回滚 / FAQ）
 - [docs/FEEDBACK.md](docs/FEEDBACK.md) — 试用反馈模板
