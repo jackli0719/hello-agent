@@ -5,6 +5,31 @@ O2O 上门服务 MVP 的所有变更记录，按 [Keep a Changelog 1.1.0](https:
 
 ---
 
+## [v0.2.5] — 2026-06-29 — harness patch：B1 流程纪律工具卡
+
+**Tag**：`harness-v0.2.5` · **变更类型**：harness patch（决策回报 + agent prompt 工具卡）
+
+### Added
+
+- `scripts/lint-decision-disclosure.js` — 扫最近 5 commit 含决策回报关键词
+- `scripts/lint-commit-message.js` — 单 commit msg 提示（不阻断，9 个 keyword）
+- `scripts/lint-agent-prompt-local.js` — 验证 `.claude/CLAUDE.local.md` 存在 + 4 段 P0-P3 覆盖
+- `npm run lint:process` script + 接入 `npm run check` 链
+
+### Score Change
+
+| 维度         | v0.2.4   | v0.2.5   | delta     |
+| ------------ | -------- | -------- | --------- |
+| 流程纪律     | 5/10     | **8/10** | **+3**    |
+| **加权平均** | **7.50** | **7.95** | **+0.45** |
+
+### Decision
+
+- B1.2 lint-commit-message **不阻断**：遵循 v0.2.1「假卡点 = 自我欺骗」原则
+- B1.3 仅验证文件存在 + 段覆盖 ≠ Claude Code 真加载
+
+---
+
 ## [v0.2.4] — 2026-06-29 — harness patch：A4 全闭环 + 数据来源真相
 
 **Tag**：`harness-v0.2.4` · **变更类型**：harness patch（暴露 v0.2.3 没分析的根因）
