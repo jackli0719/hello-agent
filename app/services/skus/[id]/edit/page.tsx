@@ -23,7 +23,9 @@ export default async function EditSkuPage({ params }: PageProps) {
   try {
     const arr = JSON.parse(sku.requiredSkills);
     if (Array.isArray(arr)) {
-      requiredSkillsStr = skillsToString(arr.filter((s) => typeof s === "string"));
+      requiredSkillsStr = skillsToString(
+        arr.filter((s) => typeof s === "string"),
+      );
     }
   } catch {
     // 坏数据留空
@@ -42,11 +44,16 @@ export default async function EditSkuPage({ params }: PageProps) {
         }}
       >
         <div style={{ marginBottom: 12 }}>
-          <Link href="/services" style={{ color: "#6b7280", fontSize: 13, textDecoration: "none" }}>
+          <Link
+            href="/services"
+            style={{ color: "#6b7280", fontSize: 13, textDecoration: "none" }}
+          >
             ← 返回服务列表
           </Link>
         </div>
-        <h1 style={{ fontSize: 24, margin: "0 0 4px 0" }}>编辑 SKU：{sku.name}</h1>
+        <h1 style={{ fontSize: 24, margin: "0 0 4px 0" }}>
+          编辑 SKU：{sku.name}
+        </h1>
         <p style={{ color: "#6b7280", margin: "0 0 20px 0", fontSize: 14 }}>
           编码：{sku.skuCode}（编码不可修改）
         </p>

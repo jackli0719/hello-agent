@@ -16,7 +16,10 @@ export default function NewCategoryPage() {
         }}
       >
         <div style={{ marginBottom: 12 }}>
-          <Link href="/services" style={{ color: "#6b7280", fontSize: 13, textDecoration: "none" }}>
+          <Link
+            href="/services"
+            style={{ color: "#6b7280", fontSize: 13, textDecoration: "none" }}
+          >
             ← 返回服务列表
           </Link>
         </div>

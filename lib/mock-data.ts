@@ -1,4 +1,10 @@
-import type { Order, OrderStatus, Service, Technician, TechnicianStatus } from "./types";
+import type {
+  Order,
+  OrderStatus,
+  Service,
+  Technician,
+  TechnicianStatus,
+} from "./types";
 
 // ============================================================
 // lib/ 目录说明（重要）

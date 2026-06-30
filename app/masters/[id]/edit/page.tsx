@@ -19,7 +19,8 @@ export default async function EditMasterPage({ params }: PageProps) {
   let skillsStr = "";
   try {
     const arr = JSON.parse(m.skills);
-    if (Array.isArray(arr)) skillsStr = skillsToString(arr.filter((s) => typeof s === "string"));
+    if (Array.isArray(arr))
+      skillsStr = skillsToString(arr.filter((s) => typeof s === "string"));
   } catch {
     // 坏数据留空
   }
@@ -37,11 +38,16 @@ export default async function EditMasterPage({ params }: PageProps) {
         }}
       >
         <div style={{ marginBottom: 12 }}>
-          <Link href="/masters" style={{ color: "#6b7280", fontSize: 13, textDecoration: "none" }}>
+          <Link
+            href="/masters"
+            style={{ color: "#6b7280", fontSize: 13, textDecoration: "none" }}
+          >
             ← 返回师傅列表
           </Link>
         </div>
-        <h1 style={{ fontSize: 24, margin: "0 0 4px 0" }}>编辑师傅：{m.name}</h1>
+        <h1 style={{ fontSize: 24, margin: "0 0 4px 0" }}>
+          编辑师傅：{m.name}
+        </h1>
         <p style={{ color: "#6b7280", margin: "0 0 20px 0", fontSize: 14 }}>
           ID：{m.id}（{m.completedJobs} 单已完成）
         </p>

@@ -16,7 +16,10 @@ export default function NewMasterPage() {
         }}
       >
         <div style={{ marginBottom: 12 }}>
-          <Link href="/masters" style={{ color: "#6b7280", fontSize: 13, textDecoration: "none" }}>
+          <Link
+            href="/masters"
+            style={{ color: "#6b7280", fontSize: 13, textDecoration: "none" }}
+          >
             ← 返回师傅列表
           </Link>
         </div>

@@ -87,7 +87,9 @@ export function CancelDispatchButton({ orderId }: Props) {
   }
 
   const validationError =
-    result && !result.ok && result.category === "validation" ? result.error : null;
+    result && !result.ok && result.category === "validation"
+      ? result.error
+      : null;
 
   return (
     <div style={{ fontSize: 12 }}>
