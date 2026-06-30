@@ -19,6 +19,9 @@ import { getOrderForWorker } from "@/src/lib/worker";
 import { StatusBadge, ORDER_TONE } from "@/components/ui";
 import { ORDER_STATUS_LABEL } from "@/lib/mock-data";
 import { getCurrentUser } from "@/src/lib/auth";
+import { ensureCsrfCookie } from "@/src/lib/csrf";
+import { workerCancelOrderAction } from "@/app/orders/actions";
+import { CancelForm } from "@/components/CancelForm";
 import { WorkerOrderActions } from "../../WorkerOrderActions";
 import { logoutAction } from "@/app/login/actions";
 
@@ -37,6 +40,8 @@ export default async function WorkerOrderDetailPage({ params }: PageProps) {
   if (user.role !== "worker" || !user.workerId) {
     redirect("/dashboard");
   }
+  // [v0.7.9] RSC 阶段确保 csrf cookie 存在（师傅取消按钮需要）
+  const csrfToken = await ensureCsrfCookie();
 
   // 2. 拉订单（按登录 workerId 强校验 — 越权返回 null）
   const order = await getOrderForWorker(id, user.workerId);
@@ -167,6 +172,28 @@ export default async function WorkerOrderDetailPage({ params }: PageProps) {
         {/* 时间戳 */}
         <SectionTitle title="时间信息" />
         <Field label="创建时间" value={formatDateTime(order.createdAt)} />
+
+        {/* [v0.7.9] 取消信息（cancelled 状态展示）*/}
+        {order.status === "cancelled" && order.cancelReason ? (
+          <Field label="取消原因" value={order.cancelReason} />
+        ) : null}
+        {order.status === "cancelled" && order.canceledAt ? (
+          <Field label="取消时间" value={formatDateTime(order.canceledAt)} />
+        ) : null}
+
+        {/* [v0.7.9] 师傅取消按钮 — assigned / in_service 状态（业务规则 #11）*/}
+        {(order.status === "assigned" || order.status === "in_service") && (
+          <div style={{ marginTop: 16 }}>
+            <SectionTitle title="操作" />
+            <CancelForm
+              orderId={order.id}
+              formAction={workerCancelOrderAction}
+              csrfToken={csrfToken}
+              requireReason={order.status === "in_service"}
+              buttonLabel="确认取消订单"
+            />
+          </div>
+        )}
       </section>
 
       {/* 操作按钮区 */}

@@ -124,6 +124,11 @@ model Order {
   // - serviceSummary = 师傅完成订单时填的服务说明（admin/user/worker 看）
   internalRemark  String?
   serviceSummary  String?
+  // [v0.7.9] 取消订单字段
+  // - cancelReason = 取消原因（in_service 必填，其他选填；3 端都展示）
+  // - canceledAt = 取消时间（status=cancelled 时有值）
+  cancelReason   String?
+  canceledAt     DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

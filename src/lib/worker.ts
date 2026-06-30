@@ -143,6 +143,9 @@ export interface WorkerOrderDetail {
   internalRemark: string | null;
   /** 师傅完成订单时填的服务说明（completed 状态才有） */
   serviceSummary: string | null;
+  // [v0.7.9] 取消字段（师傅端可见）
+  cancelReason: string | null;
+  canceledAt: string | null;
 }
 
 /**
@@ -179,6 +182,8 @@ export async function getOrderForWorker(
       remark: true, // [v0.7.6] 用户下单备注
       internalRemark: true, // [v0.7.6] 后台内部备注
       serviceSummary: true, // [v0.7.6] 师傅完成说明
+      cancelReason: true, // [v0.7.9]
+      canceledAt: true, // [v0.7.9]
       master: { select: { name: true, phone: true } },
       serviceSku: {
         select: {
@@ -213,5 +218,8 @@ export async function getOrderForWorker(
     remark: row.remark,
     internalRemark: row.internalRemark,
     serviceSummary: row.serviceSummary,
+    // [v0.7.9]
+    cancelReason: row.cancelReason,
+    canceledAt: row.canceledAt ? row.canceledAt.toISOString() : null,
   };
 }

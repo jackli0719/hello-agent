@@ -585,6 +585,9 @@ export async function transitionOrder(
   // [v0.7.8] 可选 serviceSummary：师傅完成订单时填（只在 completed 用）
   // 在事务内写入 → serviceSummary 与 status 一起更新（原子性）
   serviceSummary?: string,
+  // [v0.7.9] 可选 cancelReason：取消订单时填（业务规则：in_service 必填）
+  // 在事务内写入 → cancelReason + canceledAt 与 status 一起更新（原子性）
+  cancelReason?: string,
 ): Promise<TransitionOrderResult> {
   // 1. 加载订单
   const order = await prisma.order.findUnique({ where: { id: orderId } });
@@ -607,13 +610,15 @@ export async function transitionOrder(
     };
   }
 
-  // 3. 事务：乐观锁改订单 + 视情况释放师傅 + 写 serviceSummary（原子性）
+  // 3. 事务：乐观锁改订单 + 视情况释放师傅 + 写 serviceSummary/cancelReason（原子性）
   try {
     await prisma.$transaction(async (tx) => {
       // [v0.7.8] serviceSummary 与 status 同事务写
       const data: {
         status: "in_service" | "completed" | "cancelled";
         serviceSummary?: string;
+        cancelReason?: string;
+        canceledAt?: Date;
       } = {
         status: nextStatus,
       };
@@ -624,6 +629,11 @@ export async function transitionOrder(
         serviceSummary.trim()
       ) {
         data.serviceSummary = serviceSummary.trim();
+      }
+      // [v0.7.9] cancelled 状态 + 实际传了 cancelReason 时写入（同时写 canceledAt）
+      if (nextStatus === "cancelled" && cancelReason && cancelReason.trim()) {
+        data.cancelReason = cancelReason.trim();
+        data.canceledAt = new Date();
       }
       const result = await tx.order.updateMany({
         where: { id: orderId, status: order.status }, // CAS：只在状态没变时改

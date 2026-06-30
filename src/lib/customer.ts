@@ -119,6 +119,9 @@ export interface CustomerOrderLookupItem {
   internalRemark?: string | null;
   /** [v0.7.6] 师傅完成说明（用户端 + 后台展示）*/
   serviceSummary?: string | null;
+  // [v0.7.9] 取消原因 + 取消时间
+  cancelReason: string | null;
+  canceledAt: string | null;
   createdAt: string;
 }
 
@@ -153,6 +156,8 @@ export async function listOrdersForCustomerPhone(
       remark: true,
       createdAt: true,
       serviceSummary: true, // [v0.7.6] 师傅完成说明
+      cancelReason: true, // [v0.7.9]
+      canceledAt: true, // [v0.7.9]
       // [v0.7.5] 列表也 join master 表（拿手机号）
       master: { select: { phone: true } },
       serviceSku: { select: { category: { select: { name: true } } } },
@@ -174,6 +179,9 @@ export async function listOrdersForCustomerPhone(
     remark: r.remark,
     // [v0.7.6] 列表不需要 internalRemark（用户端不展示），但 serviceSummary 要
     serviceSummary: r.serviceSummary,
+    // [v0.7.9] 取消字段（用户端可见 — 业务规则）
+    cancelReason: r.cancelReason,
+    canceledAt: r.canceledAt ? r.canceledAt.toISOString() : null,
     createdAt: r.createdAt.toISOString(),
   }));
 }
@@ -212,6 +220,8 @@ export async function getOrderForCustomer(
       remark: true,
       createdAt: true,
       serviceSummary: true, // [v0.7.6] 师傅完成说明
+      cancelReason: true, // [v0.7.9]
+      canceledAt: true, // [v0.7.9]
       master: { select: { phone: true } },
       serviceSku: { select: { category: { select: { name: true } } } },
     },
@@ -232,6 +242,9 @@ export async function getOrderForCustomer(
     technicianPhone: row.master?.phone ?? null,
     remark: row.remark,
     serviceSummary: row.serviceSummary,
+    // [v0.7.9] 取消字段（用户端可见 — 业务规则）
+    cancelReason: row.cancelReason,
+    canceledAt: row.canceledAt ? row.canceledAt.toISOString() : null,
     createdAt: row.createdAt.toISOString(),
   };
 }

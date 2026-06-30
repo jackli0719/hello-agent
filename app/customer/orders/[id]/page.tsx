@@ -18,6 +18,9 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getOrderForCustomer } from "@/src/lib/customer";
 import { getCurrentUser } from "@/src/lib/auth";
+import { ensureCsrfCookie } from "@/src/lib/csrf";
+import { customerCancelOrderAction } from "@/app/orders/actions";
+import { CancelForm } from "@/components/CancelForm";
 import { StatusBadge, ORDER_TONE } from "@/components/ui";
 import { ORDER_STATUS_LABEL } from "@/lib/mock-data";
 import type { OrderStatus } from "@/src/types";
@@ -57,6 +60,8 @@ export default async function CustomerOrderDetailPage({ params }: PageProps) {
   if (!user) {
     redirect(`/login?next=/customer/orders/${encodeURIComponent(id)}`);
   }
+  // [v0.7.9] RSC 阶段确保 csrf cookie 存在（用户取消按钮需要）
+  const csrfToken = await ensureCsrfCookie();
   if (user.role !== "customer" || !user.phone) {
     redirect("/customer/orders");
   }
@@ -149,6 +154,14 @@ export default async function CustomerOrderDetailPage({ params }: PageProps) {
           <Field label="服务完成说明" value={order.serviceSummary} />
         ) : null}
 
+        {/* [v0.7.9] 取消信息（cancelled 状态展示）*/}
+        {order.status === "cancelled" && order.cancelReason ? (
+          <Field label="取消原因" value={order.cancelReason} />
+        ) : null}
+        {order.status === "cancelled" && order.canceledAt ? (
+          <Field label="取消时间" value={formatDateTime(order.canceledAt)} />
+        ) : null}
+
         {/* 师傅信息 — 仅在已派单时显示 */}
         {order.technicianName ? (
           <>
@@ -163,6 +176,19 @@ export default async function CustomerOrderDetailPage({ params }: PageProps) {
         {/* 时间戳 */}
         <SectionTitle title="时间信息" />
         <Field label="下单时间" value={formatDateTime(order.createdAt)} />
+
+        {/* [v0.7.9] 用户取消按钮 — 仅 pending 状态（业务规则 #10）*/}
+        {order.status === "pending" && (
+          <div style={{ marginTop: 16 }}>
+            <SectionTitle title="操作" />
+            <CancelForm
+              orderId={order.id}
+              formAction={customerCancelOrderAction}
+              csrfToken={csrfToken}
+              buttonLabel="确认取消订单"
+            />
+          </div>
+        )}
       </section>
     </div>
   );

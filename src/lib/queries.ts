@@ -36,6 +36,11 @@ export interface OrderListItem {
   internalRemark: string | null;
   /** 师傅完成说明 */
   serviceSummary: string | null;
+  // [v0.7.9] 取消相关字段
+  /** 取消原因 */
+  cancelReason: string | null;
+  /** 取消时间 */
+  canceledAt: string | null;
 }
 
 export interface OrdersPageData {
@@ -218,6 +223,8 @@ export async function listOrdersForPage(
         remark: true, // [v0.7.6]
         internalRemark: true, // [v0.7.6]
         serviceSummary: true, // [v0.7.6]
+        cancelReason: true, // [v0.7.9]
+        canceledAt: true, // [v0.7.9]
         address: true,
         scheduledAt: true,
         amount: true,
@@ -300,6 +307,9 @@ export async function listOrdersForPage(
       remark: r.remark,
       internalRemark: r.internalRemark,
       serviceSummary: r.serviceSummary,
+      // [v0.7.9]
+      cancelReason: r.cancelReason,
+      canceledAt: r.canceledAt ? toLocalISOString(r.canceledAt) : null,
     };
   });
 

@@ -1,5 +1,6 @@
 import { OrderActions } from "@/components/OrderActions";
 import { InternalRemarkForm } from "@/components/InternalRemarkForm";
+import { AdminCancelButton } from "@/components/AdminCancelButton";
 import { StatusBadge, th, td, card, ORDER_TONE } from "@/components/ui";
 import { ORDER_STATUS_LABEL } from "@/lib/mock-data";
 import { listOrdersForPage, type OrderListItem } from "@/src/lib/queries";
@@ -533,7 +534,7 @@ export default async function OrdersPage({ searchParams }: PageProps) {
                       />
                     </td>
                     <td style={td}>
-                      <ActionCell order={o} />
+                      <ActionCell order={o} csrfToken={csrfToken} />
                     </td>
                   </tr>
                 ))}
@@ -638,20 +639,68 @@ export default async function OrdersPage({ searchParams }: PageProps) {
 }
 
 // 推荐 / 派单结果展示单元格
-function ActionCell({ order }: { order: OrderListItem }) {
+function ActionCell({
+  order,
+  csrfToken,
+}: {
+  order: OrderListItem;
+  csrfToken: string;
+}) {
   const { recommendation } = order;
   const rule = recommendation.rule;
 
+  // [v0.7.9] cancelled 状态：展示取消信息 + 不可操作
+  if (order.status === "cancelled") {
+    return (
+      <div style={{ fontSize: 12 }}>
+        {order.cancelReason && (
+          <div
+            style={{
+              color: "#7f1d1d",
+              background: "#fef2f2",
+              padding: "4px 6px",
+              borderRadius: 3,
+              marginBottom: 4,
+            }}
+          >
+            原因：{order.cancelReason}
+          </div>
+        )}
+        {order.canceledAt && (
+          <div style={{ color: "#6b7280" }}>{order.canceledAt}</div>
+        )}
+      </div>
+    );
+  }
+
+  // [v0.7.9] pending / assigned / in_service 可取消（completed 不可）
+  const canCancel =
+    order.status === "pending" ||
+    order.status === "assigned" ||
+    order.status === "in_service";
+  const requireReason = order.status === "in_service";
+
   // pending 状态：派单按钮列表（候选可能为空，OrderActions 自己处理）
-  // assigned / in_service / completed / cancelled：OrderActions 按 status 分发
+  // assigned / in_service / completed：OrderActions 按 status 分发
   if (order.status !== "pending") {
     return (
-      <OrderActions
-        orderId={order.id}
-        status={order.status}
-        ruleName={null}
-        candidates={[]}
-      />
+      <div>
+        <OrderActions
+          orderId={order.id}
+          status={order.status}
+          ruleName={null}
+          candidates={[]}
+        />
+        {canCancel && (
+          <div style={{ marginTop: 6 }}>
+            <AdminCancelButton
+              orderId={order.id}
+              requireReason={requireReason}
+              csrfToken={csrfToken}
+            />
+          </div>
+        )}
+      </div>
     );
   }
 
