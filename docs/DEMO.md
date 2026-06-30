@@ -3,13 +3,24 @@
 > 第一版 MVP 完整演示：用户下单 → 后台派单 → 师傅履约 → 用户查询。
 > 4 步走完整链路，每步预期结果都明确，演示者可逐项打勾。
 
+## Beta 试用文档入口
+
+| 文档                                           | 用途                                        |
+| ---------------------------------------------- | ------------------------------------------- |
+| ✅ [docs/BETA_CHECKLIST.md](BETA_CHECKLIST.md) | 17 项 Beta 验收清单（推荐试用时逐项打勾）   |
+| 📝 [docs/FEEDBACK.md](FEEDBACK.md)             | 试用反馈模板（评分 + 卡点 + 付费意愿）      |
+| 🗺️ [docs/ROADMAP.md](ROADMAP.md)               | 下一阶段路线图（P0-P3 分级）                |
+| ⚠️ [docs/KNOWN_ISSUES.md](KNOWN_ISSUES.md)     | 当前已知限制（支付 / 短信 / 地图 / 部署等） |
+
+试用流程：按本文档 4 步演示 → 按 BETA_CHECKLIST.md 打勾 → 填 FEEDBACK.md 反馈。
+
 ---
 
 ## 准备
 
 ```bash
-# 1. 初始化数据库 + 种子数据
-npm run db:reset
+# 1. 初始化数据库 + 完整演示数据（推荐 — 包含 20 订单 + 7 User + 8 规则）
+npm run seed:demo
 
 # 2. 启动 dev server
 npm run dev
@@ -22,6 +33,20 @@ npm run dev
 ```
 
 打开首页 `/`，能看到三端入口卡片。
+
+### 演示账号（v0.9.2 seed:demo）
+
+| 角色   | 账号        | 密码          | 绑定的实体 / 手机号 |
+| ------ | ----------- | ------------- | ------------------- |
+| 管理员 | `admin`     | `admin123`    | —                   |
+| 用户   | `customer1` | `customer123` | 手机 `13900000099`  |
+| 用户   | `customer2` | `customer123` | 手机 `13900000088`  |
+| 师傅   | `worker1`   | `worker123`   | 李师傅（T001）      |
+| 师傅   | `worker2`   | `worker123`   | 赵师傅（T002）      |
+| 师傅   | `worker3`   | `worker123`   | 周姐（T003）        |
+| 师傅   | `worker4`   | `worker123`   | 孙师傅（T004）      |
+
+> 💡 提示：seed:demo 数据覆盖 5 个订单状态（pending 8 / assigned 4 / in_service 4 / completed 3 / cancelled 1）+ 派单推荐规则（SKU 精确 + 品类兜底 + 暂无推荐）。试用者可结合 [BETA_CHECKLIST.md](BETA_CHECKLIST.md) 逐项打勾。
 
 ---
 
@@ -208,3 +233,65 @@ npm run db:reset
 - `npm run db:seed` — 只灌**基础**种子（3 类目 + 6 SKU + 5 师傅 + 3 User + 10 订单）
 - `npm run seed:demo` — 灌**完整**演示数据（业务规则 #4 要求数量 + 业务规则 #6 场景覆盖）
 - `npm run db:reset` — 重置 schema + 灌基础种子（会破坏数据，慎用）
+
+---
+
+## 完整试用流程（推荐 Beta 试用者）
+
+> 试用者按这个流程走，能在 30-60 分钟内覆盖 MVP 所有核心能力。
+
+### 第一步：准备（5 分钟）
+
+1. `npm install` — 装依赖
+2. `cp .env.example .env` — 准备 .env
+3. `npm run db:start` — 启动 PostgreSQL 容器 + migrate + seed
+4. `npm run seed:demo` — 一键写入完整演示数据（**必须**，否则数据不够）
+5. `npm run dev` — 启动 dev server
+
+### 第二步：4 步演示（15 分钟）
+
+按上面「第一步：用户下单」到「第四步：用户查询状态」走完整链路。
+
+### 第三步：后台 / 师傅端功能（15 分钟）
+
+| #   | 路径                                 | 验证内容                                                 |
+| --- | ------------------------------------ | -------------------------------------------------------- |
+| 1   | `/dashboard`                         | 8 个统计卡 + 最近动态 10 条                              |
+| 2   | `/orders`                            | 5 个状态 chip 切换 + 关键词搜索 + 时间筛选 + 分页        |
+| 3   | `/orders?status=pending&pageSize=50` | 派单推荐（派给他 / 命中规则 / 暂无可派单）               |
+| 4   | `/services`                          | 类目 + SKU 列表 + 新增表单                               |
+| 5   | `/masters`                           | 师傅列表 + 新增表单（评分 0-5 / skills 必填校验）        |
+| 6   | `/dispatch-rules`                    | 8 条规则（SKU 精确 + 品类兜底 + 停用） + 新增表单        |
+| 7   | `/activity-logs`                     | 操作日志筛选（actorRole / action / targetType / 关键词） |
+| 8   | `/worker`                            | 师傅端 4 状态分组（按 worker1-4 切换看不同师傅）         |
+| 9   | `/customer/orders?phone=13900000099` | 用户查询（customer1 看到的订单）                         |
+
+### 第四步：异常演示（5 分钟）
+
+按上面「异常演示」章节验证派单失败 / 状态机互锁 / 越权防护。
+
+### 第五步：填写反馈（30 分钟）
+
+1. 按 [BETA_CHECKLIST.md](BETA_CHECKLIST.md) 17 项验收清单逐项打勾
+2. 填 [FEEDBACK.md](FEEDBACK.md) 完整反馈（评分 + 卡点 + 付费意愿）
+3. 提交给项目维护者
+
+### 第六步：跑完整验收（5 分钟）
+
+```bash
+# 一键跑完所有验证
+npm run verify
+# 预期输出：
+# ✅ DB 启动 + check + format + test + build + smoke 全部通过
+```
+
+如果 `verify` 失败，把错误信息贴到 FEEDBACK.md 第 4 节「卡点 / 失败记录」。
+
+---
+
+## 注意事项
+
+- **不要在生产库跑 `npm run seed:demo`** — 会清空所有订单 / 日志（演示阶段功能）
+- **遇到 bug 先看 [KNOWN_ISSUES.md](KNOWN_ISSUES.md)** — 可能已知限制而非新 bug
+- **想看下一阶段功能** → [ROADMAP.md](ROADMAP.md)
+- **试用问题反馈** → [FEEDBACK.md](FEEDBACK.md)
