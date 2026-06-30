@@ -1,6 +1,6 @@
 "use server";
 
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import {
   COOKIE_OPTIONS,
@@ -11,6 +11,12 @@ import {
   canAccess,
   type Role,
 } from "@/src/lib/auth";
+import {
+  clearAttempts,
+  getClientIp,
+  isLocked,
+  recordFailure,
+} from "@/src/lib/login-rate-limit";
 
 export type LoginActionResult =
   { ok: true; next: string } | { ok: false; error: string };
@@ -25,6 +31,10 @@ export type LoginActionResult =
  *
  * 成功 → 设 cookie + redirect
  * 失败 → 返回 error 给 UI 内联展示
+ *
+ * [v0.5.0] 加登录限流（修 ADR-013 A3 P0 风险）：
+ * - 同 IP 5 次/分钟失败 → 锁定 60 秒
+ * - 成功登录 → 清零
  */
 export async function loginAction(
   formData: FormData,
@@ -37,10 +47,39 @@ export async function loginAction(
     return { ok: false, error: "请输入账号和密码" };
   }
 
+  // [v0.5.0] 登录限流 — 先检查是否锁
+  const h = await headers();
+  const ip = getClientIp(h);
+  const lockState = isLocked(ip);
+  if (lockState.locked) {
+    const sec = Math.ceil(lockState.remainingMs / 1000);
+    return {
+      ok: false,
+      error: `登录失败次数过多，请 ${sec} 秒后再试`,
+    };
+  }
+
   const user = await authenticate(account, password);
   if (!user) {
-    return { ok: false, error: "账号或密码错误" };
+    // 记录失败
+    const fail = recordFailure(ip);
+    if (fail.locked) {
+      return {
+        ok: false,
+        error: `登录失败次数过多，已锁定 60 秒`,
+      };
+    }
+    return {
+      ok: false,
+      error:
+        fail.attemptsLeft > 0
+          ? `账号或密码错误（还剩 ${fail.attemptsLeft} 次）`
+          : "账号或密码错误",
+    };
   }
+
+  // 成功 → 清零
+  clearAttempts(ip);
 
   // 决定跳哪
   const role = user.role as Role;

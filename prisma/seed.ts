@@ -2,10 +2,14 @@
 // 运行：`npm run db:seed`（依赖 db:push 先建好表）
 
 import { PrismaClient } from "@prisma/client";
+import bcrypt from "bcryptjs";
 import { MOCK_ORDERS, MOCK_SERVICES, MOCK_TECHNICIANS } from "../lib/mock-data";
 import { assertValidCode } from "../src/lib/codes";
 
 const prisma = new PrismaClient();
+
+// [v0.5.0] 密码哈希 — bcrypt rounds=10（演示足够）
+const BCRYPT_ROUNDS = 10;
 
 /**
  * seed 前的「孤儿引用检测」。
@@ -146,13 +150,13 @@ async function main() {
 
   // ----- 4.5. User（账号体系）-----
   // 测试账号：admin / worker1 / customer1
-  // # MVP: password 明文存（按需求）
+  // [v0.5.0] 密码 bcrypt 哈希（修 ADR-013 A1 P0 风险）
   await prisma.user.createMany({
     data: [
       {
         name: "admin",
         phone: null,
-        password: "admin123",
+        password: await bcrypt.hash("admin123", BCRYPT_ROUNDS),
         role: "admin",
         workerId: null,
       },
@@ -160,7 +164,7 @@ async function main() {
         // 绑第一个 Master（演示用）
         name: "worker1",
         phone: MOCK_TECHNICIANS[0]?.phone ?? "13900000001",
-        password: "worker123",
+        password: await bcrypt.hash("worker123", BCRYPT_ROUNDS),
         role: "worker",
         workerId: MOCK_TECHNICIANS[0]?.id ?? null,
       },
@@ -168,13 +172,15 @@ async function main() {
         name: "customer1",
         // 用一个测试手机号（seed 订单里也用这个号，方便演示）
         phone: "13900000099",
-        password: "customer123",
+        password: await bcrypt.hash("customer123", BCRYPT_ROUNDS),
         role: "customer",
         workerId: null,
       },
     ],
   });
-  console.log(`  ✓ User × 3（admin / worker1 / customer1）`);
+  console.log(
+    `  ✓ User × 3（admin / worker1 / customer1，密码已 bcrypt 哈希）`,
+  );
 
   // ----- 5. Order -----
   const skuByName = new Map(MOCK_SERVICES.map((s) => [s.name, s.id]));

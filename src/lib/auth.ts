@@ -14,6 +14,7 @@
 // - 不签名 cookie（dev 演示接受；生产建议 JWT）
 
 import { cookies } from "next/headers";
+import bcrypt from "bcryptjs";
 import { prisma } from "./db";
 
 export const SESSION_COOKIE = "o2o_session";
@@ -87,7 +88,7 @@ export interface AuthenticatedUser {
 /**
  * 校验账号 + 返回用户信息
  * - 支持 username 或 phone 登录
- * - 明文比对（按需求 — MVP）
+ * - [v0.5.0] 密码 bcrypt 哈希比对（修 ADR-013 A1 P0）
  */
 export async function authenticate(
   account: string,
@@ -100,7 +101,9 @@ export async function authenticate(
     },
   });
   if (!user) return null;
-  if (user.password !== password) return null;
+  // bcrypt 哈希比对
+  const passwordOk = await bcrypt.compare(password, user.password);
+  if (!passwordOk) return null;
   return {
     id: user.id,
     name: user.name,
