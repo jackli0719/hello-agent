@@ -86,6 +86,40 @@
 - 「完成订单不释放师傅」简化了 → 师傅接不了新单
 - 新 SKU 默认 `requiredSkills=[]` 简化了 → 派单匹配不到
 
+### P0-5：改 demo 数据 / seed 文件 → 必跑 `npm run test`
+
+**v0.9.2 教训**：改 `prisma/seed.ts` / `prisma/seed-demo.ts` / `lib/mock-data.ts` 不跑 `npm run test` → 测试 reset 仍引用旧 ID → 72 个测试失败（v0.9.3 才修）。
+
+触发：
+
+- 改了 `prisma/seed.ts` / `prisma/seed-demo.ts` / `lib/mock-data.ts` / `scripts/_*-factory.ts` / `scripts/_tmp_*.ts`
+- 改了师傅 ID（删/加/改名）
+- 改了订单 ID 格式（从「O+YYYYMMDD+」改 cuid）
+- 改了 SKU/品类 code 前缀
+
+执行（**commit 前必跑，husky pre-commit 已强制**）：
+
+```bash
+# 1. 改完文件
+# 2. 立刻 npm run test（不能用 baseline「上次过了」当借口）
+# 3. 等看到「283 passed」
+# 4. 再继续写 commit
+```
+
+**反例**：v0.9.2 commit 时写了「check + test + build 全过」 — **没贴任何断言**（CLAUDE.md 错误卡类 5「用「通过 ✓」要贴关键断言」）。下次 commit 必贴：
+
+```
+✅ npm run test
+  Test Files  21 passed (21)
+  Tests       284 passed (284)
+```
+
+**修复手段**：
+
+- ✅ memory cheatsheet 类别 8e（v0.9.3 加）
+- ✅ husky pre-commit 跑 `npm run test`（v0.9.3 加）
+- 未来可加：lint-staged 检测「改 prisma/seed*.ts → 必须跑 test」
+
 ---
 
 ## P1 — 强烈建议（不遵守 = 多次踩坑）
