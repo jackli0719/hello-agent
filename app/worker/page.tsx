@@ -1,26 +1,50 @@
 // 师傅端 H5 — /worker
 //
-// [账号阶段] 2026-06-29 改造：
-// - 不再通过下拉框选择师傅
-// - 按当前登录 user.workerId 自动过滤该师傅的订单
-// - 不登录 → middleware 跳 /login
+// [v0.7.0] 改造为按状态分组展示：
+// 1. 待服务 (assigned)
+// 2. 服务中 (in_service)
+// 3. 已完成 (completed)
+// 4. 已取消 (cancelled)
 //
-// MVP 范围：
-// 1. assigned → 「开始服务」按钮
-// 2. in_service → 「完成订单」按钮
-// 3. completed / cancelled 只展示
-// 4. 无订单 → 「暂无分配订单」
-// 5. mobile 友好（卡片 + 大按钮）
-// 6. 顶部展示当前登录师傅名 + 退出按钮
+// 设计：
+// - 4 分组卡片，每组显示数量
+// - 不显示 pending（未派单）
+// - 操作按钮按状态：
+//   - assigned → 「开始服务」
+//   - in_service → 「完成订单」
+//   - completed / cancelled → 只展示，不允许操作
+// - mobile 友好（卡片 + 大按钮）
+// - 顶部展示当前登录师傅名 + 退出
 
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { listOrdersForMaster } from "@/src/lib/worker";
+import { listOrdersForMaster, type WorkerOrder } from "@/src/lib/worker";
 import { StatusBadge, ORDER_TONE } from "@/components/ui";
 import { ORDER_STATUS_LABEL } from "@/lib/mock-data";
 import { getCurrentUser } from "@/src/lib/auth";
 import { WorkerOrderActions } from "./WorkerOrderActions";
 import { logoutAction } from "@/app/login/actions";
+import type { OrderStatus } from "@/src/types";
+
+// 4 个分组的展示顺序 = 业务流转顺序
+const GROUP_ORDER: { value: OrderStatus; label: string; empty: string }[] = [
+  { value: "assigned", label: "待服务", empty: "暂无待服务订单" },
+  { value: "in_service", label: "服务中", empty: "暂无服务中订单" },
+  { value: "completed", label: "已完成", empty: "暂无已完成订单" },
+  { value: "cancelled", label: "已取消", empty: "暂无已取消订单" },
+];
+
+// 分组头部颜色 — 跟 ORDER_TONE 区分（按业务重要性配色）
+const GROUP_HEADER_TONE: Record<
+  OrderStatus,
+  { bg: string; border: string; text: string }
+> = {
+  assigned: { bg: "#fef3c7", border: "#fcd34d", text: "#92400e" },
+  in_service: { bg: "#dbeafe", border: "#93c5fd", text: "#1e40af" },
+  completed: { bg: "#dcfce7", border: "#86efac", text: "#166534" },
+  cancelled: { bg: "#f3f4f6", border: "#d1d5db", text: "#6b7280" },
+  pending: { bg: "#f3f4f6", border: "#d1d5db", text: "#6b7280" },
+};
 
 export default async function WorkerPage() {
   // 1. 当前登录 user（worker 角色）
@@ -29,11 +53,9 @@ export default async function WorkerPage() {
     redirect("/login?next=/worker");
   }
   if (user.role !== "worker") {
-    // 非 worker 角色不该到这（middleware 已挡，但兜底）
     redirect("/dashboard");
   }
   if (!user.workerId) {
-    // worker 账号没绑 Master（数据异常）
     return (
       <div style={pageStyle}>
         <div style={cardStyle}>
@@ -48,8 +70,20 @@ export default async function WorkerPage() {
     );
   }
 
-  // 2. 拉当前师傅的订单（按 workerId 强过滤）
+  // 2. 拉当前师傅的订单（按 workerId 强过滤；排除 pending）
   const orders = await listOrdersForMaster(user.workerId);
+
+  // 3. 按状态分组
+  const grouped: Record<OrderStatus, WorkerOrder[]> = {
+    pending: [],
+    assigned: [],
+    in_service: [],
+    completed: [],
+    cancelled: [],
+  };
+  for (const o of orders) {
+    grouped[o.status].push(o);
+  }
 
   return (
     <div style={pageStyle}>
@@ -69,37 +103,61 @@ export default async function WorkerPage() {
         </form>
       </header>
 
-      {/* 订单列表 */}
-      {orders.length === 0 ? (
-        <div style={emptyStyle}>暂无分配订单</div>
-      ) : (
-        <div>
-          <div
-            style={{
-              fontSize: 13,
-              color: "#6b7280",
-              marginBottom: 12,
-              paddingLeft: 4,
-            }}
-          >
-            我的订单 · 共 {orders.length} 单
-          </div>
-          {orders.map((o) => (
-            <OrderCard key={o.id} order={o} />
-          ))}
-        </div>
-      )}
+      {/* 4 分组展示 */}
+      {GROUP_ORDER.map((g) => {
+        const list = grouped[g.value];
+        const tone = GROUP_HEADER_TONE[g.value];
+        return (
+          <section key={g.value} style={groupSectionStyle}>
+            {/* 分组标题 */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 12,
+                padding: "8px 12px",
+                background: tone.bg,
+                border: `1px solid ${tone.border}`,
+                borderRadius: 6,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 15,
+                  fontWeight: 600,
+                  color: tone.text,
+                }}
+              >
+                {g.label}
+              </div>
+              <div
+                style={{
+                  fontSize: 13,
+                  color: tone.text,
+                  fontWeight: 500,
+                }}
+              >
+                共 {list.length} 单
+              </div>
+            </div>
+
+            {/* 分组内订单 */}
+            {list.length === 0 ? (
+              <div style={groupEmptyStyle}>{g.empty}</div>
+            ) : (
+              list.map((o) => <OrderCard key={o.id} order={o} />)
+            )}
+          </section>
+        );
+      })}
     </div>
   );
 }
 
 // ---------- 单个订单卡片 ----------
 
-function OrderCard({
-  order,
-}: {
-  order: Awaited<ReturnType<typeof listOrdersForMaster>>[number];
-}) {
+function OrderCard({ order }: { order: WorkerOrder }) {
   return (
     <div
       style={{
@@ -134,7 +192,14 @@ function OrderCard({
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <WorkerOrderActions orderId={order.id} status={order.status} />
+        {/* [v0.7.0] 操作按钮按状态：completed/cancelled 只展示不操作 */}
+        {order.status === "assigned" || order.status === "in_service" ? (
+          <WorkerOrderActions orderId={order.id} status={order.status} />
+        ) : (
+          <div style={readonlyHintStyle}>
+            ✓ {ORDER_STATUS_LABEL[order.status]}（不可再操作）
+          </div>
+        )}
         <Link
           href={`/worker/orders/${encodeURIComponent(order.id)}`}
           style={{
@@ -208,13 +273,17 @@ const headerStyle: React.CSSProperties = {
   justifyContent: "space-between",
 };
 
-const emptyStyle: React.CSSProperties = {
+const groupSectionStyle: React.CSSProperties = {
+  marginBottom: 16,
+};
+
+const groupEmptyStyle: React.CSSProperties = {
   background: "#fff",
   borderRadius: 8,
-  padding: 40,
+  padding: "20px 16px",
   textAlign: "center",
   color: "#9ca3af",
-  fontSize: 14,
+  fontSize: 13,
 };
 
 const cardStyle: React.CSSProperties = {
@@ -232,4 +301,13 @@ const logoutBtnStyle: React.CSSProperties = {
   borderRadius: 6,
   padding: "6px 12px",
   cursor: "pointer",
+};
+
+const readonlyHintStyle: React.CSSProperties = {
+  padding: "10px 12px",
+  background: "#f9fafb",
+  color: "#6b7280",
+  borderRadius: 6,
+  fontSize: 13,
+  textAlign: "center",
 };
