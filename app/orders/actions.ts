@@ -184,8 +184,10 @@ async function runTransition(
   orderId: string,
   nextStatus: "in_service" | "completed" | "cancelled",
   friendlyName: string,
+  // [v0.7.8] 可选 serviceSummary：透传给 transitionOrder 在事务内写
+  serviceSummary?: string,
 ): Promise<TransitionActionResult> {
-  const result = await transitionOrder(orderId, nextStatus);
+  const result = await transitionOrder(orderId, nextStatus, serviceSummary);
   if (result.ok) {
     // 写操作日志（按目标状态分支 action 类型）
     const actionMap = {
@@ -209,6 +211,18 @@ async function runTransition(
         masterName: result.masterName,
       },
     });
+
+    // [v0.7.8] 师傅填了 serviceSummary → 单独埋日志
+    // （serviceSummary 数据已写在 transitionOrder 事务里；这里只记录活动）
+    if (nextStatus === "completed" && serviceSummary && serviceSummary.trim()) {
+      await createActivityLog({
+        action: "order_service_summary_added",
+        targetType: "order",
+        targetId: result.orderId,
+        message: `师傅${result.masterName ?? ""}填写了订单 ${result.orderId} 的服务完成说明`,
+        metadata: { serviceSummary: serviceSummary.trim() },
+      });
+    }
 
     try {
       revalidatePath("/orders");
@@ -241,44 +255,19 @@ export async function startServiceAction(
 /**
  * 「完成订单」— in_service → completed。
  * [v0.7.6] 可选 serviceSummary：师傅填的服务完成说明。
+ * [v0.7.8] serviceSummary 与 status 在同事务内写（原子性）。
  */
 export async function completeOrderAction(
   orderId: string,
   serviceSummary?: string,
 ): Promise<TransitionActionResult> {
-  // [v0.7.6] 先写 serviceSummary（独立 update；空字符串不写）
-  if (serviceSummary && serviceSummary.trim()) {
-    try {
-      const { prisma } = await import("@/src/lib/db");
-      await prisma.order.update({
-        where: { id: orderId },
-        data: { serviceSummary: serviceSummary.trim() },
-      });
-      // 写活动日志
-      const { createActivityLog } = await import("@/src/lib/activity-log");
-      const { getCurrentUser } = await import("@/src/lib/auth");
-      const user = await getCurrentUser();
-      await createActivityLog({
-        action: "order_service_summary_added",
-        targetType: "order",
-        targetId: orderId,
-        message: `师傅${user?.name ?? ""}填写了订单 ${orderId} 的服务完成说明`,
-        actorId: user?.id ?? null,
-        actorName: user?.name ?? "unknown",
-        actorRole:
-          (user?.role as "admin" | "worker" | "customer" | "system") ??
-          "system",
-        metadata: { serviceSummary: serviceSummary.trim() },
-      });
-    } catch (e) {
-      // 写失败不阻塞主流程
-      console.warn(
-        `[completeOrderAction] serviceSummary 写失败: ${(e as Error).message}`,
-      );
-    }
-  }
-
-  const result = await runTransition(orderId, "completed", "完成订单");
+  // [v0.7.8] serviceSummary 写在 transitionOrder 内部（同事务）
+  const result = await runTransition(
+    orderId,
+    "completed",
+    "完成订单",
+    serviceSummary,
+  );
   return result;
 }
 

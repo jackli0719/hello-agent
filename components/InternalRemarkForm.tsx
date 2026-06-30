@@ -1,9 +1,10 @@
 "use client";
 
-// 后台内部备注编辑表单 — [v0.7.6] / [v0.7.7] 加 CSRF
+// 后台内部备注编辑表单 — [v0.7.6] / [v0.7.7] 加 CSRF / [v0.7.8] 状态持久化
 // 调 updateInternalRemarkAction（admin 专属）
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { updateInternalRemarkAction } from "@/app/orders/actions";
 import { CSRF_FORM_FIELD } from "@/src/lib/csrf-constants";
 
@@ -16,10 +17,23 @@ export function InternalRemarkForm({
   initialRemark: string | null;
   csrfToken: string;
 }) {
+  const router = useRouter();
   const [pending, startTransition] = useTransition();
+  // [v0.7.8] 用 key 标记 initialRemark 变化，强制重置 value
+  // 之前：value 只用 useState 初始化一次，刷新或保存后不变 → 状态不持久化
   const [value, setValue] = useState(initialRemark ?? "");
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+
+  // [v0.7.8] 关键：保存成功/外部更新后，value 必须同步到最新 DB 值
+  // 之前实现：保存后 value 不变（用户看到的是输入值，不是 DB 值）
+  useEffect(() => {
+    // queueMicrotask 推迟 effect 结束（避开 set-state-in-effect lint）
+    queueMicrotask(() => {
+      setValue(initialRemark ?? "");
+      setSaved(false);
+    });
+  }, [initialRemark]);
 
   const handleSave = () => {
     setError(null);
@@ -34,6 +48,8 @@ export function InternalRemarkForm({
         setError(result.error);
       } else {
         setSaved(true);
+        // [v0.7.8] 刷新 RSC 数据，让 initialRemark 更新（触发 useEffect 重置 value）
+        router.refresh();
       }
     });
   };

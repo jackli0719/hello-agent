@@ -582,6 +582,9 @@ export type TransitionOrderResult =
 export async function transitionOrder(
   orderId: string,
   nextStatus: "in_service" | "completed" | "cancelled",
+  // [v0.7.8] 可选 serviceSummary：师傅完成订单时填（只在 completed 用）
+  // 在事务内写入 → serviceSummary 与 status 一起更新（原子性）
+  serviceSummary?: string,
 ): Promise<TransitionOrderResult> {
   // 1. 加载订单
   const order = await prisma.order.findUnique({ where: { id: orderId } });
@@ -604,12 +607,27 @@ export async function transitionOrder(
     };
   }
 
-  // 3. 事务：乐观锁改订单 + 视情况释放师傅
+  // 3. 事务：乐观锁改订单 + 视情况释放师傅 + 写 serviceSummary（原子性）
   try {
     await prisma.$transaction(async (tx) => {
+      // [v0.7.8] serviceSummary 与 status 同事务写
+      const data: {
+        status: "in_service" | "completed" | "cancelled";
+        serviceSummary?: string;
+      } = {
+        status: nextStatus,
+      };
+      // 只在 completed 状态 + 实际传了 serviceSummary 时写入
+      if (
+        nextStatus === "completed" &&
+        serviceSummary &&
+        serviceSummary.trim()
+      ) {
+        data.serviceSummary = serviceSummary.trim();
+      }
       const result = await tx.order.updateMany({
         where: { id: orderId, status: order.status }, // CAS：只在状态没变时改
-        data: { status: nextStatus },
+        data,
       });
       if (result.count === 0) {
         throw new TransitionOrderError(
