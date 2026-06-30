@@ -336,7 +336,11 @@ export async function updateInternalRemarkAction(
   // 权限检查：必须是 admin（middleware 已挡；这里兜底）
   const { getCurrentUser } = await import("@/src/lib/auth");
   const user = await getCurrentUser();
-  if (!user || user.role !== "admin") {
+  if (!user) {
+    // [v0.7.10] 中间过渡：旧 cookie 兼容（v0.6.0 之前 session 格式是 "1"）
+    return { ok: false, error: "请重新登录后再操作" };
+  }
+  if (user.role !== "admin") {
     return { ok: false, error: "仅管理员可编辑内部备注" };
   }
 
@@ -401,7 +405,11 @@ export async function workerCancelOrderAction(
   // 权限 + 状态校验：必须是该师傅的订单
   const { getCurrentUser } = await import("@/src/lib/auth");
   const user = await getCurrentUser();
-  if (!user || user.role !== "worker" || !user.workerId) {
+  if (!user) {
+    // [v0.7.10] 中间过渡：旧 cookie 兼容
+    return { ok: false, category: "validation", error: "请重新登录后再操作" };
+  }
+  if (user.role !== "worker" || !user.workerId) {
     return { ok: false, category: "validation", error: "仅师傅可调用" };
   }
   // 业务校验：不能取消 completed/cancelled
@@ -468,7 +476,11 @@ export async function customerCancelOrderAction(
   // 权限 + 状态校验
   const { getCurrentUser } = await import("@/src/lib/auth");
   const user = await getCurrentUser();
-  if (!user || user.role !== "customer" || !user.phone) {
+  if (!user) {
+    // [v0.7.10] 中间过渡：旧 cookie 兼容
+    return { ok: false, category: "validation", error: "请重新登录后再操作" };
+  }
+  if (user.role !== "customer" || !user.phone) {
     return { ok: false, category: "validation", error: "仅用户可调用" };
   }
   const { prisma } = await import("@/src/lib/db");

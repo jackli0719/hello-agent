@@ -429,6 +429,7 @@ describe("customerCancelOrderAction — 用户", () => {
 // # spec: Activity Log — 取消动作都埋点
 // ============================================================
 describe("取消 Activity Log", () => {
+  // # spec: 事务一致性 — status + cancelReason + canceledAt 在同一 prisma.$transaction 写入
   it("成功取消 → DB 写 status + cancelReason + canceledAt（事务一致性）", async () => {
     // [v0.7.9] 修 #6 教训：活动日志在脚本上下文会被 createActivityLog 的 getSession 吞
     // 所以单测只断言 DB 写一致（事务性）— 不测活动日志埋点
@@ -448,6 +449,7 @@ describe("取消 Activity Log", () => {
     expect(updated?.canceledAt).not.toBeNull();
   });
 
+  // # spec: 活动日志 metadata 是 String 存 JSON — parse 后能取到 cancelReason
   it("活动日志手动写 — 验证 metadata 序列化", async () => {
     // [v0.7.9] 直接调 createActivityLog（避免 getSession 抛错路径）
     // 验证 metadata 字段：metadata 是 String 存 JSON
@@ -471,6 +473,7 @@ describe("取消 Activity Log", () => {
     expect(meta?.cancelReason).toBe("测试日志");
   });
 
+  // # spec: 后台 cancelOrderAction 写 order_canceled 日志（工人/用户 action 也走同 path）
   it("工人 cancel → 也写日志", async () => {
     mockUser = {
       id: "worker1",
