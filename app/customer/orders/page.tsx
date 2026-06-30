@@ -140,6 +140,22 @@ export default async function CustomerOrdersPage() {
               />
               {o.remark ? <Field label="备注" value={o.remark} /> : null}
               <Field label="下单时间" value={formatDateTime(o.createdAt)} />
+              {/* [v0.7.5] 查看详情入口 */}
+              <div style={{ marginTop: 10, textAlign: "right" }}>
+                <Link
+                  href={`/customer/orders/${encodeURIComponent(o.id)}`}
+                  style={{
+                    fontSize: 13,
+                    color: "#2563eb",
+                    textDecoration: "none",
+                    padding: "6px 14px",
+                    border: "1px solid #bfdbfe",
+                    borderRadius: 6,
+                  }}
+                >
+                  查看详情 →
+                </Link>
+              </div>
             </div>
           ))}
         </div>
