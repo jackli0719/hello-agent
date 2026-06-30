@@ -1,4 +1,5 @@
 import { OrderActions } from "@/components/OrderActions";
+import { InternalRemarkForm } from "@/components/InternalRemarkForm";
 import { StatusBadge, th, td, card, ORDER_TONE } from "@/components/ui";
 import { ORDER_STATUS_LABEL } from "@/lib/mock-data";
 import { listOrdersForPage, type OrderListItem } from "@/src/lib/queries";
@@ -456,6 +457,7 @@ export default async function OrdersPage({ searchParams }: PageProps) {
                   <th style={th}>已分配师傅</th>
                   <th style={th}>状态</th>
                   <th style={th}>创建时间</th>
+                  <th style={{ ...th, minWidth: 260 }}>备注 / 内部备注</th>
                   <th style={{ ...th, minWidth: 260 }}>推荐 / 命中规则</th>
                 </tr>
               </thead>
@@ -499,6 +501,33 @@ export default async function OrdersPage({ searchParams }: PageProps) {
                       />
                     </td>
                     <td style={td}>{formatDateTime(o.createdAt)}</td>
+                    <td style={td}>
+                      {/* [v0.7.6] 备注展示 + 后台内部备注编辑 */}
+                      <div style={{ fontSize: 12, marginBottom: 4 }}>
+                        <span style={{ color: "#6b7280" }}>用户：</span>
+                        {o.remark?.trim() ? (
+                          o.remark
+                        ) : (
+                          <span style={{ color: "#9ca3af" }}>暂无备注</span>
+                        )}
+                      </div>
+                      {o.serviceSummary?.trim() ? (
+                        <div
+                          style={{
+                            fontSize: 12,
+                            marginBottom: 4,
+                            color: "#166534",
+                          }}
+                        >
+                          <span>师傅：</span>
+                          {o.serviceSummary}
+                        </div>
+                      ) : null}
+                      <InternalRemarkForm
+                        orderId={o.id}
+                        initialRemark={o.internalRemark}
+                      />
+                    </td>
                     <td style={td}>
                       <ActionCell order={o} />
                     </td>

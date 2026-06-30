@@ -38,11 +38,13 @@ export async function workerStartServiceAction(
 /**
  * 师傅端「完成订单」— in_service → completed。
  * 包装后台的 completeOrderAction，额外 revalidate /worker。
+ * [v0.7.6] 可选 serviceSummary：师傅填的服务完成说明。
  */
 export async function workerCompleteOrderAction(
   orderId: string,
+  serviceSummary?: string,
 ): Promise<TransitionActionResult> {
-  const result = await completeOrderAction(orderId);
+  const result = await completeOrderAction(orderId, serviceSummary);
   try {
     revalidatePath("/worker");
   } catch {

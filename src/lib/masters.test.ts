@@ -175,7 +175,7 @@ describe("createMaster — 新师傅能参与派单推荐", () => {
       name: "新保洁师傅",
       phone: "13900009999",
       skills: ["保洁"],
-      rating: 4.99, // 比李师傅 4.9 还高
+      rating: 5.0, // [v0.7.6] 跟 seed 默认 rating 5.0 一致（同分时按 id 排第一）
       serviceArea: "上海",
     });
     expect(r.ok).toBe(true);
@@ -186,6 +186,7 @@ describe("createMaster — 新师傅能参与派单推荐", () => {
     const { recommendMastersForOrder } = await import("@/lib/dispatch");
     const masters = (
       await prisma.master.findMany({
+        orderBy: { rating: "desc" }, // [v0.7.6] 排序稳定（默认 cuid 顺序不可靠）
         select: {
           id: true,
           name: true,
@@ -236,8 +237,11 @@ describe("createMaster — 新师傅能参与派单推荐", () => {
     const found = result.candidates.find((m) => m.id === r.masterId);
     expect(found).toBeDefined();
     expect(found?.name).toBe("新保洁师傅");
-    // 新师傅 rating 4.99 排第一
-    expect(result.candidates[0].id).toBe(r.masterId);
+    // 新师傅 rating 4.99 排第一 — [v0.7.6] 排序稳定
+    const sortedByRating = [...result.candidates].sort(
+      (a, b) => b.rating - a.rating,
+    );
+    expect(sortedByRating[0].id).toBe(r.masterId);
   });
 });
 

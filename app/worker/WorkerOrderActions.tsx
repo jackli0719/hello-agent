@@ -8,12 +8,11 @@
 // - completed / cancelled → 不渲染按钮
 //
 // 反馈：用 useTransition 给按钮 loading 态；失败用 useState + 内联红条（不用 alert，更友好）。
+//
+// [v0.7.6] in_service 状态加「服务完成说明」输入框，提交时传给 server action。
 
 import { useState, useTransition } from "react";
-import {
-  workerStartServiceAction,
-  workerCompleteOrderAction,
-} from "./actions";
+import { workerStartServiceAction, workerCompleteOrderAction } from "./actions";
 
 type Status = "pending" | "assigned" | "in_service" | "completed" | "cancelled";
 
@@ -26,10 +25,12 @@ export function WorkerOrderActions({
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // [v0.7.6] 服务完成说明输入
+  const [summary, setSummary] = useState("");
 
-  // pending 不该出现在师傅端 — 防御性渲染（如果意外出现就不显示按钮）
+  // pending 不该出现在师傅端 — 防御性渲染
   if (status === "pending") return null;
-  // completed / cancelled 不允许操作（按需求 #6 / #7）
+  // completed / cancelled 不允许操作
   if (status === "completed" || status === "cancelled") return null;
 
   const handleStart = () => {
@@ -45,7 +46,11 @@ export function WorkerOrderActions({
   const handleComplete = () => {
     setError(null);
     startTransition(async () => {
-      const result = await workerCompleteOrderAction(orderId);
+      // [v0.7.6] 传 serviceSummary
+      const result = await workerCompleteOrderAction(
+        orderId,
+        summary.trim() || undefined,
+      );
       if (!result.ok) {
         setError(`完成订单失败：${result.error}`);
       }
@@ -69,7 +74,7 @@ export function WorkerOrderActions({
             borderRadius: 6,
             fontSize: 16,
             fontWeight: 500,
-            cursor: pending ? "not-allowed" : "pointer",
+            cursor: pending ? "not-abled" : "pointer",
           }}
         >
           {pending ? "处理中…" : "开始服务"}
@@ -82,6 +87,37 @@ export function WorkerOrderActions({
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <ErrorBanner message={error} />
+        {/* [v0.7.6] 服务完成说明输入框（可选）*/}
+        <div>
+          <label
+            style={{
+              display: "block",
+              fontSize: 13,
+              color: "#374151",
+              marginBottom: 4,
+              fontWeight: 500,
+            }}
+          >
+            服务完成说明（可选）
+          </label>
+          <textarea
+            value={summary}
+            onChange={(e) => setSummary(e.target.value)}
+            placeholder="如：已清洗空调外机 + 过滤网，加氟 1 次"
+            maxLength={500}
+            rows={3}
+            style={{
+              width: "100%",
+              padding: "8px 12px",
+              border: "1px solid #d1d5db",
+              borderRadius: 6,
+              fontSize: 14,
+              boxSizing: "border-box",
+              resize: "vertical",
+              fontFamily: "inherit",
+            }}
+          />
+        </div>
         <button
           type="button"
           onClick={handleComplete}
@@ -95,7 +131,7 @@ export function WorkerOrderActions({
             borderRadius: 6,
             fontSize: 16,
             fontWeight: 500,
-            cursor: pending ? "not-allowed" : "pointer",
+            cursor: pending ? "not-abled" : "pointer",
           }}
         >
           {pending ? "处理中…" : "完成订单"}
@@ -107,7 +143,7 @@ export function WorkerOrderActions({
   return null;
 }
 
-// 内联错误条 — 比 alert 友好（不会打断操作、不阻塞主线程）
+// 内联错误条
 function ErrorBanner({ message }: { message: string | null }) {
   if (!message) return null;
   return (

@@ -143,6 +143,22 @@ export default async function WorkerOrderDetailPage({ params }: PageProps) {
         <Field label="金额" value={`¥${order.amountYuan.toFixed(2)}`} />
         <Field label="预约时间" value={formatDateTime(order.scheduledAt)} />
 
+        {/* [v0.7.6] 备注信息 */}
+        <SectionTitle title="备注信息" />
+        <Field
+          label="用户备注"
+          value={order.remark?.trim() ? order.remark : "暂无备注"}
+        />
+        <Field
+          label="后台内部备注"
+          value={
+            order.internalRemark?.trim() ? order.internalRemark : "暂无备注"
+          }
+        />
+        {order.serviceSummary?.trim() ? (
+          <Field label="服务完成说明" value={order.serviceSummary} />
+        ) : null}
+
         {/* 师傅信息 */}
         <SectionTitle title="分配师傅" />
         <Field label="姓名" value={order.masterName ?? "—"} />

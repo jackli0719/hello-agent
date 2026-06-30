@@ -239,11 +239,46 @@ export async function startServiceAction(
 
 /**
  * 「完成订单」— in_service → completed。
+ * [v0.7.6] 可选 serviceSummary：师傅填的服务完成说明。
  */
 export async function completeOrderAction(
   orderId: string,
+  serviceSummary?: string,
 ): Promise<TransitionActionResult> {
-  return runTransition(orderId, "completed", "完成订单");
+  // [v0.7.6] 先写 serviceSummary（独立 update；空字符串不写）
+  if (serviceSummary && serviceSummary.trim()) {
+    try {
+      const { prisma } = await import("@/src/lib/db");
+      await prisma.order.update({
+        where: { id: orderId },
+        data: { serviceSummary: serviceSummary.trim() },
+      });
+      // 写活动日志
+      const { createActivityLog } = await import("@/src/lib/activity-log");
+      const { getCurrentUser } = await import("@/src/lib/auth");
+      const user = await getCurrentUser();
+      await createActivityLog({
+        action: "order_service_summary_added",
+        targetType: "order",
+        targetId: orderId,
+        message: `师傅${user?.name ?? ""}填写了订单 ${orderId} 的服务完成说明`,
+        actorId: user?.id ?? null,
+        actorName: user?.name ?? "unknown",
+        actorRole:
+          (user?.role as "admin" | "worker" | "customer" | "system") ??
+          "system",
+        metadata: { serviceSummary: serviceSummary.trim() },
+      });
+    } catch (e) {
+      // 写失败不阻塞主流程
+      console.warn(
+        `[completeOrderAction] serviceSummary 写失败: ${(e as Error).message}`,
+      );
+    }
+  }
+
+  const result = await runTransition(orderId, "completed", "完成订单");
+  return result;
 }
 
 /**
@@ -254,4 +289,66 @@ export async function cancelOrderAction(
   orderId: string,
 ): Promise<TransitionActionResult> {
   return runTransition(orderId, "cancelled", "取消订单");
+}
+
+/**
+ * [v0.7.6] 「更新内部备注」— admin 专属。
+ * 内部备注只后台可见，user/worker 端不展示。
+ * Activity Log 记录：order_internal_remark_updated
+ */
+export type UpdateInternalRemarkResult =
+  { ok: true } | { ok: false; error: string };
+
+export async function updateInternalRemarkAction(
+  formData: FormData,
+): Promise<UpdateInternalRemarkResult> {
+  const orderId = String(formData.get("orderId") ?? "").trim();
+  const internalRemark = String(formData.get("internalRemark") ?? "").trim();
+
+  if (!orderId) {
+    return { ok: false, error: "缺少订单 id" };
+  }
+  if (internalRemark.length > 500) {
+    return { ok: false, error: "内部备注不能超过 500 个字符" };
+  }
+
+  // 权限检查：必须是 admin（middleware 已挡；这里兜底）
+  const { getCurrentUser } = await import("@/src/lib/auth");
+  const user = await getCurrentUser();
+  if (!user || user.role !== "admin") {
+    return { ok: false, error: "仅管理员可编辑内部备注" };
+  }
+
+  try {
+    const { prisma } = await import("@/src/lib/db");
+    await prisma.order.update({
+      where: { id: orderId },
+      data: { internalRemark: internalRemark || null },
+    });
+
+    // 写活动日志
+    const { createActivityLog } = await import("@/src/lib/activity-log");
+    await createActivityLog({
+      action: "order_internal_remark_updated",
+      targetType: "order",
+      targetId: orderId,
+      message: internalRemark
+        ? `管理员更新了订单 ${orderId} 的内部备注`
+        : `管理员清空了订单 ${orderId} 的内部备注`,
+      actorId: user.id,
+      actorName: user.name,
+      actorRole: "admin",
+      metadata: { internalRemark },
+    });
+
+    try {
+      const { revalidatePath } = await import("next/cache");
+      revalidatePath("/orders");
+    } catch {
+      // 单测无 Next runtime
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
 }

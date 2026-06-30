@@ -115,6 +115,10 @@ export interface CustomerOrderLookupItem {
   /** 已派单师傅手机号（null = 未派单）— [v0.7.5] 详情页展示 */
   technicianPhone: string | null;
   remark: string | null;
+  /** [v0.7.6] 后台内部备注（用户端不展示）*/
+  internalRemark?: string | null;
+  /** [v0.7.6] 师傅完成说明（用户端 + 后台展示）*/
+  serviceSummary?: string | null;
   createdAt: string;
 }
 
@@ -148,6 +152,7 @@ export async function listOrdersForCustomerPhone(
       masterName: true,
       remark: true,
       createdAt: true,
+      serviceSummary: true, // [v0.7.6] 师傅完成说明
       // [v0.7.5] 列表也 join master 表（拿手机号）
       master: { select: { phone: true } },
       serviceSku: { select: { category: { select: { name: true } } } },
@@ -167,6 +172,8 @@ export async function listOrdersForCustomerPhone(
     technicianName: r.masterName,
     technicianPhone: r.master?.phone ?? null,
     remark: r.remark,
+    // [v0.7.6] 列表不需要 internalRemark（用户端不展示），但 serviceSummary 要
+    serviceSummary: r.serviceSummary,
     createdAt: r.createdAt.toISOString(),
   }));
 }
@@ -204,6 +211,7 @@ export async function getOrderForCustomer(
       masterName: true,
       remark: true,
       createdAt: true,
+      serviceSummary: true, // [v0.7.6] 师傅完成说明
       master: { select: { phone: true } },
       serviceSku: { select: { category: { select: { name: true } } } },
     },
@@ -223,6 +231,7 @@ export async function getOrderForCustomer(
     technicianName: row.masterName,
     technicianPhone: row.master?.phone ?? null,
     remark: row.remark,
+    serviceSummary: row.serviceSummary,
     createdAt: row.createdAt.toISOString(),
   };
 }

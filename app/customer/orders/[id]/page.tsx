@@ -140,7 +140,14 @@ export default async function CustomerOrderDetailPage({ params }: PageProps) {
         <Field label="服务 SKU" value={order.serviceName} />
         <Field label="金额" value={`¥${order.amountYuan.toFixed(2)}`} />
         <Field label="预约时间" value={formatDateTime(order.scheduledAt)} />
-        {order.remark ? <Field label="备注" value={order.remark} /> : null}
+        {/* [v0.7.6] 用户备注 — 改空态显示「暂无备注」+ 加 serviceSummary 展示 */}
+        <Field
+          label="问题描述 / 备注"
+          value={order.remark?.trim() ? order.remark : "暂无备注"}
+        />
+        {order.serviceSummary?.trim() ? (
+          <Field label="服务完成说明" value={order.serviceSummary} />
+        ) : null}
 
         {/* 师傅信息 — 仅在已派单时显示 */}
         {order.technicianName ? (

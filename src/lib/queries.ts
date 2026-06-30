@@ -29,6 +29,13 @@ export interface OrderListItem {
   status: OrderStatus;
   createdAt: string; // ISO 本地时区
   recommendation: RecommendationResult;
+  // [v0.7.6] 备注字段
+  /** 用户下单备注 */
+  remark: string | null;
+  /** 后台内部备注（admin 写，user/worker 看） */
+  internalRemark: string | null;
+  /** 师傅完成说明 */
+  serviceSummary: string | null;
 }
 
 export interface OrdersPageData {
@@ -208,6 +215,9 @@ export async function listOrdersForPage(
         serviceSkuId: true,
         serviceName: true,
         masterName: true,
+        remark: true, // [v0.7.6]
+        internalRemark: true, // [v0.7.6]
+        serviceSummary: true, // [v0.7.6]
         address: true,
         scheduledAt: true,
         amount: true,
@@ -286,6 +296,10 @@ export async function listOrdersForPage(
       status: r.status as OrderStatus,
       createdAt: toLocalISOString(r.createdAt),
       recommendation,
+      // [v0.7.6] 备注字段
+      remark: r.remark,
+      internalRemark: r.internalRemark,
+      serviceSummary: r.serviceSummary,
     };
   });
 

@@ -118,6 +118,12 @@ model Order {
   status          String   @default("pending") // pending | assigned | in_service | completed | cancelled
   // 用户下单时填的备注（可选）— 加于 2026-06 师傅端/用户端 MVP
   remark          String?
+  // [v0.7.6] 业务扩展：内部备注（后台）和师傅完成说明
+  // - remark = 用户下单备注（v0.3.0 已有）
+  // - internalRemark = 后台调度备注（admin 写，user/worker 看）
+  // - serviceSummary = 师傅完成订单时填的服务说明（admin/user/worker 看）
+  internalRemark  String?
+  serviceSummary  String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
