@@ -20,6 +20,7 @@ import { listOrdersForCustomerPhone } from "@/src/lib/customer";
 import { StatusBadge, ORDER_TONE } from "@/components/ui";
 import { ORDER_STATUS_LABEL } from "@/lib/mock-data";
 import { getCurrentUser } from "@/src/lib/auth";
+import { ensureCsrfCookie } from "@/src/lib/csrf";
 import { logoutAction } from "@/app/login/actions";
 
 export default async function CustomerOrdersPage() {
@@ -28,6 +29,8 @@ export default async function CustomerOrdersPage() {
   if (!user) {
     redirect("/login?next=/customer/orders");
   }
+  // [v0.7.2] RSC 阶段确保 csrf cookie 存在（logout 校验需要）
+  const csrfToken = await ensureCsrfCookie();
   if (user.role !== "customer") {
     redirect("/dashboard");
   }
@@ -77,6 +80,7 @@ export default async function CustomerOrdersPage() {
           登录：<code>{user.name}</code>
         </div>
         <form action={logoutAction}>
+          <input type="hidden" name="_csrf" value={csrfToken} />
           <button type="submit" style={logoutBtnStyle}>
             退出
           </button>

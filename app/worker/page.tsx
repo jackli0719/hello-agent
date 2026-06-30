@@ -22,6 +22,7 @@ import { listOrdersForMaster, type WorkerOrder } from "@/src/lib/worker";
 import { StatusBadge, ORDER_TONE } from "@/components/ui";
 import { ORDER_STATUS_LABEL } from "@/lib/mock-data";
 import { getCurrentUser } from "@/src/lib/auth";
+import { ensureCsrfCookie } from "@/src/lib/csrf";
 import { WorkerOrderActions } from "./WorkerOrderActions";
 import { logoutAction } from "@/app/login/actions";
 import type { OrderStatus } from "@/src/types";
@@ -55,6 +56,8 @@ export default async function WorkerPage() {
   if (user.role !== "worker") {
     redirect("/dashboard");
   }
+  // [v0.7.2] RSC 阶段确保 csrf cookie 存在（logout 校验需要）
+  const csrfToken = await ensureCsrfCookie();
   if (!user.workerId) {
     return (
       <div style={pageStyle}>
@@ -97,6 +100,7 @@ export default async function WorkerPage() {
           </div>
         </div>
         <form action={logoutAction}>
+          <input type="hidden" name="_csrf" value={csrfToken} />
           <button type="submit" style={logoutBtnStyle}>
             退出
           </button>
