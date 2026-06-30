@@ -78,7 +78,10 @@ export function NewMasterForm({ mode, initial }: Props) {
   const [isPending, startTransition] = useTransition();
   const [result, setResult] = useState<MasterActionResult | null>(null);
 
-  function handleSubmit(formData: FormData) {
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    // [v0.9.1] 修 legacy bug：跟 NewOrderForm 同问题 — <form action={client closure}> 让 React 19 当成 server action 协议
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
     setResult(null);
     startTransition(async () => {
       const r =
@@ -97,7 +100,7 @@ export function NewMasterForm({ mode, initial }: Props) {
   const error = result && !result.ok ? result : null;
 
   return (
-    <form action={handleSubmit} style={{ display: "grid", gap: 16 }}>
+    <form onSubmit={handleSubmit} style={{ display: "grid", gap: 16 }}>
       {mode === "edit" && initial && (
         <input type="hidden" name="id" value={initial.id} />
       )}
@@ -153,7 +156,7 @@ export function NewMasterForm({ mode, initial }: Props) {
           defaultValue={initial?.skills ?? ""}
           placeholder="例：空调维修,家电清洗"
           style={inputStyle}
-          required
+          // [v0.9.0] 业务规则 #9 — skills 非空，server action 校验（前端不要 required 拦截，让 server 报错）
         />
         <div style={helpStyle}>用逗号（中英文都可）分隔多个技能标签</div>
         {error?.field === "skills" && (
@@ -171,11 +174,10 @@ export function NewMasterForm({ mode, initial }: Props) {
           name="rating"
           type="number"
           min="0"
-          max="5"
           step="0.1"
           defaultValue={initial?.rating ?? 5.0}
           style={inputStyle}
-          required
+          // [v0.9.0] 业务规则 #7 — 评分 0-5，server action 校验（前端不要 max 拦截，让 server 报错）
         />
         {error?.field === "rating" && (
           <div style={errorStyle}>{error.error}</div>

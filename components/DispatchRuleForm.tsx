@@ -85,7 +85,10 @@ export function DispatchRuleForm({ mode, initial, categories, skus }: Props) {
     }
   }
 
-  function handleSubmit(formData: FormData) {
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    // [v0.9.1] 修 legacy bug：跟 NewOrderForm 同问题
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
     setResult(null);
     startTransition(async () => {
       const r =
@@ -102,7 +105,7 @@ export function DispatchRuleForm({ mode, initial, categories, skus }: Props) {
   const error = result && !result.ok ? result : null;
 
   return (
-    <form action={handleSubmit} style={{ display: "grid", gap: 16 }}>
+    <form onSubmit={handleSubmit} style={{ display: "grid", gap: 16 }}>
       {mode === "edit" && initial && (
         <input type="hidden" name="id" value={initial.id} />
       )}

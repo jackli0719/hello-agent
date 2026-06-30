@@ -91,7 +91,12 @@ export function NewOrderForm({ categories, skus }: Props) {
     setSelectedSkuCode(firstSku?.skuCode ?? "");
   }
 
-  function handleSubmit(formData: FormData) {
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    // [v0.9.1] 修 legacy bug：之前用 `<form action={handleSubmit}>` + client closure，
+    // React 19/Next 15 把它当成待序列化 server action → 引用 client-only state → hydration 失败 → 跳 /login
+    // 改成 onSubmit + preventDefault，让 React 把 handleSubmit 当作纯 event handler
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
     setResult(null);
     startTransition(async () => {
       const r = await createOrderAction(formData);
@@ -100,7 +105,7 @@ export function NewOrderForm({ categories, skus }: Props) {
   }
 
   return (
-    <form action={handleSubmit} style={{ display: "grid", gap: 16 }}>
+    <form onSubmit={handleSubmit} style={{ display: "grid", gap: 16 }}>
       {/* 服务品类 + 服务 SKU：级联 */}
       <div style={{ display: "grid", gap: 16, gridTemplateColumns: "1fr 1fr" }}>
         <div>

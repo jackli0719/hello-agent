@@ -46,7 +46,10 @@ export function NewCategoryForm() {
   const [isPending, startTransition] = useTransition();
   const [result, setResult] = useState<ServiceActionResult | null>(null);
 
-  function handleSubmit(formData: FormData) {
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    // [v0.9.1] 修 legacy bug：跟 NewOrderForm 同问题
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
     setResult(null);
     startTransition(async () => {
       const r = await createCategoryAction(formData);
@@ -57,7 +60,7 @@ export function NewCategoryForm() {
   const error = result && !result.ok ? result : null;
 
   return (
-    <form action={handleSubmit} style={{ display: "grid", gap: 16 }}>
+    <form onSubmit={handleSubmit} style={{ display: "grid", gap: 16 }}>
       <div>
         <label style={labelStyle} htmlFor="name">
           品类名称 <span style={{ color: "#b91c1c" }}>*</span>
@@ -150,7 +153,10 @@ export function NewSkuForm({ categories }: { categories: CategoryOption[] }) {
   const [isPending, startTransition] = useTransition();
   const [result, setResult] = useState<ServiceActionResult | null>(null);
 
-  function handleSubmit(formData: FormData) {
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    // [v0.9.1] 修 legacy bug
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
     setResult(null);
     startTransition(async () => {
       const r = await createSkuAction(formData);
@@ -161,7 +167,7 @@ export function NewSkuForm({ categories }: { categories: CategoryOption[] }) {
   const error = result && !result.ok ? result : null;
 
   return (
-    <form action={handleSubmit} style={{ display: "grid", gap: 16 }}>
+    <form onSubmit={handleSubmit} style={{ display: "grid", gap: 16 }}>
       <div>
         <label style={labelStyle} htmlFor="name">
           SKU 名称 <span style={{ color: "#b91c1c" }}>*</span>
@@ -324,7 +330,10 @@ export function EditSkuForm({ initial }: { initial: EditSkuInitial }) {
   const [isPending, startTransition] = useTransition();
   const [result, setResult] = useState<ServiceActionResult | null>(null);
 
-  function handleSubmit(formData: FormData) {
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    // [v0.9.1] 修 legacy bug
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
     setResult(null);
     startTransition(async () => {
       const r = await updateSkuAction(formData);
@@ -335,7 +344,7 @@ export function EditSkuForm({ initial }: { initial: EditSkuInitial }) {
   const error = result && !result.ok ? result : null;
 
   return (
-    <form action={handleSubmit} style={{ display: "grid", gap: 16 }}>
+    <form onSubmit={handleSubmit} style={{ display: "grid", gap: 16 }}>
       <input type="hidden" name="id" value={initial.id} />
 
       {/* 只读字段：编码 + 类目 + 时长 — 展示但不让改（需求范围） */}
