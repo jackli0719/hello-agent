@@ -90,7 +90,8 @@ function toDomainMaster(row: {
   let skills: string[] = [];
   try {
     const parsed = JSON.parse(row.skills);
-    if (Array.isArray(parsed)) skills = parsed.filter((s) => typeof s === "string");
+    if (Array.isArray(parsed))
+      skills = parsed.filter((s) => typeof s === "string");
   } catch {
     // 坏数据留空，不抛
   }
@@ -109,7 +110,13 @@ function toDomainMaster(row: {
 // DB DispatchRule → DispatchRuleRow
 // 返回 null 表示 ruleJson 坏了（parseRuleJson 失败）— 这种情况**不**给上游，
 // 而是直接 filter 掉，让坏规则彻底不参与匹配。
-function toRuleRow(row: { id: string; name: string; priority: number; enabled: boolean; ruleJson: string }): DispatchRuleRow | null {
+function toRuleRow(row: {
+  id: string;
+  name: string;
+  priority: number;
+  enabled: boolean;
+  ruleJson: string;
+}): DispatchRuleRow | null {
   const spec = parseRuleJson(row.ruleJson);
   if (spec === null) return null; // 坏数据
   return {
@@ -138,7 +145,7 @@ export interface OrderPageFilters {
   pageSize?: number;
 }
 
-const DEFAULT_PAGE_SIZE = 20;
+const DEFAULT_PAGE_SIZE = 10; // 任务要求：每页默认 10 条
 
 /**
  * 拉一页订单 + 全量派单规则 + 全量师傅，做服务端组装。
@@ -215,9 +222,30 @@ export async function listOrdersForPage(
         },
       },
     }),
-    prisma.dispatchRule.findMany({ select: { id: true, name: true, priority: true, enabled: true, ruleJson: true } }),
-    prisma.master.findMany({ select: { id: true, name: true, phone: true, skills: true, rating: true, completedJobs: true, status: true, serviceArea: true } }),
-    prisma.order.count({ where: Object.keys(where).length > 0 ? where : undefined }),
+    prisma.dispatchRule.findMany({
+      select: {
+        id: true,
+        name: true,
+        priority: true,
+        enabled: true,
+        ruleJson: true,
+      },
+    }),
+    prisma.master.findMany({
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+        skills: true,
+        rating: true,
+        completedJobs: true,
+        status: true,
+        serviceArea: true,
+      },
+    }),
+    prisma.order.count({
+      where: Object.keys(where).length > 0 ? where : undefined,
+    }),
   ]);
 
   // 坏数据：parseRuleJson 返回 null 的规则完全过滤掉
