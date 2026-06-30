@@ -9,7 +9,7 @@ interface DbMasterRow {
   id: string;
   name: string;
   phone: string;
-  skills: string;        // JSON 字符串
+  skills: string; // JSON 字符串
   rating: number;
   completedJobs: number;
   status: string;
@@ -20,7 +20,8 @@ function toTechnician(row: DbMasterRow): Technician {
   let skills: string[] = [];
   try {
     const parsed = JSON.parse(row.skills);
-    if (Array.isArray(parsed)) skills = parsed.filter((s) => typeof s === "string");
+    if (Array.isArray(parsed))
+      skills = parsed.filter((s) => typeof s === "string");
   } catch {
     // 坏数据：skills 留空，不抛
   }
@@ -55,6 +56,9 @@ export async function listMasters(): Promise<Technician[]> {
 
 /** 按 ID 取单个师傅 */
 export async function getMasterById(id: string): Promise<Technician | null> {
-  const row = await prisma.master.findUnique({ where: { id }, select: masterSelect });
+  const row = await prisma.master.findUnique({
+    where: { id },
+    select: masterSelect,
+  });
   return row ? toTechnician(row) : null;
 }

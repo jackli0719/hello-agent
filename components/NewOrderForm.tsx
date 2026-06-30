@@ -14,7 +14,10 @@
 
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
-import { createOrderAction, type CreateOrderActionResult } from "@/app/orders/actions";
+import {
+  createOrderAction,
+  type CreateOrderActionResult,
+} from "@/app/orders/actions";
 
 interface CategoryOption {
   id: string;
@@ -53,24 +56,33 @@ const inputStyle: React.CSSProperties = {
   outline: "none",
   boxSizing: "border-box",
 };
-const errorStyle: React.CSSProperties = { fontSize: 12, color: "#b91c1c", marginTop: 4 };
+const errorStyle: React.CSSProperties = {
+  fontSize: 12,
+  color: "#b91c1c",
+  marginTop: 4,
+};
 
 export function NewOrderForm({ categories, skus }: Props) {
   const [isPending, startTransition] = useTransition();
   const [result, setResult] = useState<CreateOrderActionResult | null>(null);
 
   const firstCategory = categories[0];
-  const [selectedCategoryCode, setSelectedCategoryCode] = useState(firstCategory.categoryCode);
+  const [selectedCategoryCode, setSelectedCategoryCode] = useState(
+    firstCategory.categoryCode,
+  );
 
   const skusForCategory = useMemo(
-    () => skus.filter((s) => {
-      const cat = categories.find((c) => c.id === s.categoryId);
-      return cat?.categoryCode === selectedCategoryCode;
-    }),
+    () =>
+      skus.filter((s) => {
+        const cat = categories.find((c) => c.id === s.categoryId);
+        return cat?.categoryCode === selectedCategoryCode;
+      }),
     [skus, categories, selectedCategoryCode],
   );
   const firstSkuForCategory = skusForCategory[0];
-  const [selectedSkuCode, setSelectedSkuCode] = useState(firstSkuForCategory?.skuCode ?? "");
+  const [selectedSkuCode, setSelectedSkuCode] = useState(
+    firstSkuForCategory?.skuCode ?? "",
+  );
 
   function handleCategoryChange(code: string) {
     setSelectedCategoryCode(code);
@@ -130,7 +142,8 @@ export function NewOrderForm({ categories, skus }: Props) {
             ) : (
               skusForCategory.map((s) => (
                 <option key={s.skuCode} value={s.skuCode}>
-                  {s.name} · ¥{s.basePriceYuan.toFixed(2)} · {s.durationMinutes} 分钟
+                  {s.name} · ¥{s.basePriceYuan.toFixed(2)} · {s.durationMinutes}{" "}
+                  分钟
                 </option>
               ))
             )}

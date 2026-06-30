@@ -72,11 +72,15 @@ export function DispatchCell({ orderId, technicianName, reason }: Props) {
   return (
     <div style={{ fontSize: 12 }}>
       <div style={{ marginBottom: 4 }}>
-        <span style={{ color: "#15803d", fontWeight: 600 }}>推荐：{technicianName}</span>
+        <span style={{ color: "#15803d", fontWeight: 600 }}>
+          推荐：{technicianName}
+        </span>
       </div>
       <div style={{ color: "#6b7280", marginBottom: 6 }}>{reason}</div>
       {validationError && (
-        <div style={{ color: "#b91c1c", marginBottom: 6 }}>{validationError}</div>
+        <div style={{ color: "#b91c1c", marginBottom: 6 }}>
+          {validationError}
+        </div>
       )}
       <button
         type="button"

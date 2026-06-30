@@ -43,8 +43,16 @@ const inputStyle: React.CSSProperties = {
   outline: "none",
   boxSizing: "border-box",
 };
-const helpStyle: React.CSSProperties = { fontSize: 11, color: "#9ca3af", marginTop: 4 };
-const errorStyle: React.CSSProperties = { fontSize: 12, color: "#b91c1c", marginTop: 4 };
+const helpStyle: React.CSSProperties = {
+  fontSize: 11,
+  color: "#9ca3af",
+  marginTop: 4,
+};
+const errorStyle: React.CSSProperties = {
+  fontSize: 12,
+  color: "#b91c1c",
+  marginTop: 4,
+};
 
 // status 中文 + 配色（与 /masters 列表保持一致）
 const STATUS_LABEL: Record<string, string> = {
@@ -73,9 +81,10 @@ export function NewMasterForm({ mode, initial }: Props) {
   function handleSubmit(formData: FormData) {
     setResult(null);
     startTransition(async () => {
-      const r = mode === "create"
-        ? await createMasterAction(formData)
-        : await updateMasterAction(formData);
+      const r =
+        mode === "create"
+          ? await createMasterAction(formData)
+          : await updateMasterAction(formData);
       // 成功路径由 server action 的 redirect 处理；这里只接失败
       if (r) setResult(r);
     });
@@ -127,7 +136,9 @@ export function NewMasterForm({ mode, initial }: Props) {
           style={inputStyle}
           required
         />
-        {error?.field === "phone" && <div style={errorStyle}>{error.error}</div>}
+        {error?.field === "phone" && (
+          <div style={errorStyle}>{error.error}</div>
+        )}
       </div>
 
       {/* 技能 */}
@@ -145,7 +156,9 @@ export function NewMasterForm({ mode, initial }: Props) {
           required
         />
         <div style={helpStyle}>用逗号（中英文都可）分隔多个技能标签</div>
-        {error?.field === "skills" && <div style={errorStyle}>{error.error}</div>}
+        {error?.field === "skills" && (
+          <div style={errorStyle}>{error.error}</div>
+        )}
       </div>
 
       {/* 评分（独占一行，因为右侧要放状态 chip） */}
@@ -164,7 +177,9 @@ export function NewMasterForm({ mode, initial }: Props) {
           style={inputStyle}
           required
         />
-        {error?.field === "rating" && <div style={errorStyle}>{error.error}</div>}
+        {error?.field === "rating" && (
+          <div style={errorStyle}>{error.error}</div>
+        )}
       </div>
 
       {/* 服务区域 */}
@@ -182,37 +197,41 @@ export function NewMasterForm({ mode, initial }: Props) {
           style={inputStyle}
         />
         <div style={helpStyle}>MVP 阶段存为文本，多区域用逗号分隔</div>
-        {error?.field === "serviceArea" && <div style={errorStyle}>{error.error}</div>}
+        {error?.field === "serviceArea" && (
+          <div style={errorStyle}>{error.error}</div>
+        )}
       </div>
 
       {/* edit 模式下展示当前状态 — 只读 chip，让用户能看到不能改 */}
-      {mode === "edit" && initial && (() => {
-        const s = initial.status;
-        const c = STATUS_COLOR[s] ?? STATUS_COLOR.offline;
-        return (
-          <div>
-            <label style={labelStyle}>当前状态</label>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span
-                style={{
-                  display: "inline-block",
-                  padding: "4px 12px",
-                  background: c.bg,
-                  color: c.fg,
-                  borderRadius: 999,
-                  fontSize: 13,
-                  fontWeight: 500,
-                }}
-              >
-                {STATUS_LABEL[s] ?? s}
-              </span>
-              <span style={{ fontSize: 12, color: "#6b7280" }}>
-                状态由派单 / 释放自动管理，不在此处手动修改
-              </span>
+      {mode === "edit" &&
+        initial &&
+        (() => {
+          const s = initial.status;
+          const c = STATUS_COLOR[s] ?? STATUS_COLOR.offline;
+          return (
+            <div>
+              <label style={labelStyle}>当前状态</label>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span
+                  style={{
+                    display: "inline-block",
+                    padding: "4px 12px",
+                    background: c.bg,
+                    color: c.fg,
+                    borderRadius: 999,
+                    fontSize: 13,
+                    fontWeight: 500,
+                  }}
+                >
+                  {STATUS_LABEL[s] ?? s}
+                </span>
+                <span style={{ fontSize: 12, color: "#6b7280" }}>
+                  状态由派单 / 释放自动管理，不在此处手动修改
+                </span>
+              </div>
             </div>
-          </div>
-        );
-      })()}
+          );
+        })()}
 
       {/* 通用错误 */}
       {error && !error.field && (

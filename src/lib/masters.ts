@@ -3,12 +3,13 @@
 
 import { prisma } from "@/src/lib/db";
 
-export type MasterField = "name" | "phone" | "skills" | "rating" | "serviceArea";
+export type MasterField =
+  "name" | "phone" | "skills" | "rating" | "serviceArea";
 
 export interface CreateMasterInput {
   name: string;
   phone: string;
-  skills: string[];      // 数组，内部会 JSON.stringify
+  skills: string[]; // 数组，内部会 JSON.stringify
   rating: number;
   serviceArea: string;
   // 注意：available/status 不在表单字段里 — 由系统（派单/释放）自动管理
@@ -20,7 +21,12 @@ export interface UpdateMasterInput extends CreateMasterInput {
 
 export type CreateMasterResult =
   | { ok: true; masterId: string }
-  | { ok: false; category: "validation" | "system"; error: string; field?: MasterField };
+  | {
+      ok: false;
+      category: "validation" | "system";
+      error: string;
+      field?: MasterField;
+    };
 
 /**
  * 把 skills 数组规范化为干净数组：
@@ -51,7 +57,10 @@ export function normalizeSkills(input: unknown): string[] {
  */
 export function parseSkillsString(input: string): string[] {
   return normalizeSkills(
-    input.split(/[,，、]/).map((s) => s.trim()).filter(Boolean),
+    input
+      .split(/[,，、]/)
+      .map((s) => s.trim())
+      .filter(Boolean),
   );
 }
 
@@ -65,34 +74,48 @@ export function skillsToString(skills: string[]): string {
  * 通用校验：返回一个 result 或者 ok。
  * server action 和纯单测都调它，保证两边校验一致。
  */
-export function validateMasterInput(input: Partial<CreateMasterInput>): {
-  ok: true;
-  cleaned: CreateMasterInput;
-} | {
-  ok: false;
-  error: string;
-  field: MasterField;
-} {
+export function validateMasterInput(input: Partial<CreateMasterInput>):
+  | {
+      ok: true;
+      cleaned: CreateMasterInput;
+    }
+  | {
+      ok: false;
+      error: string;
+      field: MasterField;
+    } {
   const name = (input.name ?? "").trim();
   if (!name) return { ok: false, error: "请填写师傅姓名", field: "name" };
-  if (name.length > 50) return { ok: false, error: "师傅姓名不能超过 50 个字符", field: "name" };
+  if (name.length > 50)
+    return { ok: false, error: "师傅姓名不能超过 50 个字符", field: "name" };
 
   const phone = (input.phone ?? "").trim();
   if (!phone) return { ok: false, error: "请填写手机号", field: "phone" };
   if (!/^1\d{10}$/.test(phone)) {
-    return { ok: false, error: "手机号格式不正确（11 位数字，1 开头）", field: "phone" };
+    return {
+      ok: false,
+      error: "手机号格式不正确（11 位数字，1 开头）",
+      field: "phone",
+    };
   }
 
   const skills = normalizeSkills(input.skills);
   // skills 可空（演示阶段允许），但若填了非法格式已被 normalizeSkills 滤掉
 
-  const rating = typeof input.rating === "number" ? input.rating : Number(input.rating);
-  if (Number.isNaN(rating)) return { ok: false, error: "评分必须是数字", field: "rating" };
-  if (rating < 0 || rating > 5) return { ok: false, error: "评分必须在 0-5 之间", field: "rating" };
+  const rating =
+    typeof input.rating === "number" ? input.rating : Number(input.rating);
+  if (Number.isNaN(rating))
+    return { ok: false, error: "评分必须是数字", field: "rating" };
+  if (rating < 0 || rating > 5)
+    return { ok: false, error: "评分必须在 0-5 之间", field: "rating" };
 
   const serviceArea = (input.serviceArea ?? "").trim();
   if (serviceArea.length > 100) {
-    return { ok: false, error: "服务区域不能超过 100 个字符", field: "serviceArea" };
+    return {
+      ok: false,
+      error: "服务区域不能超过 100 个字符",
+      field: "serviceArea",
+    };
   }
 
   return {
@@ -111,7 +134,12 @@ export async function createMaster(
 ): Promise<CreateMasterResult> {
   const validated = validateMasterInput(rawInput);
   if (!validated.ok) {
-    return { ok: false, category: "validation", error: validated.error, field: validated.field };
+    return {
+      ok: false,
+      category: "validation",
+      error: validated.error,
+      field: validated.field,
+    };
   }
   const c = validated.cleaned;
 
@@ -146,16 +174,35 @@ export async function updateMaster(
   rawInput: Partial<UpdateMasterInput>,
 ): Promise<CreateMasterResult> {
   const id = (rawInput.id ?? "").trim();
-  if (!id) return { ok: false, category: "validation", error: "缺少师傅 id", field: "name" };
+  if (!id)
+    return {
+      ok: false,
+      category: "validation",
+      error: "缺少师傅 id",
+      field: "name",
+    };
 
-  const exists = await prisma.master.findUnique({ where: { id }, select: { id: true } });
+  const exists = await prisma.master.findUnique({
+    where: { id },
+    select: { id: true },
+  });
   if (!exists) {
-    return { ok: false, category: "validation", error: `师傅 ${id} 不存在`, field: "name" };
+    return {
+      ok: false,
+      category: "validation",
+      error: `师傅 ${id} 不存在`,
+      field: "name",
+    };
   }
 
   const validated = validateMasterInput(rawInput);
   if (!validated.ok) {
-    return { ok: false, category: "validation", error: validated.error, field: validated.field };
+    return {
+      ok: false,
+      category: "validation",
+      error: validated.error,
+      field: validated.field,
+    };
   }
   const c = validated.cleaned;
 

@@ -4,36 +4,30 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createOrder } from "./orders";
 import { prisma } from "@/src/lib/db";
+import { cleanupTestOrders, createTestOrder } from "@/src/lib/test-factory";
 
 const createdIds: string[] = [];
 
 afterEach(async () => {
-  for (const id of createdIds.splice(0)) {
-    await prisma.order.deleteMany({ where: { id } });
-  }
+  await cleanupTestOrders(createdIds.splice(0));
 });
 
 // # spec: 订单创建 = 合法输入落库 pending + 金额元转分 + 状态初始 pending + SKU 查表 + 校验短路，skuCode/categoryCode 配对校验
 describe("createOrder — 走真实 DB", () => {
   // # spec: 订单创建 — 合法输入落库 pending + 元转分 + 订单号格式 O{YYYYMMDD}xxxx
   it("合法输入 + SKU 存在 → 写入订单，状态 pending，订单号 O{YYYYMMDD}xxxx", async () => {
-    const r = await createOrder({
+    const orderId = await createTestOrder({
       customerName: "测试客户",
       customerPhone: "13900000001",
       address: "上海市浦东新区世纪大道 100 号",
-      skuCode: "CLEAN-DAILY-2H",
-      amount: 158,
-      scheduledAt: new Date("2026-06-26T10:00:00"),
     });
-    expect(r.ok).toBe(true);
-    if (!r.ok) return;
-    createdIds.push(r.orderId);
+    createdIds.push(orderId);
 
     // 订单号格式
-    expect(r.orderId).toMatch(/^O\d{8}\d{4}$/);
+    expect(orderId).toMatch(/^O\d{8}\d{4}$/);
 
     // DB 里能查到
-    const row = await prisma.order.findUnique({ where: { id: r.orderId } });
+    const row = await prisma.order.findUnique({ where: { id: orderId } });
     expect(row).not.toBeNull();
     expect(row?.status).toBe("pending");
     expect(row?.customerName).toBe("测试客户");

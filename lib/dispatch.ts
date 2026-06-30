@@ -8,7 +8,7 @@ import { z } from "zod";
 /** 派单规则的结构化内容（从 DispatchRule.ruleJson 解析出来） */
 export interface DispatchRuleSpec {
   match: {
-    skuId?: string;      // 精确 SKU 匹配（可选）
+    skuId?: string; // 精确 SKU 匹配（可选）
     categoryId?: string; // 类目兜底匹配（可选）
   };
   requiredSkills: string[]; // 师傅技能必须覆盖这个集合
@@ -25,9 +25,9 @@ export interface DispatchRuleRow {
 
 /** 推荐结果 — 给 /orders 页面展示用 */
 export interface RecommendationResult {
-  rule: DispatchRuleRow | null;          // 命中的规则（null = 没有规则覆盖）
-  candidates: Technician[];              // 按 rating 降序排好的候选师傅
-  reason: string;                        // 一句话说明（为什么有 / 为什么没有）
+  rule: DispatchRuleRow | null; // 命中的规则（null = 没有规则覆盖）
+  candidates: Technician[]; // 按 rating 降序排好的候选师傅
+  reason: string; // 一句话说明（为什么有 / 为什么没有）
 }
 
 /** 输入：订单的 SKU 和类目，加上规则库 + 师傅池 */
@@ -56,7 +56,9 @@ export interface RecommendArgs {
  *
  * @returns 命中的规则 + 候选列表 + 一句话理由
  */
-export function recommendMastersForOrder(args: RecommendArgs): RecommendationResult {
+export function recommendMastersForOrder(
+  args: RecommendArgs,
+): RecommendationResult {
   const { order, rules, masters } = args;
 
   // 1. 找命中的规则 — SKU 精确优先
@@ -65,7 +67,8 @@ export function recommendMastersForOrder(args: RecommendArgs): RecommendationRes
     (r) => r.spec.match.skuId && r.spec.match.skuId === order.skuId,
   );
   const categoryRules = enabledRules.filter(
-    (r) => r.spec.match.categoryId && r.spec.match.categoryId === order.categoryId,
+    (r) =>
+      r.spec.match.categoryId && r.spec.match.categoryId === order.categoryId,
   );
 
   let rule: DispatchRuleRow | null = null;
@@ -142,7 +145,10 @@ export const dispatchRuleSpecSchema = z
       .transform((v) => v ?? {}),
     requiredSkills: z
       .preprocess(
-        (v) => (Array.isArray(v) ? v.filter((s): s is string => typeof s === "string") : []),
+        (v) =>
+          Array.isArray(v)
+            ? v.filter((s): s is string => typeof s === "string")
+            : [],
         z.array(z.string()),
       )
       .default([]),
@@ -161,12 +167,16 @@ export function parseRuleJson(json: string): DispatchRuleSpec | null {
   try {
     raw = JSON.parse(json);
   } catch (e) {
-    console.warn(`[dispatch] ruleJson 不是合法 JSON: ${e instanceof Error ? e.message : String(e)}`);
+    console.warn(
+      `[dispatch] ruleJson 不是合法 JSON: ${e instanceof Error ? e.message : String(e)}`,
+    );
     return null;
   }
   const result = dispatchRuleSpecSchema.safeParse(raw);
   if (!result.success) {
-    console.warn(`[dispatch] ruleJson 校验失败: ${result.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
+    console.warn(
+      `[dispatch] ruleJson 校验失败: ${result.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`,
+    );
     return null;
   }
   return result.data;

@@ -10,16 +10,11 @@ import { normalizeSkills } from "@/src/lib/masters";
 // ============================================================
 
 export type ServiceField =
-  | "name"
-  | "code"
-  | "categoryCode"
-  | "basePrice"
-  | "requiredSkills"
-  | "enabled";
+  "name" | "code" | "categoryCode" | "basePrice" | "requiredSkills" | "enabled";
 
 export interface CreateCategoryInput {
   name: string;
-  code: string;        // 业务编码 — 应用层会强制大写
+  code: string; // 业务编码 — 应用层会强制大写
   enabled: boolean;
 }
 
@@ -27,7 +22,7 @@ export interface CreateSkuInput {
   name: string;
   code: string;
   categoryCode: string; // 通过 code 反查 categoryId
-  basePrice: number;    // 元（页面录入用），repo 内转分
+  basePrice: number; // 元（页面录入用），repo 内转分
   enabled: boolean;
   requiredSkills: string[]; // 派单所需技能；空数组 = 不参与自动派单
 }
@@ -35,7 +30,7 @@ export interface CreateSkuInput {
 export interface UpdateSkuInput {
   id: string;
   name: string;
-  basePrice: number;    // 元
+  basePrice: number; // 元
   enabled: boolean;
   requiredSkills: string[];
 }
@@ -56,29 +51,44 @@ export type ServiceResult =
 export async function listCategories() {
   return prisma.serviceCategory.findMany({
     orderBy: { name: "asc" },
-    select: { id: true, name: true, categoryCode: true, enabled: true, createdAt: true },
+    select: {
+      id: true,
+      name: true,
+      categoryCode: true,
+      enabled: true,
+      createdAt: true,
+    },
   });
 }
 
 export function validateCategoryInput(
   input: Partial<CreateCategoryInput>,
-): { ok: true; cleaned: CreateCategoryInput } | { ok: false; error: string; field: ServiceField } {
+):
+  | { ok: true; cleaned: CreateCategoryInput }
+  | { ok: false; error: string; field: ServiceField } {
   const name = (input.name ?? "").trim();
   if (!name) return { ok: false, error: "请填写品类名称", field: "name" };
-  if (name.length > 30) return { ok: false, error: "品类名称不能超过 30 个字符", field: "name" };
+  if (name.length > 30)
+    return { ok: false, error: "品类名称不能超过 30 个字符", field: "name" };
 
   const codeRaw = (input.code ?? "").trim();
   if (!codeRaw) return { ok: false, error: "请填写品类编码", field: "code" };
   // 用 codes.ts 的 normalizeCode — 一致性：含非 ASCII 直接返空
   const normalized = normalizeCode(codeRaw);
-  if (!normalized) return { ok: false, error: "品类编码格式不合法", field: "code" };
+  if (!normalized)
+    return { ok: false, error: "品类编码格式不合法", field: "code" };
   try {
     assertValidCode(normalized, "品类编码");
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "品类编码格式不合法", field: "code" };
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "品类编码格式不合法",
+      field: "code",
+    };
   }
 
-  const enabled = typeof input.enabled === "boolean" ? input.enabled : Boolean(input.enabled);
+  const enabled =
+    typeof input.enabled === "boolean" ? input.enabled : Boolean(input.enabled);
 
   return {
     ok: true,
@@ -96,7 +106,12 @@ export async function createCategory(
 ): Promise<ServiceResult> {
   const validated = validateCategoryInput(rawInput);
   if (!validated.ok) {
-    return { ok: false, category: "validation", error: validated.error, field: validated.field };
+    return {
+      ok: false,
+      category: "validation",
+      error: validated.error,
+      field: validated.field,
+    };
   }
   const c = validated.cleaned;
   // validate 已经把 code normalize 成大写 — 直接用
@@ -167,35 +182,51 @@ export async function listSkus(): Promise<SkuListItem[]> {
 
 export function validateSkuInput(
   input: Partial<CreateSkuInput>,
-): { ok: true; cleaned: CreateSkuInput } | { ok: false; error: string; field: ServiceField } {
+):
+  | { ok: true; cleaned: CreateSkuInput }
+  | { ok: false; error: string; field: ServiceField } {
   const name = (input.name ?? "").trim();
   if (!name) return { ok: false, error: "请填写 SKU 名称", field: "name" };
-  if (name.length > 60) return { ok: false, error: "SKU 名称不能超过 60 个字符", field: "name" };
+  if (name.length > 60)
+    return { ok: false, error: "SKU 名称不能超过 60 个字符", field: "name" };
 
   const codeRaw = (input.code ?? "").trim();
   if (!codeRaw) return { ok: false, error: "请填写 SKU 编码", field: "code" };
   // 用 codes.ts 的 normalizeCode — 含非 ASCII 直接返空，行为一致
   const codeNormalized = normalizeCode(codeRaw);
-  if (!codeNormalized) return { ok: false, error: "SKU 编码格式不合法", field: "code" };
+  if (!codeNormalized)
+    return { ok: false, error: "SKU 编码格式不合法", field: "code" };
   try {
     assertValidCode(codeNormalized, "SKU 编码");
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "SKU 编码格式不合法", field: "code" };
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "SKU 编码格式不合法",
+      field: "code",
+    };
   }
 
   const categoryCodeRaw = (input.categoryCode ?? "").trim();
-  if (!categoryCodeRaw) return { ok: false, error: "请选择所属品类", field: "categoryCode" };
+  if (!categoryCodeRaw)
+    return { ok: false, error: "请选择所属品类", field: "categoryCode" };
   const categoryCodeNormalized = normalizeCode(categoryCodeRaw);
   if (!categoryCodeNormalized) {
     return { ok: false, error: "品类编码格式不合法", field: "categoryCode" };
   }
 
-  const basePrice = typeof input.basePrice === "number" ? input.basePrice : Number(input.basePrice);
-  if (Number.isNaN(basePrice)) return { ok: false, error: "价格必须是数字", field: "basePrice" };
-  if (basePrice < 0) return { ok: false, error: "价格不能为负数", field: "basePrice" };
-  if (basePrice > 1_000_000) return { ok: false, error: "价格超出合理范围", field: "basePrice" };
+  const basePrice =
+    typeof input.basePrice === "number"
+      ? input.basePrice
+      : Number(input.basePrice);
+  if (Number.isNaN(basePrice))
+    return { ok: false, error: "价格必须是数字", field: "basePrice" };
+  if (basePrice < 0)
+    return { ok: false, error: "价格不能为负数", field: "basePrice" };
+  if (basePrice > 1_000_000)
+    return { ok: false, error: "价格超出合理范围", field: "basePrice" };
 
-  const enabled = typeof input.enabled === "boolean" ? input.enabled : Boolean(input.enabled);
+  const enabled =
+    typeof input.enabled === "boolean" ? input.enabled : Boolean(input.enabled);
 
   // requiredSkills — 空数组允许（应急服务、不参与自动派单的场景）
   const requiredSkills = normalizeSkills(input.requiredSkills);
@@ -215,20 +246,30 @@ export function validateSkuInput(
 
 export function validateUpdateSkuInput(
   input: Partial<UpdateSkuInput>,
-): { ok: true; cleaned: UpdateSkuInput } | { ok: false; error: string; field: ServiceField } {
+):
+  | { ok: true; cleaned: UpdateSkuInput }
+  | { ok: false; error: string; field: ServiceField } {
   const id = (input.id ?? "").trim();
   if (!id) return { ok: false, error: "缺少 SKU id", field: "name" };
 
   const name = (input.name ?? "").trim();
   if (!name) return { ok: false, error: "请填写 SKU 名称", field: "name" };
-  if (name.length > 60) return { ok: false, error: "SKU 名称不能超过 60 个字符", field: "name" };
+  if (name.length > 60)
+    return { ok: false, error: "SKU 名称不能超过 60 个字符", field: "name" };
 
-  const basePrice = typeof input.basePrice === "number" ? input.basePrice : Number(input.basePrice);
-  if (Number.isNaN(basePrice)) return { ok: false, error: "价格必须是数字", field: "basePrice" };
-  if (basePrice < 0) return { ok: false, error: "价格不能为负数", field: "basePrice" };
-  if (basePrice > 1_000_000) return { ok: false, error: "价格超出合理范围", field: "basePrice" };
+  const basePrice =
+    typeof input.basePrice === "number"
+      ? input.basePrice
+      : Number(input.basePrice);
+  if (Number.isNaN(basePrice))
+    return { ok: false, error: "价格必须是数字", field: "basePrice" };
+  if (basePrice < 0)
+    return { ok: false, error: "价格不能为负数", field: "basePrice" };
+  if (basePrice > 1_000_000)
+    return { ok: false, error: "价格超出合理范围", field: "basePrice" };
 
-  const enabled = typeof input.enabled === "boolean" ? input.enabled : Boolean(input.enabled);
+  const enabled =
+    typeof input.enabled === "boolean" ? input.enabled : Boolean(input.enabled);
 
   // requiredSkills — 空数组允许
   const requiredSkills = normalizeSkills(input.requiredSkills);
@@ -257,7 +298,12 @@ export async function createSku(
 ): Promise<ServiceResult> {
   const validated = validateSkuInput(rawInput);
   if (!validated.ok) {
-    return { ok: false, category: "validation", error: validated.error, field: validated.field };
+    return {
+      ok: false,
+      category: "validation",
+      error: validated.error,
+      field: validated.field,
+    };
   }
   const c = validated.cleaned;
   // validate 已经把 code 和 categoryCode 转成大写 — 直接用
@@ -325,16 +371,34 @@ export async function updateSku(
 ): Promise<ServiceResult> {
   const validated = validateUpdateSkuInput(rawInput);
   if (!validated.ok) {
-    return { ok: false, category: "validation", error: validated.error, field: validated.field };
+    return {
+      ok: false,
+      category: "validation",
+      error: validated.error,
+      field: validated.field,
+    };
   }
   const c = validated.cleaned;
 
   if (!c.id) {
-    return { ok: false, category: "validation", error: "缺少 SKU id", field: "name" };
+    return {
+      ok: false,
+      category: "validation",
+      error: "缺少 SKU id",
+      field: "name",
+    };
   }
-  const exists = await prisma.serviceSku.findUnique({ where: { id: c.id }, select: { id: true } });
+  const exists = await prisma.serviceSku.findUnique({
+    where: { id: c.id },
+    select: { id: true },
+  });
   if (!exists) {
-    return { ok: false, category: "validation", error: `SKU ${c.id} 不存在`, field: "name" };
+    return {
+      ok: false,
+      category: "validation",
+      error: `SKU ${c.id} 不存在`,
+      field: "name",
+    };
   }
 
   try {

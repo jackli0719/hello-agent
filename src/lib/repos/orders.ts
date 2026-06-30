@@ -31,7 +31,11 @@ export interface CreateOrderInput {
  */
 export interface AssignOrderResult {
   order: Order;
-  recommendation: { rule: { id: string; name: string } | null; candidates: { id: string; name: string; rating: number }[]; reason: string };
+  recommendation: {
+    rule: { id: string; name: string } | null;
+    candidates: { id: string; name: string; rating: number }[];
+    reason: string;
+  };
 }
 
 // ---------- 工具：Date → 带本地时区的 ISO 字符串 ----------
@@ -86,7 +90,9 @@ const orderSelect = {
 
 // ---------- 读 ----------
 
-export async function listOrders(filters: ListOrdersFilters = {}): Promise<Order[]> {
+export async function listOrders(
+  filters: ListOrdersFilters = {},
+): Promise<Order[]> {
   const { q = "", status = "all" } = filters;
   const keyword = q.trim();
 
@@ -111,7 +117,9 @@ export async function listOrders(filters: ListOrdersFilters = {}): Promise<Order
   return rows.map(toOrder);
 }
 
-export async function countOrdersByStatus(): Promise<Record<"all" | OrderStatus, number>> {
+export async function countOrdersByStatus(): Promise<
+  Record<"all" | OrderStatus, number>
+> {
   const rows = await prisma.order.groupBy({
     by: ["status"],
     _count: { _all: true },
@@ -136,14 +144,20 @@ export async function countOrdersByStatus(): Promise<Record<"all" | OrderStatus,
 // ---------- 写 ----------
 
 export class AssignOrderError extends Error {
-  constructor(message: string, readonly reason: string) {
+  constructor(
+    message: string,
+    readonly reason: string,
+  ) {
     super(message);
     this.name = "AssignOrderError";
   }
 }
 
 export class ReleaseOrderError extends Error {
-  constructor(message: string, readonly reason: string) {
+  constructor(
+    message: string,
+    readonly reason: string,
+  ) {
     super(message);
     this.name = "ReleaseOrderError";
   }
@@ -235,7 +249,13 @@ export async function assignOrder(orderId: string): Promise<AssignOrderResult> {
     listMasters(),
     prisma.dispatchRule.findMany({
       where: { enabled: true },
-      select: { id: true, name: true, priority: true, enabled: true, ruleJson: true },
+      select: {
+        id: true,
+        name: true,
+        priority: true,
+        enabled: true,
+        ruleJson: true,
+      },
     }),
   ]);
   const rules = ruleRows.map((r) => ({
@@ -321,8 +341,7 @@ export async function createOrder(input: CreateOrderInput): Promise<Order> {
  */
 export async function generateOrderId(now: Date = new Date()): Promise<string> {
   const pad = (n: number, w = 2) => String(n).padStart(w, "0");
-  const ymd =
-    `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
+  const ymd = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
   const todayPrefix = `O${ymd}`;
   const count = await prisma.order.count({
     where: { id: { startsWith: todayPrefix } },
