@@ -9,6 +9,10 @@ import { prisma } from "@/src/lib/db";
 import { normalizeCode, assertValidCode } from "@/src/lib/codes";
 import { parseSkillsString } from "@/src/lib/masters";
 import { parseRuleJson } from "@/lib/dispatch";
+import {
+  validateRulePriority,
+  validateSkillsNonEmpty,
+} from "@/src/lib/validation";
 
 // ============================================================
 // 类型
@@ -110,15 +114,19 @@ export function validateRuleInput(
     Array.isArray(input.requiredSkills) ? input.requiredSkills.join(",") : "",
   );
 
+  // [v0.9.0] 业务规则 #13 — requiredSkills 不能为空（之前允许空数组）
+  const skillsR = validateSkillsNonEmpty(requiredSkills, "技能");
+  if (!skillsR.ok)
+    return { ok: false, error: skillsR.error, field: "requiredSkills" };
+
+  // [v0.9.0] 业务规则 #12 — priority 必须是数字
+  const priorityR = validateRulePriority(input.priority);
+  if (!priorityR.ok)
+    return { ok: false, error: priorityR.error, field: "priority" };
   const priority =
     typeof input.priority === "number"
       ? input.priority
       : Number(input.priority);
-  if (Number.isNaN(priority))
-    return { ok: false, error: "优先级必须是数字", field: "priority" };
-  if (priority < 0 || priority > 10_000) {
-    return { ok: false, error: "优先级必须在 0-10000 之间", field: "priority" };
-  }
 
   const enabled =
     typeof input.enabled === "boolean" ? input.enabled : Boolean(input.enabled);

@@ -2,6 +2,12 @@
 // app/masters/actions.ts（server action）调这里的函数。
 
 import { prisma } from "@/src/lib/db";
+import {
+  validateMasterName,
+  validateMasterRating,
+  validatePhone,
+  validateSkillsNonEmpty,
+} from "@/src/lib/validation";
 
 export type MasterField =
   "name" | "phone" | "skills" | "rating" | "serviceArea";
@@ -84,30 +90,24 @@ export function validateMasterInput(input: Partial<CreateMasterInput>):
       error: string;
       field: MasterField;
     } {
-  const name = (input.name ?? "").trim();
-  if (!name) return { ok: false, error: "请填写师傅姓名", field: "name" };
-  if (name.length > 50)
-    return { ok: false, error: "师傅姓名不能超过 50 个字符", field: "name" };
+  // [v0.9.0] 复用 src/lib/validation.ts
+  const nameR = validateMasterName(input.name);
+  if (!nameR.ok) return { ok: false, error: nameR.error, field: "name" };
+  const name = input.name!.trim();
 
-  const phone = (input.phone ?? "").trim();
-  if (!phone) return { ok: false, error: "请填写手机号", field: "phone" };
-  if (!/^1\d{10}$/.test(phone)) {
-    return {
-      ok: false,
-      error: "手机号格式不正确（11 位数字，1 开头）",
-      field: "phone",
-    };
-  }
+  const phoneR = validatePhone(input.phone);
+  if (!phoneR.ok) return { ok: false, error: phoneR.error, field: "phone" };
+  const phone = input.phone!.trim();
 
+  // [v0.9.0] 业务规则 #8 — skills 不能为空（之前是允许空数组）
+  const skillsR = validateSkillsNonEmpty(input.skills, "技能");
+  if (!skillsR.ok) return { ok: false, error: skillsR.error, field: "skills" };
   const skills = normalizeSkills(input.skills);
-  // skills 可空（演示阶段允许），但若填了非法格式已被 normalizeSkills 滤掉
 
+  const ratingR = validateMasterRating(input.rating);
+  if (!ratingR.ok) return { ok: false, error: ratingR.error, field: "rating" };
   const rating =
     typeof input.rating === "number" ? input.rating : Number(input.rating);
-  if (Number.isNaN(rating))
-    return { ok: false, error: "评分必须是数字", field: "rating" };
-  if (rating < 0 || rating > 5)
-    return { ok: false, error: "评分必须在 0-5 之间", field: "rating" };
 
   const serviceArea = (input.serviceArea ?? "").trim();
   if (serviceArea.length > 100) {

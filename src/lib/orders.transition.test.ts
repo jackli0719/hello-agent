@@ -64,8 +64,14 @@ describe("transitionOrder — 合法流转", () => {
   });
 
   // # spec: 状态流转 — pending 可直接 cancelled，不释放师傅（无师傅可释放）
+  // [v0.9.0] 业务规则 #14：所有 cancel 状态都必填 cancelReason
   it("pending → cancelled（无师傅，单纯改 status）", async () => {
-    const r = await transitionOrder("O20260624002", "cancelled");
+    const r = await transitionOrder(
+      "O20260624002",
+      "cancelled",
+      undefined,
+      "测试取消",
+    );
     expect(r.ok).toBe(true);
     if (!r.ok) return;
 
@@ -73,6 +79,7 @@ describe("transitionOrder — 合法流转", () => {
       where: { id: "O20260624002" },
     });
     expect(order?.status).toBe("cancelled");
+    expect(order?.cancelReason).toBe("测试取消");
     // 没师傅，masterId 仍 null
     expect(order?.masterId).toBeNull();
   });
@@ -93,8 +100,14 @@ describe("transitionOrder — 合法流转", () => {
   });
 
   // # spec: 状态流转 — assigned → cancelled 必须释放师傅（busy → available）
+  // [v0.9.0] 业务规则 #14：所有 cancel 状态都必填 cancelReason
   it("assigned → cancelled（释放师傅 busy → available）", async () => {
-    const r = await transitionOrder("O20260624003", "cancelled");
+    const r = await transitionOrder(
+      "O20260624003",
+      "cancelled",
+      undefined,
+      "测试取消",
+    );
     expect(r.ok).toBe(true);
 
     const order = await prisma.order.findUnique({
@@ -120,8 +133,14 @@ describe("transitionOrder — 合法流转", () => {
   });
 
   // # spec: 状态流转 — in_service → cancelled 也释放师傅（busy → available）
+  // [v0.9.0] 业务规则 #14：所有 cancel 状态都必填 cancelReason
   it("in_service → cancelled（释放师傅）", async () => {
-    const r = await transitionOrder("O20260624001", "cancelled");
+    const r = await transitionOrder(
+      "O20260624001",
+      "cancelled",
+      undefined,
+      "测试取消",
+    );
     expect(r.ok).toBe(true);
 
     const order = await prisma.order.findUnique({
@@ -211,10 +230,11 @@ describe("transitionOrder — 并发安全", () => {
   });
 
   // # spec: 乐观锁并发安全 — 同时两个 transitionOrder 只一个成功，另一个被 updateMany 拒绝
+  // [v0.9.0] 业务规则 #14：cancel 必填 cancelReason
   it("两个 transitionOrder 同时跑：一个成功一个被乐观锁拒", async () => {
     const [r1, r2] = await Promise.all([
       transitionOrder("O20260624003", "in_service"),
-      transitionOrder("O20260624003", "cancelled"),
+      transitionOrder("O20260624003", "cancelled", undefined, "测试取消"),
     ]);
 
     // 一个成功一个失败
@@ -223,11 +243,11 @@ describe("transitionOrder — 并发安全", () => {
     expect(successCount).toBe(1);
     expect(failCount).toBe(1);
 
-    // 失败的应该是 validation
+    // 失败的应该是 validation — 「已被并发改」/「不能变更」/「请填写取消原因」皆属 validation
     const failed = [r1, r2].find((r) => !r.ok);
     if (failed && !failed.ok) {
       expect(failed.category).toBe("validation");
-      expect(failed.error).toMatch(/已被|不能变更/);
+      expect(failed.error).toMatch(/已被|不能变更|请填写取消原因/);
     }
 
     // 订单只被改一次

@@ -4,6 +4,7 @@
 import { prisma } from "@/src/lib/db";
 import { assertValidCode, normalizeCode } from "@/src/lib/codes";
 import { normalizeSkills } from "@/src/lib/masters";
+import { validateSkuBasePrice } from "@/src/lib/validation";
 
 // ============================================================
 // 类型
@@ -214,21 +215,19 @@ export function validateSkuInput(
     return { ok: false, error: "品类编码格式不合法", field: "categoryCode" };
   }
 
+  // [v0.9.0] 业务规则 #11 — basePrice 必须 ≥ 0（复用 validation.ts）
+  const priceR = validateSkuBasePrice(input.basePrice);
+  if (!priceR.ok) return { ok: false, error: priceR.error, field: "basePrice" };
   const basePrice =
     typeof input.basePrice === "number"
       ? input.basePrice
       : Number(input.basePrice);
-  if (Number.isNaN(basePrice))
-    return { ok: false, error: "价格必须是数字", field: "basePrice" };
-  if (basePrice < 0)
-    return { ok: false, error: "价格不能为负数", field: "basePrice" };
-  if (basePrice > 1_000_000)
-    return { ok: false, error: "价格超出合理范围", field: "basePrice" };
 
   const enabled =
     typeof input.enabled === "boolean" ? input.enabled : Boolean(input.enabled);
 
   // requiredSkills — 空数组允许（应急服务、不参与自动派单的场景）
+  // 注：业务规则 #11-#15 没要求 SKU requiredSkills 必填，仅派单规则（#13）必填
   const requiredSkills = normalizeSkills(input.requiredSkills);
 
   return {
@@ -257,21 +256,18 @@ export function validateUpdateSkuInput(
   if (name.length > 60)
     return { ok: false, error: "SKU 名称不能超过 60 个字符", field: "name" };
 
+  // [v0.9.0] 业务规则 #11 — basePrice 必须 ≥ 0（复用 validation.ts）
+  const priceR = validateSkuBasePrice(input.basePrice);
+  if (!priceR.ok) return { ok: false, error: priceR.error, field: "basePrice" };
   const basePrice =
     typeof input.basePrice === "number"
       ? input.basePrice
       : Number(input.basePrice);
-  if (Number.isNaN(basePrice))
-    return { ok: false, error: "价格必须是数字", field: "basePrice" };
-  if (basePrice < 0)
-    return { ok: false, error: "价格不能为负数", field: "basePrice" };
-  if (basePrice > 1_000_000)
-    return { ok: false, error: "价格超出合理范围", field: "basePrice" };
 
   const enabled =
     typeof input.enabled === "boolean" ? input.enabled : Boolean(input.enabled);
 
-  // requiredSkills — 空数组允许
+  // requiredSkills — 空数组允许（同 create）
   const requiredSkills = normalizeSkills(input.requiredSkills);
 
   return {

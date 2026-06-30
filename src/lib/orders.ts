@@ -17,6 +17,14 @@ import { prisma } from "@/src/lib/db";
 import { normalizeCode } from "@/src/lib/codes";
 import { logInfo, logError } from "@/src/lib/logger";
 import { incrementCounter, METRIC } from "@/src/lib/metrics";
+import {
+  validateAddress,
+  validateCancelReason,
+  validateCustomerName,
+  validateOrderAmount,
+  validatePhone,
+  trimServiceSummary,
+} from "@/src/lib/validation";
 
 export type OrderField =
   | "customerName"
@@ -51,35 +59,20 @@ export function validateCreateOrderInput(
 ):
   | { ok: true; cleaned: CreateOrderInput }
   | { ok: false; error: string; field: OrderField } {
-  const customerName = (input.customerName ?? "").trim();
-  if (!customerName)
-    return { ok: false, error: "请填写客户姓名", field: "customerName" };
-  if (customerName.length > 50)
-    return {
-      ok: false,
-      error: "客户姓名不能超过 50 个字符",
-      field: "customerName",
-    };
+  // [v0.9.0] 复用 src/lib/validation.ts 的纯函数校验
+  const nameR = validateCustomerName(input.customerName);
+  if (!nameR.ok)
+    return { ok: false, error: nameR.error, field: "customerName" };
+  const customerName = input.customerName!.trim();
 
-  const customerPhone = (input.customerPhone ?? "").trim();
-  if (!customerPhone)
-    return { ok: false, error: "请填写手机号", field: "customerPhone" };
-  if (!/^1\d{10}$/.test(customerPhone)) {
-    return {
-      ok: false,
-      error: "手机号格式不正确（11 位数字，1 开头）",
-      field: "customerPhone",
-    };
-  }
+  const phoneR = validatePhone(input.customerPhone);
+  if (!phoneR.ok)
+    return { ok: false, error: phoneR.error, field: "customerPhone" };
+  const customerPhone = input.customerPhone!.trim();
 
-  const address = (input.address ?? "").trim();
-  if (!address) return { ok: false, error: "请填写服务地址", field: "address" };
-  if (address.length > 200)
-    return {
-      ok: false,
-      error: "服务地址不能超过 200 个字符",
-      field: "address",
-    };
+  const addrR = validateAddress(input.address);
+  if (!addrR.ok) return { ok: false, error: addrR.error, field: "address" };
+  const address = input.address!.trim();
 
   const skuCodeRaw = (input.skuCode ?? "").trim();
   if (!skuCodeRaw)
@@ -102,13 +95,9 @@ export function validateCreateOrderInput(
     return { ok: false, error: "服务 SKU 格式不合法", field: "skuCode" };
   if (categoryCode === "") categoryCode = undefined;
 
-  if (typeof input.amount !== "number" || Number.isNaN(input.amount)) {
-    return { ok: false, error: "金额必须是数字", field: "amount" };
-  }
-  if (input.amount < 0)
-    return { ok: false, error: "金额不能为负数", field: "amount" };
-  if (input.amount > 1_000_000)
-    return { ok: false, error: "金额超出合理范围", field: "amount" };
+  // [v0.9.0] 业务规则 #4 — 订单金额必须 > 0（之前是 ≥ 0）
+  const amountR = validateOrderAmount(input.amount);
+  if (!amountR.ok) return { ok: false, error: amountR.error, field: "amount" };
 
   if (
     !(input.scheduledAt instanceof Date) ||
@@ -136,7 +125,7 @@ export function validateCreateOrderInput(
       address,
       skuCode,
       categoryCode,
-      amount: input.amount,
+      amount: input.amount as number,
       scheduledAt: input.scheduledAt,
       remark,
     },
@@ -585,7 +574,8 @@ export async function transitionOrder(
   // [v0.7.8] 可选 serviceSummary：师傅完成订单时填（只在 completed 用）
   // 在事务内写入 → serviceSummary 与 status 一起更新（原子性）
   serviceSummary?: string,
-  // [v0.7.9] 可选 cancelReason：取消订单时填（业务规则：in_service 必填）
+  // [v0.7.9] 可选 cancelReason：取消订单时填
+  // [v0.9.0] 业务规则 #14 — 所有 cancel 状态都必填（pending / assigned / in_service）
   // 在事务内写入 → cancelReason + canceledAt 与 status 一起更新（原子性）
   cancelReason?: string,
 ): Promise<TransitionOrderResult> {
@@ -610,6 +600,20 @@ export async function transitionOrder(
     };
   }
 
+  // [v0.9.0] 业务规则 #14 — 所有 cancel 状态都必填原因（在 DB 写入前校验）
+  if (nextStatus === "cancelled") {
+    const reasonR = validateCancelReason(cancelReason);
+    if (!reasonR.ok) {
+      return { ok: false, category: "validation", error: reasonR.error };
+    }
+  }
+
+  // [v0.9.0] 业务规则 #15 — serviceSummary 可以为空，但填了要 trim
+  const cleanedServiceSummary =
+    nextStatus === "completed"
+      ? trimServiceSummary(serviceSummary).cleaned
+      : "";
+
   // 3. 事务：乐观锁改订单 + 视情况释放师傅 + 写 serviceSummary/cancelReason（原子性）
   try {
     await prisma.$transaction(async (tx) => {
@@ -623,14 +627,10 @@ export async function transitionOrder(
         status: nextStatus,
       };
       // 只在 completed 状态 + 实际传了 serviceSummary 时写入
-      if (
-        nextStatus === "completed" &&
-        serviceSummary &&
-        serviceSummary.trim()
-      ) {
-        data.serviceSummary = serviceSummary.trim();
+      if (nextStatus === "completed" && cleanedServiceSummary) {
+        data.serviceSummary = cleanedServiceSummary;
       }
-      // [v0.7.9] cancelled 状态 + 实际传了 cancelReason 时写入（同时写 canceledAt）
+      // [v0.9.0] cancelled 状态 — 必填原因（已在头部校验过）
       if (nextStatus === "cancelled" && cancelReason && cancelReason.trim()) {
         data.cancelReason = cancelReason.trim();
         data.canceledAt = new Date();

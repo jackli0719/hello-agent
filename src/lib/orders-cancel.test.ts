@@ -170,9 +170,8 @@ describe("cancelOrderAction — 后台", () => {
   });
 
   // # spec: 必填原因 — in_service 状态
-  it("in_service 不传原因 → 成功（必填校验在 worker/customer 路径）", async () => {
-    // 后台 cancelOrderAction 签名: (orderId, cancelReason?)
-    // 不强制 requireReason（业务规则 #5 说的是 worker/customer 必填）
+  // [v0.9.0] 业务规则 #14：所有 cancel 状态都必填 cancelReason（不只是 in_service）
+  it("in_service 不传原因 → 拒绝（业务规则 #14）", async () => {
     mockUser = {
       id: "admin1",
       name: "admin",
@@ -182,6 +181,24 @@ describe("cancelOrderAction — 后台", () => {
     };
     const orderId = await createTestOrder("admin-inservice", "in_service");
     const result = await cancelOrderAction(orderId);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/请填写取消原因/);
+    }
+  });
+
+  // [v0.9.0] 业务规则 #14 — in_service 传原因 → 成功
+  // # spec: in_service 状态 + 传原因 → 取消成功
+  it("in_service 传原因 → 成功", async () => {
+    mockUser = {
+      id: "admin1",
+      name: "admin",
+      role: "admin",
+      phone: null,
+      workerId: null,
+    };
+    const orderId = await createTestOrder("admin-inservice-ok", "in_service");
+    const result = await cancelOrderAction(orderId, "师傅日志");
     expect(result.ok).toBe(true);
   });
 
@@ -357,7 +374,8 @@ describe("customerCancelOrderAction — 用户", () => {
   });
 
   // # spec: pending 状态 → 可取消
-  it("pending 状态 → 可取消", async () => {
+  // [v0.9.0] 业务规则 #14：customer cancel 也必须传 cancelReason
+  it("pending 状态 + 原因 → 可取消", async () => {
     mockUser = {
       id: "customer1",
       name: "customer1",
@@ -373,11 +391,38 @@ describe("customerCancelOrderAction — 用户", () => {
     );
     const fd = new FormData();
     fd.set("orderId", orderId);
+    fd.set("cancelReason", "用户改变主意");
     fd.set(CSRF_FORM_FIELD, "valid-csrf-token");
     const result = await customerCancelOrderAction(fd);
     expect(result.ok).toBe(true);
     const updated = await prisma.order.findUnique({ where: { id: orderId } });
     expect(updated?.status).toBe("cancelled");
+  });
+
+  // [v0.9.0] 业务规则 #14：customer cancel 不传原因 → 拒绝
+  // # spec: customer cancel 校验失败不写库
+  it("pending 状态 + 不传原因 → 拒绝", async () => {
+    mockUser = {
+      id: "customer1",
+      name: "customer1",
+      role: "customer",
+      phone: "13900000001",
+      workerId: null,
+    };
+    const orderId = await createTestOrder(
+      "cust-pending-noreason",
+      "pending",
+      null,
+      "13900000001",
+    );
+    const fd = new FormData();
+    fd.set("orderId", orderId);
+    fd.set(CSRF_FORM_FIELD, "valid-csrf-token");
+    const result = await customerCancelOrderAction(fd);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/请填写取消原因/);
+    }
   });
 
   // # spec: assigned 状态 → 拒绝（业务规则 #10）

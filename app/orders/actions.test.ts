@@ -272,8 +272,9 @@ describe("cancelOrderAction", () => {
   });
 
   // # spec: assigned 订单取消：order→cancelled，master busy→available
-  it("assigned 订单 → cancelled + 师傅释放", async () => {
-    const r = await cancelOrderAction("O20260624003");
+  // [v0.9.0] 业务规则 #14：所有 cancel 都必填 cancelReason
+  it("assigned 订单 + 原因 → cancelled + 师傅释放", async () => {
+    const r = await cancelOrderAction("O20260624003", "测试取消");
     expect(r.ok).toBe(true);
 
     const order = await prisma.order.findUnique({
@@ -282,6 +283,16 @@ describe("cancelOrderAction", () => {
     expect(order?.status).toBe("cancelled");
     const tech = await prisma.master.findUnique({ where: { id: "T002" } });
     expect(tech?.status).toBe("available");
+  });
+
+  // [v0.9.0] 业务规则 #14：不传原因 → 拒绝
+  // # spec: cancelOrderAction 校验失败不写库
+  it("assigned 订单 + 不传原因 → 拒绝", async () => {
+    const r = await cancelOrderAction("O20260624003");
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toMatch(/请填写取消原因/);
+    }
   });
 
   // # spec: 已终态订单（completed）不能取消，返 validation
