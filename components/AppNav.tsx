@@ -35,7 +35,14 @@ function detectCurrent(pathname: string): AppPage | undefined {
   return undefined;
 }
 
-export function AppNav({ isLoggedIn }: { isLoggedIn: boolean }) {
+export function AppNav({
+  isLoggedIn,
+  csrfToken,
+}: {
+  isLoggedIn: boolean;
+  /** RSC 阶段通过 ensureCsrfCookie 写入 cookie 的 token — [v0.7.3] 修 logout CSRF */
+  csrfToken: string;
+}) {
   const pathname = usePathname() ?? "";
 
   // /worker 是师傅端 H5，/customer 是用户端 H5，/ 是三端入口 landing —
@@ -99,6 +106,8 @@ export function AppNav({ isLoggedIn }: { isLoggedIn: boolean }) {
       {/* 退出按钮 — 已登录时显示，form action 调 logoutAction */}
       {isLoggedIn && (
         <form action={logoutAction} style={{ marginLeft: "auto" }}>
+          {/* [v0.7.3] CSRF token — layout RSC 阶段已写 cookie */}
+          <input type="hidden" name="_csrf" value={csrfToken} />
           <button
             type="submit"
             style={{

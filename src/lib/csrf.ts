@@ -47,22 +47,22 @@ export async function verifyCsrfToken(
   );
 }
 
-/** 确保 client 有 CSRF token cookie（页面渲染前调） */
-export async function ensureCsrfCookie(): Promise<string> {
-  let c;
+/** 仅读 csrf cookie（RSC 可用，middleware 已写） — [v0.7.3] 修 RSC 写 cookie 报错 */
+export async function readCsrfCookie(): Promise<string> {
   try {
-    c = await cookies();
+    const c = await cookies();
+    return c.get(CSRF_COOKIE)?.value ?? "";
   } catch {
     return "";
   }
-  const existing = c.get(CSRF_COOKIE)?.value;
-  if (existing) return existing;
-  const token = generateCsrfToken();
-  c.set(CSRF_COOKIE, token, {
-    httpOnly: false, // 客户端 JS 要读
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 60 * 24,
-  });
-  return token;
+}
+
+/** 确保 client 有 CSRF token cookie（Route Handler / server action 可写；RSC 仅读）
+ *
+ * RSC 写 cookie 在 Next.js 15 报「Cookies can only be modified in a Server Action or Route Handler」。
+ * 但 middleware 已经在 /login 路径写了 csrf cookie（v0.7.1 fix），所以 RSC 只需读。
+ * 如果读不到（middleware 没跑过的路径），不写 — 下次 server action 触发时再由中间件写。
+ */
+export async function ensureCsrfCookie(): Promise<string> {
+  return readCsrfCookie();
 }
