@@ -4,6 +4,7 @@ import { StatusBadge, th, td, card, ORDER_TONE } from "@/components/ui";
 import { ORDER_STATUS_LABEL } from "@/lib/mock-data";
 import { listOrdersForPage, type OrderListItem } from "@/src/lib/queries";
 import { listEnabledServices } from "@/src/lib/repos/services";
+import { ensureCsrfCookie } from "@/src/lib/csrf";
 import type { OrderStatus } from "@/src/types";
 import Link from "next/link";
 
@@ -83,6 +84,8 @@ export default async function OrdersPage({ searchParams }: PageProps) {
     dateTo = "",
     dateField = "createdAt",
   } = await searchParams;
+  // [v0.7.7] RSC 阶段确保 csrf cookie 存在（InternalRemarkForm 校验需要）
+  const csrfToken = await ensureCsrfCookie();
   // 非法 status 值 fallback 到 "all"，避免 ?status=invalid 时把所有订单过滤掉
   const validStatus = (
     FILTERS.some((f) => f.value === status) ? status : "all"
@@ -526,6 +529,7 @@ export default async function OrdersPage({ searchParams }: PageProps) {
                       <InternalRemarkForm
                         orderId={o.id}
                         initialRemark={o.internalRemark}
+                        csrfToken={csrfToken}
                       />
                     </td>
                     <td style={td}>

@@ -1,17 +1,20 @@
 "use client";
 
-// 后台内部备注编辑表单 — [v0.7.6]
+// 后台内部备注编辑表单 — [v0.7.6] / [v0.7.7] 加 CSRF
 // 调 updateInternalRemarkAction（admin 专属）
 
 import { useState, useTransition } from "react";
 import { updateInternalRemarkAction } from "@/app/orders/actions";
+import { CSRF_FORM_FIELD } from "@/src/lib/csrf-constants";
 
 export function InternalRemarkForm({
   orderId,
   initialRemark,
+  csrfToken, // [v0.7.7] RSC 阶段通过 ensureCsrfCookie 写入 cookie 的 token
 }: {
   orderId: string;
   initialRemark: string | null;
+  csrfToken: string;
 }) {
   const [pending, startTransition] = useTransition();
   const [value, setValue] = useState(initialRemark ?? "");
@@ -24,6 +27,7 @@ export function InternalRemarkForm({
     const fd = new FormData();
     fd.set("orderId", orderId);
     fd.set("internalRemark", value);
+    fd.set(CSRF_FORM_FIELD, csrfToken); // [v0.7.7]
     startTransition(async () => {
       const result = await updateInternalRemarkAction(fd);
       if (!result.ok) {

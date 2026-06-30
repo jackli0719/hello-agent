@@ -12,6 +12,7 @@ import {
 } from "@/src/lib/orders";
 import { releaseMaster, ReleaseOrderError } from "@/src/lib/repos/orders";
 import { createActivityLog } from "@/src/lib/activity-log";
+import { CSRF_FORM_FIELD, verifyCsrfToken } from "@/src/lib/csrf";
 
 // 失败时返回的判别联合 — 成功路径通过 redirect 走，函数本身不返回。
 export type CreateOrderActionResult = Exclude<CreateOrderResult, { ok: true }>;
@@ -302,6 +303,12 @@ export type UpdateInternalRemarkResult =
 export async function updateInternalRemarkAction(
   formData: FormData,
 ): Promise<UpdateInternalRemarkResult> {
+  // [v0.7.7] CSRF 校验（修 ADR-013 B6 同类 v0.7.2 logout bug）
+  const csrfToken = String(formData.get(CSRF_FORM_FIELD) ?? "");
+  if (!(await verifyCsrfToken(csrfToken))) {
+    return { ok: false, error: "会话已过期，请刷新页面后重试" };
+  }
+
   const orderId = String(formData.get("orderId") ?? "").trim();
   const internalRemark = String(formData.get("internalRemark") ?? "").trim();
 
