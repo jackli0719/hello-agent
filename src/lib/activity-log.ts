@@ -92,3 +92,103 @@ export async function listRecentActivityLogs(limit = 20) {
     take: limit,
   });
 }
+
+// ============================================================
+// [v0.8.0] /activity-logs 页面 — 筛选 + 分页
+// ============================================================
+
+/**
+ * action 白名单 — 业务规则列的 11 条 + cancel 变体（与 orders/actions.ts 一致）
+ * 硬编码而非 distinct DB 查询：保证下拉顺序与业务规则一一对应，避免隐藏字段
+ */
+export const ACTIVITY_ACTIONS = [
+  "order_created",
+  "order_assigned",
+  "service_started",
+  "order_completed",
+  "order_canceled",
+  "order_dispatch_canceled",
+  "order_internal_remark_updated",
+  "order_service_summary_added",
+  "master_created",
+  "master_updated",
+  "service_sku_created",
+  "service_sku_updated",
+  "dispatch_rule_created",
+  "dispatch_rule_updated",
+] as const;
+export type ActivityAction = (typeof ACTIVITY_ACTIONS)[number];
+
+/** role 白名单 */
+export const ACTIVITY_ROLES = [
+  "admin",
+  "worker",
+  "customer",
+  "system",
+] as const;
+export type ActivityRoleFilter = (typeof ACTIVITY_ROLES)[number];
+
+/**
+ * targetType 白名单 — UI 列举用
+ * （schema 里有 serviceCategory，但日志暂不写它；留 4 个业务常用）
+ */
+export const ACTIVITY_TARGET_TYPES = [
+  "order",
+  "master",
+  "serviceSku",
+  "dispatchRule",
+] as const;
+export type ActivityTargetTypeFilter = (typeof ACTIVITY_TARGET_TYPES)[number];
+
+export interface ActivityLogFilter {
+  actorRole?: ActivityRoleFilter;
+  action?: ActivityAction;
+  targetType?: ActivityTargetTypeFilter;
+  keyword?: string;
+}
+
+export interface ListActivityLogsResult {
+  logs: Awaited<ReturnType<typeof prisma.activityLog.findMany>>;
+  totalCount: number;
+}
+
+/**
+ * 抽 where 构造 — 列表 + totalCount 共用，避免漂移（CLAUDE.md P0-3）
+ * 注意：keyword 用 contains + mode:'insensitive' 让「客户」能搜到「客户」
+ */
+function buildActivityLogWhere(filter: ActivityLogFilter) {
+  const where: Record<string, unknown> = {};
+  if (filter.actorRole) where.actorRole = filter.actorRole;
+  if (filter.action) where.action = filter.action;
+  if (filter.targetType) where.targetType = filter.targetType;
+  if (filter.keyword && filter.keyword.trim()) {
+    // SQLite 大小写不敏感 — 业务希望「客户」/「客户」互搜得到
+    where.message = {
+      contains: filter.keyword.trim(),
+      mode: "insensitive",
+    };
+  }
+  return where;
+}
+
+/**
+ * 读筛选 + 分页后的日志（按 createdAt desc，加 id tiebreaker 防同秒数据漂移）
+ */
+export async function listActivityLogs(
+  filter: ActivityLogFilter,
+  page: number,
+  pageSize: number,
+): Promise<ListActivityLogsResult> {
+  const where = buildActivityLogWhere(filter);
+  const skip = (page - 1) * pageSize;
+  const [logs, totalCount] = await Promise.all([
+    prisma.activityLog.findMany({
+      where,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      skip,
+      take: pageSize,
+    }),
+    prisma.activityLog.count({ where }),
+  ]);
+  return { logs, totalCount };
+}

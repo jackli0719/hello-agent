@@ -14,7 +14,8 @@ type AppPage =
   | "services"
   | "masters"
   | "dispatch-rules"
-  | "metrics";
+  | "metrics"
+  | "activity-logs";
 
 const ITEMS: { key: AppPage; label: string; href: string }[] = [
   { key: "dashboard", label: "Dashboard", href: "/dashboard" },
@@ -22,6 +23,7 @@ const ITEMS: { key: AppPage; label: string; href: string }[] = [
   { key: "services", label: "服务管理", href: "/services" },
   { key: "masters", label: "师傅管理", href: "/masters" },
   { key: "dispatch-rules", label: "派单规则", href: "/dispatch-rules" },
+  { key: "activity-logs", label: "操作日志", href: "/activity-logs" }, // [v0.8.0]
   { key: "metrics", label: "业务指标", href: "/admin/metrics" },
 ];
 
@@ -31,6 +33,7 @@ function detectCurrent(pathname: string): AppPage | undefined {
   if (pathname.startsWith("/services")) return "services";
   if (pathname.startsWith("/masters")) return "masters";
   if (pathname.startsWith("/dispatch-rules")) return "dispatch-rules";
+  if (pathname.startsWith("/activity-logs")) return "activity-logs";
   if (pathname.startsWith("/admin")) return "metrics";
   return undefined;
 }
