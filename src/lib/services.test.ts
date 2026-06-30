@@ -370,10 +370,11 @@ describe("新建的 SKU 能被 listSkus 查到，能出现在新建订单下拉"
 // # spec: 品类列表 = 返回所有品类含 disabled 的全量列表
 describe("listCategories", () => {
   // # spec: 品类列表 — 返回全量品类（含 disabled），管理员视图
+  // [v0.9.2] seed-demo 3 个品类（家政/家电清洗/维修） — 期望 ≥ 3
   it("返回所有品类（含 disabled）", async () => {
     const all = await listCategories();
-    expect(all.length).toBeGreaterThanOrEqual(5); // seed 有 5 个
-    // 至少一个 enabled（seed 没禁用任何）
+    expect(all.length).toBeGreaterThanOrEqual(3);
+    // 至少一个 enabled
     expect(all.some((c) => c.enabled)).toBe(true);
   });
 });

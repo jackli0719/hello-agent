@@ -245,9 +245,17 @@ describe("修复需求：新增规则生效后影响 recommendMastersForOrder", 
 
   // # spec: 派单规则优先级 — 新建更高 priority 的规则应被命中，覆盖 seed 旧规则
   it("新增 SKU 精确规则 → 派单匹配到这条（而不是 seed 的旧规则）", async () => {
+    // [v0.9.2] demo seed 用 cuid 真实 ID；先用 prisma 查 APPLIANCE-AC-WALL 的真实 ID
+    const sku = await prisma.serviceSku.findUnique({
+      where: { skuCode: "APPLIANCE-AC-WALL" },
+      select: { id: true, categoryId: true },
+    });
+    expect(sku).not.toBeNull();
+    if (!sku) return;
+
     // 新建一条「SUPER」SKU 精确规则：priority=5000 最高，覆盖 seed 的 priority=100
     const c = await createRule({
-      name: "SUPER - S003 优先",
+      name: "SUPER - APPLIANCE-AC-WALL 优先",
       categoryCode: null,
       skuCode: "APPLIANCE-AC-WALL",
       requiredSkills: ["空调维修"],
@@ -258,10 +266,10 @@ describe("修复需求：新增规则生效后影响 recommendMastersForOrder", 
     if (!c.ok) return;
     createdIds.push(c.id);
 
-    // 模拟：order sku=S003, categoryId=CLEAN
+    // 模拟：order skuId=APPLIANCE-AC-WALL 真实 ID, categoryId=CLEAN
     // 候选：T004 孙师傅（空调维修，available，rating 4.6）
     const result = recommendMastersForOrder({
-      order: { skuId: "S003", categoryId: "CLEAN_ID" },
+      order: { skuId: sku.id, categoryId: "CLEAN_ID" },
       rules: await prisma.dispatchRule
         .findMany({
           where: { enabled: true },
@@ -299,7 +307,7 @@ describe("修复需求：新增规则生效后影响 recommendMastersForOrder", 
 
     // 命中的应该是 priority 最高的那条（5000 的 SUPER）
     expect(result.rule?.id).toBe(c.id);
-    expect(result.rule?.name).toBe("SUPER - S003 优先");
+    expect(result.rule?.name).toBe("SUPER - APPLIANCE-AC-WALL 优先");
   });
 
   // # spec: 派单规则启停 — disabled 规则不参与推荐匹配（即使 priority 最高）

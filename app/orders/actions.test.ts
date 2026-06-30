@@ -31,12 +31,12 @@ async function resetOrder(
 }
 
 async function resetMasterStatuses() {
+  // [v0.9.2] seed-demo 删了 T005 — T001-T004 4 师傅
   const map: Record<string, "available" | "busy" | "offline"> = {
     T001: "busy",
     T002: "busy",
     T003: "busy",
     T004: "available",
-    T005: "offline",
   };
   for (const [id, status] of Object.entries(map)) {
     await prisma.master.update({ where: { id }, data: { status } });
@@ -137,18 +137,18 @@ describe("createOrderAction — FormData 解析", () => {
 
 describe("cancelDispatchAction", () => {
   // # spec: cancelDispatchAction 撤销已派单：order→cancelled，master busy→available，释放前 masterName 快照
-  beforeEach(() => resetOrder("O20260624003", "assigned", "T002", "赵师傅"));
-  afterEach(() => resetOrder("O20260624003", "assigned", "T002", "赵师傅"));
+  beforeEach(() => resetOrder("O20260628003", "assigned", "T002", "赵师傅"));
+  afterEach(() => resetOrder("O20260628003", "assigned", "T002", "赵师傅"));
 
   // # spec: assigned 订单撤销派单：order→cancelled，master busy→available，masterName 快照返回
   it("assigned 订单 → 订单回 cancelled，师傅回 available", async () => {
-    const r = await cancelDispatchAction("O20260624003");
+    const r = await cancelDispatchAction("O20260628003");
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.masterName).toBe("赵师傅"); // 释放前的名字（snapshot）
 
     const order = await prisma.order.findUnique({
-      where: { id: "O20260624003" },
+      where: { id: "O20260628003" },
     });
     expect(order?.status).toBe("cancelled");
     const tech = await prisma.master.findUnique({ where: { id: "T002" } });
@@ -157,7 +157,7 @@ describe("cancelDispatchAction", () => {
 
   // # spec: 撤销派单只能撤 assigned；pending 没派单则返「没有需要释放」
   it("pending 订单 → validation「没有需要释放」", async () => {
-    const r = await cancelDispatchAction("O20260624002"); // pending
+    const r = await cancelDispatchAction("O20260629001"); // pending
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.category).toBe("validation");
@@ -174,7 +174,7 @@ describe("cancelDispatchAction", () => {
 
   // # spec: 终态订单（completed/cancelled）不能再退派单
   it("completed 订单 → validation（已终态，不能再退）", async () => {
-    const r = await cancelDispatchAction("O20260623007"); // completed
+    const r = await cancelDispatchAction("O20260626001"); // completed
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.category).toBe("validation");
@@ -189,21 +189,21 @@ describe("startServiceAction", () => {
   // # spec: startServiceAction 把 assigned→in_service，master 保持 busy（服务中不释放）
   beforeEach(async () => {
     await resetMasterStatuses();
-    await resetOrder("O20260624003", "assigned", "T002", "赵师傅");
+    await resetOrder("O20260628003", "assigned", "T002", "赵师傅");
   });
   afterEach(async () => {
     await resetMasterStatuses();
-    await resetOrder("O20260624003", "assigned", "T002", "赵师傅");
+    await resetOrder("O20260628003", "assigned", "T002", "赵师傅");
   });
 
   // # spec: assigned 订单开始服务：order→in_service，master 保持 busy（服务中不释放）
   it("assigned 订单 → in_service（师傅保持 busy）", async () => {
-    const r = await startServiceAction("O20260624003");
+    const r = await startServiceAction("O20260628003");
     expect(r.ok).toBe(true);
     if (!r.ok) return;
 
     const order = await prisma.order.findUnique({
-      where: { id: "O20260624003" },
+      where: { id: "O20260628003" },
     });
     expect(order?.status).toBe("in_service");
     const tech = await prisma.master.findUnique({ where: { id: "T002" } });
@@ -212,7 +212,7 @@ describe("startServiceAction", () => {
 
   // # spec: 必须先派单（assigned）才能开始服务，pending 直接拒
   it("pending 订单 → validation 拒", async () => {
-    const r = await startServiceAction("O20260624002");
+    const r = await startServiceAction("O20260629001");
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.category).toBe("validation");
@@ -231,20 +231,20 @@ describe("completeOrderAction", () => {
   // # spec: completeOrderAction 把 in_service→completed，并释放 master busy→available
   beforeEach(async () => {
     await resetMasterStatuses();
-    await resetOrder("O20260624001", "in_service", "T001", "李师傅");
+    await resetOrder("O20260629011", "in_service", "T001", "李师傅");
   });
   afterEach(async () => {
     await resetMasterStatuses();
-    await resetOrder("O20260624001", "in_service", "T001", "李师傅");
+    await resetOrder("O20260629011", "in_service", "T001", "李师傅");
   });
 
   // # spec: in_service 订单完成：order→completed，master busy→available（关键：完成必须释放）
   it("in_service 订单 → completed（师傅释放 busy → available）", async () => {
-    const r = await completeOrderAction("O20260624001");
+    const r = await completeOrderAction("O20260629011");
     expect(r.ok).toBe(true);
 
     const order = await prisma.order.findUnique({
-      where: { id: "O20260624001" },
+      where: { id: "O20260629011" },
     });
     expect(order?.status).toBe("completed");
     const tech = await prisma.master.findUnique({ where: { id: "T001" } });
@@ -253,7 +253,7 @@ describe("completeOrderAction", () => {
 
   // # spec: 必须先 startService（in_service）才能完成，assigned 直接拒
   it("assigned 订单 → validation 拒（必须先开始服务）", async () => {
-    const r = await completeOrderAction("O20260624003"); // assigned
+    const r = await completeOrderAction("O20260628003"); // assigned
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.category).toBe("validation");
@@ -264,21 +264,21 @@ describe("cancelOrderAction", () => {
   // # spec: cancelOrderAction 把订单→cancelled，并释放 master busy→available（任意非终态都可）
   beforeEach(async () => {
     await resetMasterStatuses();
-    await resetOrder("O20260624003", "assigned", "T002", "赵师傅");
+    await resetOrder("O20260628003", "assigned", "T002", "赵师傅");
   });
   afterEach(async () => {
     await resetMasterStatuses();
-    await resetOrder("O20260624003", "assigned", "T002", "赵师傅");
+    await resetOrder("O20260628003", "assigned", "T002", "赵师傅");
   });
 
   // # spec: assigned 订单取消：order→cancelled，master busy→available
   // [v0.9.0] 业务规则 #14：所有 cancel 都必填 cancelReason
   it("assigned 订单 + 原因 → cancelled + 师傅释放", async () => {
-    const r = await cancelOrderAction("O20260624003", "测试取消");
+    const r = await cancelOrderAction("O20260628003", "测试取消");
     expect(r.ok).toBe(true);
 
     const order = await prisma.order.findUnique({
-      where: { id: "O20260624003" },
+      where: { id: "O20260628003" },
     });
     expect(order?.status).toBe("cancelled");
     const tech = await prisma.master.findUnique({ where: { id: "T002" } });
@@ -288,7 +288,7 @@ describe("cancelOrderAction", () => {
   // [v0.9.0] 业务规则 #14：不传原因 → 拒绝
   // # spec: cancelOrderAction 校验失败不写库
   it("assigned 订单 + 不传原因 → 拒绝", async () => {
-    const r = await cancelOrderAction("O20260624003");
+    const r = await cancelOrderAction("O20260628003");
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.error).toMatch(/请填写取消原因/);
@@ -297,7 +297,7 @@ describe("cancelOrderAction", () => {
 
   // # spec: 已终态订单（completed）不能取消，返 validation
   it("completed 订单 → validation 拒", async () => {
-    const r = await cancelOrderAction("O20260623007");
+    const r = await cancelOrderAction("O20260626001");
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.category).toBe("validation");

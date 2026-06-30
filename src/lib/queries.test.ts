@@ -144,10 +144,12 @@ describe("listOrdersForPage — 时间范围 + 分页", () => {
   });
 
   // # spec: 订单列表时间过滤 — dateField=scheduledAt 时按预约时间范围过滤
+  // [v0.9.2] 改用 demo seed 真实日期范围（6/26 + 6/29）
   it("按 scheduledAt 时间范围过滤", async () => {
-    // O20260623007 预约时间 2026-06-23，O20260624001 预约 2026-06-24
-    const dateFrom = new Date("2026-06-23T00:00:00");
-    const dateTo = new Date("2026-06-24T00:00:00");
+    // O20260626002 预约 2026-06-26，O20260626001 预约 2026-06-26
+    // O20260629011 预约 2026-06-29 — 应该匹配 6/26-6/29 范围
+    const dateFrom = new Date("2026-06-26T00:00:00");
+    const dateTo = new Date("2026-06-29T00:00:00");
     const r = await listOrdersForPage({
       dateFrom,
       dateTo,
@@ -155,17 +157,18 @@ describe("listOrdersForPage — 时间范围 + 分页", () => {
       page: 1,
       pageSize: 100,
     });
-    expect(r.orders.find((o) => o.id === "O20260623007")).toBeDefined();
-    expect(r.orders.find((o) => o.id === "O20260624001")).toBeDefined();
-    // O20260624002 预约 2026-06-24 — 也应该匹配
-    expect(r.orders.find((o) => o.id === "O20260624002")).toBeDefined();
+    expect(r.orders.find((o) => o.id === "O20260626002")).toBeDefined();
+    expect(r.orders.find((o) => o.id === "O20260626001")).toBeDefined();
+    expect(r.orders.find((o) => o.id === "O20260629011")).toBeDefined();
   });
 
   // # spec: 订单列表时间边界 — dateTo 是「含当天 < 次日 00:00」不包含次日
+  // [v0.9.2] 用 6/27 测试「只含当天」
   it("dateTo 不含当天（< 次日 00:00）", async () => {
-    // dateTo = 2026-06-23 → 只包含 2026-06-23 当天
-    const dateFrom = new Date("2026-06-23T00:00:00");
-    const dateTo = new Date("2026-06-23T00:00:00");
+    // dateTo = 2026-06-27 → 只包含 2026-06-27 当天
+    // demo seed 没 6/27 的订单 → totalCount = 0 是预期
+    const dateFrom = new Date("2026-06-27T00:00:00");
+    const dateTo = new Date("2026-06-27T00:00:00");
     const r = await listOrdersForPage({
       dateFrom,
       dateTo,
@@ -173,10 +176,12 @@ describe("listOrdersForPage — 时间范围 + 分页", () => {
       page: 1,
       pageSize: 100,
     });
-    // 2026-06-23 当天预约的订单
-    expect(r.orders.find((o) => o.id === "O20260623007")).toBeDefined();
-    // 2026-06-24 预约的不该出现
-    expect(r.orders.find((o) => o.id === "O20260624001")).toBeUndefined();
+    // 2026-06-26 不该出现
+    expect(r.orders.find((o) => o.id === "O20260626002")).toBeUndefined();
+    // 2026-06-29 不该出现
+    expect(r.orders.find((o) => o.id === "O20260629011")).toBeUndefined();
+    // totalCount = 0（没有 6/27 的订单）
+    expect(r.totalCount).toBe(0);
   });
 
   // # spec: 订单列表分页 — page + pageSize 控制分页且不同页 ID 不重复

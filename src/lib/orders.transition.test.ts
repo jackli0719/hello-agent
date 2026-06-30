@@ -6,12 +6,12 @@ import { transitionOrder } from "./orders";
 import { prisma } from "@/src/lib/db";
 
 async function resetMasterStatuses() {
+  // [v0.9.2] seed-demo 删了 T005
   const map: Record<string, "available" | "busy" | "offline"> = {
     T001: "available",
     T002: "busy",
     T003: "busy",
     T004: "available",
-    T005: "offline",
   };
   for (const [id, status] of Object.entries(map)) {
     await prisma.master.update({ where: { id }, data: { status } });
@@ -47,27 +47,27 @@ describe("transitionOrder — 合法流转", () => {
       where: { id: "T003" },
       data: { status: "busy" },
     });
-    await resetOrder("O20260624002", "pending", null, null); // pending
-    await resetOrder("O20260624003", "assigned", "T002", "赵师傅"); // assigned
-    await resetOrder("O20260624001", "in_service", "T001", "李师傅"); // in_service
-    await resetOrder("O20260623007", "completed", "T003", "周姐"); // completed
-    await resetOrder("O20260623005", "cancelled", null, null); // cancelled
+    await resetOrder("O20260629001", "pending", null, null); // pending
+    await resetOrder("O20260628003", "assigned", "T002", "赵师傅"); // assigned
+    await resetOrder("O20260629011", "in_service", "T001", "李师傅"); // in_service
+    await resetOrder("O20260626001", "completed", "T003", "周姐"); // completed
+    await resetOrder("O20260626002", "cancelled", null, null); // cancelled
   });
 
   afterEach(async () => {
     await resetMasterStatuses();
-    await resetOrder("O20260624002", "pending", null, null);
-    await resetOrder("O20260624003", "assigned", "T002", "赵师傅");
-    await resetOrder("O20260624001", "in_service", "T001", "李师傅");
-    await resetOrder("O20260623007", "completed", "T003", "周姐");
-    await resetOrder("O20260623005", "cancelled", null, null);
+    await resetOrder("O20260629001", "pending", null, null);
+    await resetOrder("O20260628003", "assigned", "T002", "赵师傅");
+    await resetOrder("O20260629011", "in_service", "T001", "李师傅");
+    await resetOrder("O20260626001", "completed", "T003", "周姐");
+    await resetOrder("O20260626002", "cancelled", null, null);
   });
 
   // # spec: 状态流转 — pending 可直接 cancelled，不释放师傅（无师傅可释放）
   // [v0.9.0] 业务规则 #14：所有 cancel 状态都必填 cancelReason
   it("pending → cancelled（无师傅，单纯改 status）", async () => {
     const r = await transitionOrder(
-      "O20260624002",
+      "O20260629001",
       "cancelled",
       undefined,
       "测试取消",
@@ -76,7 +76,7 @@ describe("transitionOrder — 合法流转", () => {
     if (!r.ok) return;
 
     const order = await prisma.order.findUnique({
-      where: { id: "O20260624002" },
+      where: { id: "O20260629001" },
     });
     expect(order?.status).toBe("cancelled");
     expect(order?.cancelReason).toBe("测试取消");
@@ -86,12 +86,12 @@ describe("transitionOrder — 合法流转", () => {
 
   // # spec: 状态流转 — assigned → in_service，师傅保持 busy（不释放）
   it("assigned → in_service（开始服务）", async () => {
-    const r = await transitionOrder("O20260624003", "in_service");
+    const r = await transitionOrder("O20260628003", "in_service");
     expect(r.ok).toBe(true);
     if (!r.ok) return;
 
     const order = await prisma.order.findUnique({
-      where: { id: "O20260624003" },
+      where: { id: "O20260628003" },
     });
     expect(order?.status).toBe("in_service");
     // 师傅保持 busy（in_service 不释放）
@@ -103,7 +103,7 @@ describe("transitionOrder — 合法流转", () => {
   // [v0.9.0] 业务规则 #14：所有 cancel 状态都必填 cancelReason
   it("assigned → cancelled（释放师傅 busy → available）", async () => {
     const r = await transitionOrder(
-      "O20260624003",
+      "O20260628003",
       "cancelled",
       undefined,
       "测试取消",
@@ -111,7 +111,7 @@ describe("transitionOrder — 合法流转", () => {
     expect(r.ok).toBe(true);
 
     const order = await prisma.order.findUnique({
-      where: { id: "O20260624003" },
+      where: { id: "O20260628003" },
     });
     expect(order?.status).toBe("cancelled");
     const tech = await prisma.master.findUnique({ where: { id: "T002" } });
@@ -120,11 +120,11 @@ describe("transitionOrder — 合法流转", () => {
 
   // # spec: 状态流转 — in_service → completed 师傅释放回 available（可接下一单）
   it("in_service → completed（完成订单，师傅释放回 available）", async () => {
-    const r = await transitionOrder("O20260624001", "completed");
+    const r = await transitionOrder("O20260629011", "completed");
     expect(r.ok).toBe(true);
 
     const order = await prisma.order.findUnique({
-      where: { id: "O20260624001" },
+      where: { id: "O20260629011" },
     });
     expect(order?.status).toBe("completed");
     // 完成 = 这单做完了，师傅可以接下一单 → 释放回 available
@@ -136,7 +136,7 @@ describe("transitionOrder — 合法流转", () => {
   // [v0.9.0] 业务规则 #14：所有 cancel 状态都必填 cancelReason
   it("in_service → cancelled（释放师傅）", async () => {
     const r = await transitionOrder(
-      "O20260624001",
+      "O20260629011",
       "cancelled",
       undefined,
       "测试取消",
@@ -144,7 +144,7 @@ describe("transitionOrder — 合法流转", () => {
     expect(r.ok).toBe(true);
 
     const order = await prisma.order.findUnique({
-      where: { id: "O20260624001" },
+      where: { id: "O20260629011" },
     });
     expect(order?.status).toBe("cancelled");
     const tech = await prisma.master.findUnique({ where: { id: "T001" } });
@@ -156,25 +156,25 @@ describe("transitionOrder — 合法流转", () => {
 describe("transitionOrder — 非法流转", () => {
   beforeEach(async () => {
     await resetMasterStatuses();
-    await resetOrder("O20260624002", "pending", null, null);
-    await resetOrder("O20260624003", "assigned", "T002", "赵师傅");
-    await resetOrder("O20260624001", "in_service", "T001", "李师傅");
-    await resetOrder("O20260623007", "completed", "T003", "周姐");
-    await resetOrder("O20260623005", "cancelled", null, null);
+    await resetOrder("O20260629001", "pending", null, null);
+    await resetOrder("O20260628003", "assigned", "T002", "赵师傅");
+    await resetOrder("O20260629011", "in_service", "T001", "李师傅");
+    await resetOrder("O20260626001", "completed", "T003", "周姐");
+    await resetOrder("O20260626002", "cancelled", null, null);
   });
 
   afterEach(async () => {
     await resetMasterStatuses();
-    await resetOrder("O20260624002", "pending", null, null);
-    await resetOrder("O20260624003", "assigned", "T002", "赵师傅");
-    await resetOrder("O20260624001", "in_service", "T001", "李师傅");
-    await resetOrder("O20260623007", "completed", "T003", "周姐");
-    await resetOrder("O20260623005", "cancelled", null, null);
+    await resetOrder("O20260629001", "pending", null, null);
+    await resetOrder("O20260628003", "assigned", "T002", "赵师傅");
+    await resetOrder("O20260629011", "in_service", "T001", "李师傅");
+    await resetOrder("O20260626001", "completed", "T003", "周姐");
+    await resetOrder("O20260626002", "cancelled", null, null);
   });
 
   // # spec: 状态机拒绝 — pending 不能直接进 in_service（必须先派单 assigned）
   it("pending → in_service 不允许（必须先派单）", async () => {
-    const r = await transitionOrder("O20260624002", "in_service");
+    const r = await transitionOrder("O20260629001", "in_service");
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.category).toBe("validation");
@@ -182,29 +182,29 @@ describe("transitionOrder — 非法流转", () => {
 
   // # spec: 状态机拒绝 — pending 不能直接 completed（必须走 assigned → in_service → completed）
   it("pending → completed 不允许", async () => {
-    const r = await transitionOrder("O20260624002", "completed");
+    const r = await transitionOrder("O20260629001", "completed");
     expect(r.ok).toBe(false);
   });
 
   // # spec: 状态机拒绝 — assigned 不能直接 completed（必须先开始服务 in_service）
   it("assigned → completed 不允许（必须先开始服务）", async () => {
-    const r = await transitionOrder("O20260624003", "completed");
+    const r = await transitionOrder("O20260628003", "completed");
     expect(r.ok).toBe(false);
   });
 
   // # spec: 终态不可变 — completed 订单不能再变（cancelled/in_service 都拒绝）
   it("completed 不能再变", async () => {
-    const r1 = await transitionOrder("O20260623007", "cancelled");
+    const r1 = await transitionOrder("O20260626001", "cancelled");
     expect(r1.ok).toBe(false);
-    const r2 = await transitionOrder("O20260623007", "in_service");
+    const r2 = await transitionOrder("O20260626001", "in_service");
     expect(r2.ok).toBe(false);
   });
 
   // # spec: 终态不可变 — cancelled 订单不能再变（in_service/completed 都拒绝）
   it("cancelled 不能再变", async () => {
-    const r1 = await transitionOrder("O20260623005", "in_service");
+    const r1 = await transitionOrder("O20260626002", "in_service");
     expect(r1.ok).toBe(false);
-    const r2 = await transitionOrder("O20260623005", "completed");
+    const r2 = await transitionOrder("O20260626002", "completed");
     expect(r2.ok).toBe(false);
   });
 
@@ -222,19 +222,19 @@ describe("transitionOrder — 非法流转", () => {
 describe("transitionOrder — 并发安全", () => {
   beforeEach(async () => {
     await resetMasterStatuses();
-    await resetOrder("O20260624003", "assigned", "T002", "赵师傅");
+    await resetOrder("O20260628003", "assigned", "T002", "赵师傅");
   });
   afterEach(async () => {
     await resetMasterStatuses();
-    await resetOrder("O20260624003", "assigned", "T002", "赵师傅");
+    await resetOrder("O20260628003", "assigned", "T002", "赵师傅");
   });
 
   // # spec: 乐观锁并发安全 — 同时两个 transitionOrder 只一个成功，另一个被 updateMany 拒绝
   // [v0.9.0] 业务规则 #14：cancel 必填 cancelReason
   it("两个 transitionOrder 同时跑：一个成功一个被乐观锁拒", async () => {
     const [r1, r2] = await Promise.all([
-      transitionOrder("O20260624003", "in_service"),
-      transitionOrder("O20260624003", "cancelled", undefined, "测试取消"),
+      transitionOrder("O20260628003", "in_service"),
+      transitionOrder("O20260628003", "cancelled", undefined, "测试取消"),
     ]);
 
     // 一个成功一个失败
@@ -252,7 +252,7 @@ describe("transitionOrder — 并发安全", () => {
 
     // 订单只被改一次
     const order = await prisma.order.findUnique({
-      where: { id: "O20260624003" },
+      where: { id: "O20260628003" },
     });
     expect(["in_service", "cancelled"]).toContain(order?.status);
 
