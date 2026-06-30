@@ -28,6 +28,7 @@
     "db:studio": "prisma studio",
     "db:generate": "prisma generate",
     "db:seed": "tsx prisma/seed.ts",
+    "seed:demo": "tsx prisma/seed-demo.ts",
     "db:reset": "prisma migrate reset --force",
     "db:start": "bash scripts/db-start.sh",
     "prepare": "husky"

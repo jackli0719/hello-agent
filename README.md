@@ -285,8 +285,51 @@ npm run start    # 启动 Next 生产 server（默认 3000 端口）
 | `npm run db:migrate:dev`    | prisma migrate dev                            |
 | `npm run db:migrate:deploy` | prisma migrate deploy                         |
 | `npm run db:studio`         | 打开 Prisma Studio（可视化 DB）               |
-| `npm run db:seed`           | 只灌种子数据（不删 DB）                       |
+| `npm run db:seed`           | 只灌基础种子数据（不删 DB）                   |
+| `npm run seed:demo`         | **一键重置完整演示数据**（覆盖三端完整链路）  |
 | `npm run db:generate`       | 重新生成 Prisma Client（schema 改了才需要）   |
+
+---
+
+## 演示数据重置（v0.9.2）
+
+`npm run seed:demo` 一键重置**完整演示数据**，覆盖三端完整链路（dashboard / 后台 / 用户 / 师傅）。**和 `db:seed` 互不影响** — `db:seed` 是最小种子，`seed:demo` 是完整演示。
+
+```bash
+npm run seed:demo
+# 输出：✓ Category × 3 / SKU × 8 / Master × 4 / User × 7 / Order × 20 / Rule × 8 / ActivityLog × 10
+#       pending × 8 / assigned × 4 / in_service × 4 / completed × 3 / cancelled × 1
+```
+
+### 演示账号
+
+| 角色   | 账号        | 密码          | 绑定的实体 / 手机号 |
+| ------ | ----------- | ------------- | ------------------- |
+| 管理员 | `admin`     | `admin123`    | —                   |
+| 用户   | `customer1` | `customer123` | 手机 `13900000099`  |
+| 用户   | `customer2` | `customer123` | 手机 `13900000088`  |
+| 师傅   | `worker1`   | `worker123`   | 李师傅（`T001`）    |
+| 师傅   | `worker2`   | `worker123`   | 赵师傅（`T002`）    |
+| 师傅   | `worker3`   | `worker123`   | 周姐（`T003`）      |
+| 师傅   | `worker4`   | `worker123`   | 孙师傅（`T004`）    |
+
+### 演示数据覆盖的场景
+
+| 数据         | 覆盖内容                                                                    |
+| ------------ | --------------------------------------------------------------------------- |
+| 订单状态     | pending × 8 / assigned × 4 / in_service × 4 / completed × 3 / cancelled × 1 |
+| 派单规则     | SKU 精确匹配 × 3 + 品类兜底 × 3 + 停用规则 × 1 + 「暂无推荐」规则 × 1       |
+| 取消订单     | `cancelReason = "客户临时有事取消"`（演示 v0.9.0 业务规则 #14）             |
+| 完成订单     | 3 条带 `serviceSummary`（演示师傅服务完成说明）                             |
+| Activity Log | 覆盖 created / assigned / completed / canceled 4 种动作                     |
+
+### 适用场景
+
+- 演示 / 录视频前：跑 `seed:demo` 一键重置到完整演示状态
+- 客户试用前：跑 `seed:demo` 让 dashboard / orders / customer / worker 端都有内容看
+- 修 bug 后想恢复数据：跑 `seed:demo` 覆盖之前测试遗留
+
+**不要在生产库跑**（会删所有订单 / 日志）。
 
 ---
 

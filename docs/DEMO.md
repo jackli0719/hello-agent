@@ -167,7 +167,34 @@ npm run dev
 
 ## 重置
 
-如果演示搞乱了状态想从头来：
+### 一键重置完整演示数据（推荐 — v0.9.2）
+
+```bash
+# 一键重置：清空所有业务数据 + 写入完整演示数据集
+# - 3 服务品类 + 8 SKU
+# - 4 师傅（全 available）
+# - 1 admin + 2 customer + 4 worker
+# - 20 订单（pending 8 / assigned 4 / in_service 4 / completed 3 / cancelled 1）
+# - 8 派单规则（SKU 精确 × 3 + 品类兜底 × 3 + 停用 × 1 + 暂无推荐 × 1）
+# - 10 Activity Log（覆盖 created / assigned / completed / canceled）
+npm run seed:demo
+```
+
+适用场景：演示 / 录视频前 + 客户试用前 + 修 bug 后想恢复数据。
+
+### 演示账号
+
+| 角色   | 账号        | 密码          | 绑定的实体 / 手机号 |
+| ------ | ----------- | ------------- | ------------------- |
+| 管理员 | `admin`     | `admin123`    | —                   |
+| 用户   | `customer1` | `customer123` | 手机 `13900000099`  |
+| 用户   | `customer2` | `customer123` | 手机 `13900000088`  |
+| 师傅   | `worker1`   | `worker123`   | 李师傅（T001）      |
+| 师傅   | `worker2`   | `worker123`   | 赵师傅（T002）      |
+| 师傅   | `worker3`   | `worker123`   | 周姐（T003）        |
+| 师傅   | `worker4`   | `worker123`   | 孙师傅（T004）      |
+
+### 基础重置（仅最小数据）
 
 ```bash
 # 重置 DB 到 seed 默认状态（删所有订单 + 重置师傅 status）
@@ -175,3 +202,9 @@ npm run db:reset
 
 # 然后重启 dev server（按需）
 ```
+
+### 区别
+
+- `npm run db:seed` — 只灌**基础**种子（3 类目 + 6 SKU + 5 师傅 + 3 User + 10 订单）
+- `npm run seed:demo` — 灌**完整**演示数据（业务规则 #4 要求数量 + 业务规则 #6 场景覆盖）
+- `npm run db:reset` — 重置 schema + 灌基础种子（会破坏数据，慎用）
