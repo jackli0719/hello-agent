@@ -1,8 +1,9 @@
-// Middleware — [v0.6.0] iron-session 适配
+// Middleware — [v0.6.0] iron-session 适配 + [v0.7.1] CSRF cookie 写入
 // 1. 未登录访问受保护路径 → 302 redirect /login（带 next 跳回原页）
 // 2. 已登录访问 /login → 302 redirect 到该角色默认页
 // 3. 已登录访问无权路径 → 302 redirect 到该角色默认页
 // 4. 静态资源 / API 路由放行（_next, favicon 等）
+// 5. [v0.7.1] 访问 /login 时自动写 csrf cookie（Next.js 15 限制：RSC 不能写 cookie，必须 middleware/Route Handler）
 //
 // [v0.6.0] iron-session 适配：
 // - middleware 在 Edge runtime 跑，iron-session 8.x 支持但需要 secret
@@ -21,9 +22,35 @@ import {
   isProtectedPath,
   type Role,
 } from "@/src/lib/auth";
+import { CSRF_COOKIE } from "@/src/lib/csrf-constants";
+
+// [v0.7.1] CSRF token 生成（Edge runtime 兼容：crypto.randomUUID）
+function generateCsrfToken(): string {
+  // 64 字符 hex 随机串（强）
+  const arr = new Uint8Array(32);
+  crypto.getRandomValues(arr);
+  return Array.from(arr, (b) => b.toString(16).padStart(2, "0")).join("");
+}
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  // [v0.7.1] 访问 /login 时确保 csrf cookie 存在
+  // （Next.js 15 限制：RSC 不能写 cookie → 必须在 middleware/Route Handler 写）
+  if (pathname === "/login") {
+    const existingCsrf = request.cookies.get(CSRF_COOKIE)?.value;
+    if (!existingCsrf) {
+      // 写 csrf cookie + 继续后续处理
+      const response = NextResponse.next();
+      response.cookies.set(CSRF_COOKIE, generateCsrfToken(), {
+        httpOnly: false, // 客户端 JS 读（演示期简化）
+        sameSite: "lax",
+        path: "/",
+        maxAge: 60 * 60 * 24, // 1 天
+      });
+      return response;
+    }
+  }
 
   // [v0.6.0] iron-session 模式下 cookie 是加密串 — 简单判断「存在 + 解析 role」
   // 真正解密验签在 server action / RSC 内 getSession() 做
@@ -40,7 +67,6 @@ export function middleware(request: NextRequest) {
   // 0. 公开路径 — 放行
   if (PUBLIC_PATHS.includes(pathname)) {
     if (pathname === "/login" && isLoggedIn) {
-      // 已登录访问 /login — 跳默认页（role 不知，按 admin 兜底）
       return NextResponse.redirect(new URL(DEFAULT_LANDING.admin, request.url));
     }
     return NextResponse.next();
