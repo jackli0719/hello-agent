@@ -19,18 +19,21 @@
 ## 🚀 5 分钟快速上手（新手只看这个）
 
 ```bash
-# 1. 装依赖 + 初始化数据库（首次运行约 1-2 分钟）
+# 1. 装依赖 + 准备本地环境
 npm install
-npm run db:reset
+cp .env.example .env
 
-# 2. 启动
+# 2. 启动 PostgreSQL + 应用 migration + seed（首次运行约 1-2 分钟）
+npm run db:start
+
+# 3. 启动
 npm run dev
 # → http://localhost:3000
 
-# 3. 照 [docs/DEMO.md](docs/DEMO.md) 跑 4 步演示（用户下单 → 后台派单 → 师傅履约 → 用户查询）
+# 4. 照 [docs/DEMO.md](docs/DEMO.md) 跑 4 步演示（用户下单 → 后台派单 → 师傅履约 → 用户查询）
 ```
 
-✅ 不需要任何环境变量 / API key / 外部数据库。SQLite 文件即库，重置一条命令搞定。
+✅ 不需要外部 API key。数据库用本地 Docker PostgreSQL，`npm run db:start` 一条命令拉起并初始化。
 
 ❓ **跑不起来？** 看 [FAQ](#faq) 章节。
 
@@ -115,7 +118,7 @@ npm run dev
 
 - **Next.js 15** —— App Router + RSC + Server Actions
 - **TypeScript 5** —— 全栈类型安全
-- **Prisma 5 + SQLite** —— ORM + 本地文件型数据库（dev.db）
+- **Prisma 5 + PostgreSQL 16** —— ORM + 本地 Docker 数据库
 - **Vitest** —— 单元 + 端到端测试
 - **tsx** —— 跑 seed 和 verify 脚本
 - **GitHub Actions** —— CI（check + lint + test + build）
@@ -150,7 +153,7 @@ flowchart TB
 
   subgraph Data["数据层"]
     Prisma["Prisma Client\n（单例 globalThis）"]
-    SQLite[("SQLite\nprisma/dev.db")]
+    Postgres[("PostgreSQL\nlocalhost:5433")]
   end
 
   Browser -->|HTTP| Middleware
@@ -160,7 +163,7 @@ flowchart TB
   Queries --> Repos
   Orders --> Repos
   Repos --> Prisma
-  Prisma --> SQLite
+  Prisma --> Postgres
 ```
 
 **关键设计**：
@@ -227,7 +230,7 @@ erDiagram
 
 **核心约束**：
 
-- `skuCode / categoryCode` 业务编码（应用层强制大写，SQLite 不支持 @db.Collate）
+- `skuCode / categoryCode` 业务编码（应用层强制大写，跨数据库保持一致）
 - `Order.amount` 单位是**分**（避免浮点）
 - `Order.status` 终态：`completed` / `cancelled`
 - `Master.status` 系统自动管（available → busy → available），UI 不暴露
@@ -242,17 +245,16 @@ erDiagram
 # 1. 安装依赖
 npm install
 
-# 2. 初始化数据库 + 灌种子数据（首次启动必须）
-npm run db:push
-npm run db:seed
+# 2. 启动 PostgreSQL + 应用 migration + 灌种子数据（首次启动必须）
+cp .env.example .env
+npm run db:start
 
 # 3. 启动开发服务器
 npm run dev
 # → http://localhost:3000
 
-# 4. 验证（类型检查 + 目录约定 + 单元/端到端测试）
-npm run check
-npm run test
+# 4. 验证（DB + 类型检查 + 格式 + 测试 + 构建 + 页面 smoke）
+npm run verify
 ```
 
 ### 生产模式（本地预览 prod build）
@@ -262,26 +264,29 @@ npm run build    # 生成 .next/ 优化产物
 npm run start    # 启动 Next 生产 server（默认 3000 端口）
 ```
 
-> ⚠️ 当前 SQLite 只适合本地演示。如要线上试用，必须先迁移到 PostgreSQL。
+> ⚠️ 当前默认使用本地 Docker PostgreSQL。线上试用需要换成托管 PostgreSQL 并配置生产密钥。
 > 详见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)。
 
 ### 常用命令
 
-| 命令                        | 作用                                        |
-| --------------------------- | ------------------------------------------- |
-| `npm run dev`               | 启动 Next dev server                        |
-| `npm run build`             | 生产构建（生成 .next/ 优化产物）            |
-| `npm run start`             | 启动 Next 生产 server                       |
-| `npm run check`             | TypeScript + 目录约定检查                   |
-| `npm run lint:paths`        | 单独跑目录检查（防 `src/app/` 等）          |
-| `npm run test`              | 跑 Vitest（单元 + 端到端）                  |
-| `npm run db:reset`          | 删库重建 + 重新 seed（一键回到 seed 状态）  |
-| `npm run db:push`           | 同步 schema → DB（demo 用，会丢数据）       |
-| `npm run db:migrate:dev`    | prisma migrate dev（生产前必须切换）        |
-| `npm run db:migrate:deploy` | prisma migrate deploy（生产部署用）         |
-| `npm run db:studio`         | 打开 Prisma Studio（可视化 DB）             |
-| `npm run db:seed`           | 只灌种子数据（不删 DB）                     |
-| `npm run db:generate`       | 重新生成 Prisma Client（schema 改了才需要） |
+| 命令                        | 作用                                          |
+| --------------------------- | --------------------------------------------- |
+| `npm run dev`               | 启动 Next dev server                          |
+| `npm run build`             | 生产构建（生成 .next/ 优化产物）              |
+| `npm run start`             | 启动 Next 生产 server                         |
+| `npm run verify`            | DB + check + format + test + build + smoke    |
+| `npm run check`             | TypeScript + 目录/spec/process 检查           |
+| `npm run lint:paths`        | 单独跑目录检查（防 `src/app/` / 根 lib 误用） |
+| `npm run test:unit`         | 快速纯逻辑单测                                |
+| `npm run test`              | 跑 Vitest 集成测试（含 DB 前置检查）          |
+| `npm run smoke:pages`       | 启动生产 server 做页面 smoke                  |
+| `npm run db:start`          | 启动本地 PostgreSQL + migrate + seed          |
+| `npm run db:reset`          | 重置 PostgreSQL schema + seed                 |
+| `npm run db:migrate:dev`    | prisma migrate dev                            |
+| `npm run db:migrate:deploy` | prisma migrate deploy                         |
+| `npm run db:studio`         | 打开 Prisma Studio（可视化 DB）               |
+| `npm run db:seed`           | 只灌种子数据（不删 DB）                       |
+| `npm run db:generate`       | 重新生成 Prisma Client（schema 改了才需要）   |
 
 ---
 
@@ -374,7 +379,7 @@ MVP 阶段**故意没做**：
 - ❌ 商家端 / 多租户
 - ❌ 复杂权限（单管理员账号）
 - ❌ 删除功能（编辑里有 enabled 替代删除）
-- ❌ 真实数据库（用 SQLite 本地文件，prod 环境要换 Postgres）
+- ❌ 托管生产数据库（本地默认 Docker PostgreSQL，线上要换托管 PostgreSQL）
 - ❌ 部署上线
 
 ---
@@ -425,13 +430,15 @@ pending → assigned → in_service → completed
 
 ## 9. 数据模型
 
-5 张表：
+7 张表：
 
 - `ServiceCategory` — 服务类目（家政 / 家电清洗 / 维修 / 母婴 / 应急）
 - `ServiceSku` — 具体服务 SKU（含 requiredSkills JSON 数组）
 - `Master` — 师傅信息
 - `Order` — 订单（含 serviceName / masterName snapshot 防止 SKU/师傅改名影响历史）
 - `DispatchRule` — 派单规则（ruleJson 里存 `{match: {skuId|categoryId}, requiredSkills}`）
+- `User` — 登录账号（三角色：admin / worker / customer）
+- `ActivityLog` — 操作日志（订单创建、派单、取消、完成等）
 
 `schema.prisma` 里有详细注释。
 
@@ -441,7 +448,7 @@ pending → assigned → in_service → completed
 
 - 写代码前**先**看 `CLAUDE.md`（项目内规则速查）
 - 每个新阶段必走「**先问 + 排优先级 + 不猜**」
-- 改 schema / mock-data → 立刻 `npm run db:reset`
+- 改 schema / mock-data → 立刻 `npm run db:start` + `npm run verify`
 - 测试断言 = 规格，不是现状
 - 写代码前**先 `npm run check`** 验证类型 + 目录约定
 
@@ -468,7 +475,7 @@ npm run dev
 
 ### Q: `npm run db:reset` 会删数据吗？
 
-**会。** 它先 `rm -f prisma/dev.db` 再重新 seed。**演示期 OK，演示搞乱了一键回到种子状态。** 生产前**必须改用 `prisma migrate`**（详见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)）。
+**会。** 它会重置当前 `DATABASE_URL` 指向的 PostgreSQL schema，再重新 seed。只用于本地演示/开发库，不能对生产库执行。
 
 ### Q: 访问 `/dashboard` 被跳到 `/login`？
 
@@ -495,15 +502,15 @@ lsof -ti:3000 | xargs kill -9
 
 ### Q: 「订单完成」按钮点了没反应？
 
-dev 模式如果 server action 抛错，dev server stdout 会显示错误。最常见：seed 订单的 `masterId` 是 cuid（如 `cmqwc07xxx`），如果 seed 没跑过会失败。先 `npm run db:reset`。
+dev 模式如果 server action 抛错，dev server stdout 会显示错误。最常见是本地 PostgreSQL 没启动或 seed 没跑过。先 `npm run db:start`。
 
-### Q: 跑测试失败 / 22x 测试中失败几条？
+### Q: 跑测试失败 / 281 个测试中失败几条？
 
 最常见是**测试间数据残留**：
 
 ```bash
-npm run db:reset
-npm run test
+npm run db:start
+npm run verify
 ```
 
 ---
@@ -511,7 +518,7 @@ npm run test
 ## 相关文档
 
 - [docs/DEMO.md](docs/DEMO.md) — 4 步演示脚本（用户下单 → 后台派单 → 师傅履约 → 用户查询）
-- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — 部署 / 限制 / PostgreSQL 迁移
-- [docs/postgresql-migration.md](docs/postgresql-migration.md) — SQLite → PostgreSQL 迁移评估 + 部署平台选型（推荐 Railway）
-- [docs/sqlite-to-postgres-data-migration.md](docs/sqlite-to-postgres-data-migration.md) — 数据迁移实操手册（步骤 / 验证 / 回滚 / FAQ）
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — 本地运行 / PostgreSQL / 部署限制
+- [docs/postgresql-migration.md](docs/postgresql-migration.md) — 历史迁移评估归档
+- [docs/sqlite-to-postgres-data-migration.md](docs/sqlite-to-postgres-data-migration.md) — 历史数据迁移手册归档
 - [docs/FEEDBACK.md](docs/FEEDBACK.md) — 试用反馈模板

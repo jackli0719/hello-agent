@@ -13,21 +13,102 @@
 
 ## 节点索引
 
-| Version | Date       | Commit | P0                                                     | 自评                                                     |
-| ------- | ---------- | ------ | ------------------------------------------------------ | -------------------------------------------------------- |
-| v0.0.0  | 2026-06-29 | (历史) | baseline                                               | 3.5/5（历史）→ 4.9/5（5 项整改后）                       |
-| v0.1.0  | 2026-06-29 | (新建) | P0-1 DB 迁移完成                                       | 6.0/10（更客观口径）                                     |
-| v0.2.0  | 2026-06-29 | (新建) | harness 评估体系建立                                   | 6.0/10（同口径，无变化）                                 |
-| v0.2.1  | 2026-06-29 | (新建) | harness patch：维度 3 spec 注释 100% 覆盖              | 6.0/10 → **真算 6.30/10**（v0.2.2 修正 v0.2.1 算术错误） |
-| v0.2.2  | 2026-06-29 | (新建) | harness patch：真的卡点生效                            | 7.20/10                                                  |
-| v0.2.3  | 2026-06-29 | (新建) | harness patch：P0-1 真收口 + 验证脚本实跑              | 7.25/10                                                  |
-| v0.2.4  | 2026-06-29 | (新建) | harness patch：A4 全闭环 + 数据来源真相                | 7.50/10                                                  |
-| v0.2.5  | 2026-06-29 | (新建) | harness patch：B1 流程纪律工具卡                       | 7.95/10                                                  |
-| v0.2.6  | 2026-06-29 | (新建) | harness patch：husky pre-commit 自动跑 B1              | **8.25/10**（+0.30，**达标 8 分**）                      |
-| v0.2.7  | 2026-06-29 | (新建) | harness patch：B2 系统扫简化即 bug（ADR-012）          | **8.40/10**（+0.15，扫描 P0-4 隐藏风险）                 |
-| v0.3.0  | 2026-06-29 | (新建) | **账号体系阶段**：User 模型 + 三角色 + middleware 权限 | **8.60/10**（+0.20，新功能 + 风险审计 ADR-013）          |
+| Version | Date       | Commit   | P0                                                                        | 自评                                                     |
+| ------- | ---------- | -------- | ------------------------------------------------------------------------- | -------------------------------------------------------- |
+| v0.0.0  | 2026-06-29 | (历史)   | baseline                                                                  | 3.5/5（历史）→ 4.9/5（5 项整改后）                       |
+| v0.1.0  | 2026-06-29 | (新建)   | P0-1 DB 迁移完成                                                          | 6.0/10（更客观口径）                                     |
+| v0.2.0  | 2026-06-29 | (新建)   | harness 评估体系建立                                                      | 6.0/10（同口径，无变化）                                 |
+| v0.2.1  | 2026-06-29 | (新建)   | harness patch：维度 3 spec 注释 100% 覆盖                                 | 6.0/10 → **真算 6.30/10**（v0.2.2 修正 v0.2.1 算术错误） |
+| v0.2.2  | 2026-06-29 | (新建)   | harness patch：真的卡点生效                                               | 7.20/10                                                  |
+| v0.2.3  | 2026-06-29 | (新建)   | harness patch：P0-1 真收口 + 验证脚本实跑                                 | 7.25/10                                                  |
+| v0.2.4  | 2026-06-29 | (新建)   | harness patch：A4 全闭环 + 数据来源真相                                   | 7.50/10                                                  |
+| v0.2.5  | 2026-06-29 | (新建)   | harness patch：B1 流程纪律工具卡                                          | 7.95/10                                                  |
+| v0.2.6  | 2026-06-29 | (新建)   | harness patch：husky pre-commit 自动跑 B1                                 | **8.25/10**（+0.30，**达标 8 分**）                      |
+| v0.2.7  | 2026-06-29 | (新建)   | harness patch：B2 系统扫简化即 bug（ADR-012）                             | **8.40/10**（+0.15，扫描 P0-4 隐藏风险）                 |
+| v0.3.0  | 2026-06-29 | (新建)   | **账号体系阶段**：User 模型 + 三角色 + middleware 权限                    | **8.60/10**（+0.20，新功能 + 风险审计 ADR-013）          |
+| v0.8.0  | 2026-06-30 | (未提交) | agent-native harness hardening：verify / test split / smoke / docs 去旧化 | **8.80/10**（+0.20，验证闭环更稳；仍非满分）             |
 
 > v0.2.0 不升分 —— 评估体系建立本身不直接升工程能力。
+
+---
+
+## [v0.8.0] — 2026-06-30 — agent-native harness hardening
+
+### 升级背景
+
+本轮从“架构师视角快速评审”转为务实整改：目标不是继续堆规则，而是让 agent 后续开发更顺畅、正确率更高，并减少“口头规则”和“真实可执行验证”之间的落差。
+
+本节点只记录本轮 harness 能力提升；业务功能未变。
+
+### 变更项
+
+| 类别              | 变更                                                                                                          | 证据                                                                      |
+| ----------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| 统一验证入口      | 新增 `npm run verify`，串联 `db:start -> check -> format:check -> test -> build -> smoke:pages`               | `package.json`                                                            |
+| 测试 DB 前置检查  | `npm run test` 改走 `test:integration`，先跑 `scripts/check-test-db.js`，DB 不通时直接提示 `npm run db:start` | `scripts/check-test-db.js`                                                |
+| 测试分层          | 新增 `test:unit`（纯逻辑快测）和 `test:integration`（DB 集成测试）                                            | `package.json`                                                            |
+| 提交前卡点        | pre-commit 接入 `npm run check`，提交前跑 TypeScript + 路径/spec/process lint                                 | `.husky/pre-commit`                                                       |
+| 根 `lib/` 白名单  | `scripts/check-paths.js` 禁止新业务继续写入根 `lib/`，仅允许历史白名单                                        | `scripts/check-paths.js`                                                  |
+| 规格索引          | 新增 `docs/SPEC.md`，把订单、派单、鉴权、服务编码核心规格集中索引                                             | `docs/SPEC.md`                                                            |
+| 测试 factory 起点 | 新增 `src/lib/test-factory.ts`，并接入 `src/lib/orders.actions.test.ts`                                       | `src/lib/test-factory.ts`                                                 |
+| 页面 smoke        | 新增 `scripts/smoke-pages.js`，验证 `/login`、`/customer` 可渲染，`/orders`、`/worker` 未登录重定向           | `scripts/smoke-pages.js`                                                  |
+| 文档去旧化        | README / DEPLOYMENT / ARCHITECTURE / `.env.example` 当前口径统一为 PostgreSQL + `db:start` + `verify`         | `README.md`, `docs/DEPLOYMENT.md`, `docs/ARCHITECTURE.md`, `.env.example` |
+| format baseline   | 运行 Prettier，清掉历史格式漂移，`format:check` 重新可作为真实 CI 卡点                                        | `npm run format:check`                                                    |
+
+### 验证记录
+
+本节点已实跑：
+
+```bash
+npm run format:check
+npm run check
+npm run test:unit
+npm run build
+npm run verify
+```
+
+验证结果：
+
+- `npm run check` 通过：TypeScript + `lint:paths` + `lint:spec` + `lint:process`
+- `npm run test:unit` 通过：3 files / 43 tests
+- `npm run verify` 通过：DB 启动、format check、21 files / 281 tests、build、page smoke
+- `smoke:pages` 通过：login/customer render + protected routes redirect
+
+### 自评（v0.8.0）
+
+| 维度                          |        上版 |        本版 |     delta | 依据                                                                     |
+| ----------------------------- | ----------: | ----------: | --------: | ------------------------------------------------------------------------ |
+| 1. 路径 / 入口双重验证        |       10/10 |       10/10 |         0 | 路径检查继续生效，并新增根 `lib/` 白名单                                 |
+| 2. DB 迁移先行 / 本地 DB 闭环 |        8/10 |      8.5/10 |      +0.5 | `db:start` 纳入 `verify`，test 先检查 DB 可达                            |
+| 3. 测试断言 = 规格            |        9/10 |        9/10 |         0 | `lint:spec` 继续卡点；新增 `docs/SPEC.md` 但测试注释尚未全量绑定 SPEC ID |
+| 4. 业务逻辑简化即 bug         |        9/10 |        9/10 |         0 | 本轮未改业务审计体系                                                     |
+| 5. CI / 提交拦截 / 基建       |        8/10 |        9/10 |        +1 | `verify`、`format:check` baseline、pre-commit `check`、test split、smoke |
+| 6. 流程纪律                   |        9/10 |        9/10 |         0 | 既有 process lint 继续生效                                               |
+| 7. 可观测性 / 文档 / ADR      |       10/10 |        9/10 |        -1 | 文档当前口径更准，但此前存在旧口径误导；本轮按客观口径不再给满分         |
+| **加权平均**                  | **8.60/10** | **8.80/10** | **+0.20** | 提升来自可执行验证链路，而不是文档自评                                   |
+
+### 当前剩余扣分
+
+1. **测试 factory 未全量迁移**：已建立起点并接入关键订单测试，但大量旧集成测试仍依赖 seed / 手写清理。
+2. **页面 smoke 不是完整交互 e2e**：当前是 HTTP 级渲染/重定向检查，不是真实点击登录、下单、派单。
+3. **SPEC ID 未反向绑定所有测试注释**：已有 `docs/SPEC.md`，但测试注释还没有系统引用 `ORDER-001` / `DISPATCH-001` 等 ID。
+4. **生产部署仍未完整**：本地 PostgreSQL 路径清晰，但托管 DB、备份、secrets manager、线上 smoke 仍未做。
+
+### 决策回报
+
+本轮没有做以下事项：
+
+1. **没有引入 Playwright**：避免扩大依赖和改动面；先用 Node `fetch` 做最小页面 smoke。
+2. **没有全量迁移测试 factory**：一次性迁移 21 个测试文件风险大，容易制造大 diff 和新 flaky。
+3. **没有重写历史迁移文档**：`postgresql-migration.md` / `sqlite-to-postgres-data-migration.md` 保留为历史归档，只修当前入口文档。
+
+### 下一步（v0.8.0 → v0.8.1）
+
+按收益排序：
+
+1. SPEC ID 反向绑定测试注释。
+2. 页面 smoke 升级为真实交互 e2e。
+3. 分批把高风险集成测试迁到 `test-factory`。
 
 ---
 

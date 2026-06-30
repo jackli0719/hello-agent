@@ -36,7 +36,7 @@
 - ❌ 不是 SaaS 产品（无多租户、无计费、无运营控制台）
 - ❌ 不直接对接支付 / 通知 / 地图
 - ❌ 不做真实登录（演示版硬编码）
-- ❌ 不保证线上部署安全（SQLite 演示用）
+- ❌ 不保证线上部署安全（本地 Docker PostgreSQL 演示用，生产密钥/托管库/备份未配置）
 
 ---
 
@@ -295,22 +295,24 @@ in_service → completed | cancelled
 
 ### 7.1 命令矩阵
 
-| 命令                     | 作用                          | 何时用               |
-| ------------------------ | ----------------------------- | -------------------- |
-| `npm run dev`            | dev server + 热重载           | 日常开发             |
-| `npm run build`          | 生产构建到 `.next/`           | 部署前 / 验证可构建  |
-| `npm run check`          | `tsc --noEmit` + `lint:paths` | CI / 提交前          |
-| `npm run test`           | Vitest 单元 + 端到端          | CI / 提交前          |
-| `npm run test:coverage`  | 输出 coverage 报告            | 评估测试覆盖率       |
-| `npm run lint:paths`     | 单独跑目录检查                | 防 `src/app/` 等踩坑 |
-| `npm run format`         | Prettier 写入                 | 本地手动             |
-| `npm run db:reset`       | 删库重建 + seed               | 演示搞乱回种子       |
-| `npm run db:migrate:dev` | prisma migrate dev            | 生产前迁移用         |
-| `npm run db:studio`      | Prisma Studio 可视化          | 调试 DB              |
+| 命令                     | 作用                                       | 何时用               |
+| ------------------------ | ------------------------------------------ | -------------------- |
+| `npm run dev`            | dev server + 热重载                        | 日常开发             |
+| `npm run build`          | 生产构建到 `.next/`                        | 部署前 / 验证可构建  |
+| `npm run check`          | `tsc --noEmit` + `lint:paths`              | CI / 提交前          |
+| `npm run verify`         | DB + check + format + test + build + smoke | 提交前 / agent 验证  |
+| `npm run test`           | Vitest 集成测试（含 DB 前置检查）          | CI / 提交前          |
+| `npm run test:unit`      | 快速纯逻辑单测                             | 小改动快速反馈       |
+| `npm run test:coverage`  | 输出 coverage 报告                         | 评估测试覆盖率       |
+| `npm run lint:paths`     | 单独跑目录检查                             | 防 `src/app/` 等踩坑 |
+| `npm run format`         | Prettier 写入                              | 本地手动             |
+| `npm run db:reset`       | 删库重建 + seed                            | 演示搞乱回种子       |
+| `npm run db:migrate:dev` | prisma migrate dev                         | 生产前迁移用         |
+| `npm run db:studio`      | Prisma Studio 可视化                       | 调试 DB              |
 
 ### 7.2 测试策略
 
-**222 个自动化测试**（截至 2026-06），分层如下：
+**281 个自动化测试**（截至 2026-06），分层如下：
 
 | 类型                   | 文件示例                                                                                       | 特点                                                            |
 | ---------------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
@@ -350,7 +352,7 @@ pre-commit
 - **Prisma 单例**：`globalThis` 防止 dev hot reload 泄露连接
 - **内联 CSS**：MVP 阶段演示用，避免 Tailwind 体积/配置成本
 - **中文注释**：业务理由写中文，技术细节写英文
-- **改 schema 必跑 db:reset**：CLAUDE.md P0-1
+- **改 schema 必跑 db:start / migrate / verify**：CLAUDE.md P0-1
 
 ---
 
@@ -358,20 +360,22 @@ pre-commit
 
 > 这些是 MVP 阶段拍板的关键决策。半年后回来不必再问「为什么这么写」。
 
-### ADR-001：SQLite 作开发期数据存储
+### ADR-001：SQLite 作开发期数据存储（历史，已被 ADR-011 取代）
 
-**Context**：开发体验优先，零配置即可演示。
+**Context**：项目早期开发体验优先，零配置即可演示。
 
-**Decision**：用 SQLite 文件 `prisma/dev.db`，datasource 配 `file:./dev.db`。
+**Historical Decision**：早期用 SQLite 文件 `prisma/dev.db`，datasource 配 `file:./dev.db`。
+
+**Current Decision**：v0.2.3 起当前真值是 PostgreSQL 16（本地 Docker，`DATABASE_URL` 指向 `localhost:5433`），SQLite 只作为历史快照/迁移归档存在。
 
 **Consequences**：
 
-- ✅ `npm run db:reset` 一键删库重建
-- ✅ fileParallelism 关掉避免测试脏
-- ❌ 不能水平扩展，不能跑云上，必须迁 Postgres
-- ❌ 写并发 ≈ 1，乐观锁更复杂场景可能撞
+- ✅ 当前开发/测试/CI 都跑 PostgreSQL
+- ✅ `npm run db:start` 一键启动本地库、应用 migration、按需 seed
+- ✅ `npm run verify` 覆盖 DB、check、format、测试、build、页面 smoke
+- ⚠️ 历史迁移材料见 `docs/postgresql-migration.md` 和 `docs/sqlite-to-postgres-data-migration.md`
 
-**上线条件**：迁 PostgreSQL（`prisma/schema.prisma` 改 `provider` 即可，业务逻辑不变）。
+**上线条件**：换成托管 PostgreSQL，并配置生产 `DATABASE_URL` / `SESSION_SECRET` / 备份策略。
 
 ---
 
@@ -544,7 +548,7 @@ pre-commit
 | L3  | 短信/通知                      | 未做          | 状态变化无推送           |
 | L4  | 地图/距离计算                  | 未做          | `serviceArea` 字段空跑   |
 | L5  | 删除操作（品类/SKU/师傅/规则） | 禁止          | 仅 enabled 切换代替      |
-| L6  | SQLite → PostgreSQL 迁移       | 未做          | 见 ADR-001               |
+| L6  | 托管 PostgreSQL + 备份策略     | 未做          | 本地已是 PostgreSQL      |
 | L7  | 完整错误上报（Sentry）         | 未做          | dev 靠 console           |
 | L8  | 多租户 / 商家端                | 不在 MVP 范围 | 单租户                   |
 | L9  | 评价系统                       | 未做          | `Master.rating` 字段空跑 |
@@ -637,7 +641,7 @@ pre-commit
 
 | #   | 任务                                                                       | 工作量 | ADR / F          | 依赖 |
 | --- | -------------------------------------------------------------------------- | ------ | ---------------- | ---- |
-| 1   | **数据库 SQLite → PostgreSQL 迁移**                                        | 3.4 h  | ADR-001          | —    |
+| 1   | **托管 PostgreSQL + 生产密钥 + 备份策略**                                  | 3.4 h  | ADR-001          | —    |
 | 2   | **服务商管理**（架构级新增）                                               | 11.2 h | ADR-010          | 1    |
 | 3   | **真实认证体系**（含 ProviderAdmin 角色）                                  | 7.1 h  | ADR-002, F2      | 1, 2 |
 | 4   | **支付集成**（微信 / 支付宝 + 价格引擎 + SettlementAccount）               | 8.3 h  | F3               | 2, 3 |
@@ -703,7 +707,7 @@ P0-1 DB迁移 [3.4h]
 ### A. 相关文件索引
 
 - 业务代码：`src/lib/`（按目录约定）
-- 测试代码：`*.test.ts`（共 14 个测试文件、222 测试）
+- 测试代码：`*.test.ts`（共 21 个测试文件、281 测试）
 - 数据库 schema：`prisma/schema.prisma`（带完整注释）
 - 入口页：`app/page.tsx` + `app/layout.tsx`（全局导航）
 - 三栏演示：`app/demo/page.tsx` + `app/demo/RefreshAllButton.tsx`
@@ -714,11 +718,11 @@ P0-1 DB迁移 [3.4h]
 
 - [README.md](../README.md) — 30s hook + 5 分钟快速上手 + FAQ
 - [docs/DEMO.md](DEMO.md) — 4 步演示脚本 + 验收打勾
-- [docs/DEPLOYMENT.md](DEPLOYMENT.md) — 部署 / SQLite 限制 / Postgres 迁移
+- [docs/DEPLOYMENT.md](DEPLOYMENT.md) — 本地运行 / PostgreSQL / 部署限制
 - [docs/HARNESS.md](HARNESS.md) — 工程化能力评估（HARNESS 自评 + 节点历史）
 - [docs/FEEDBACK.md](FEEDBACK.md) — 试用反馈模板
 - [docs/adr-012-simplification-audit.md](adr-012-simplification-audit.md) — v0.2.7 简化即 bug 系统审计
 - [docs/adr-013-account-system-audit.md](adr-013-account-system-audit.md) — v0.3.0 账号体系 + 18 条风险审计
-- [docs/postgresql-migration.md](postgresql-migration.md) — SQLite → PostgreSQL 迁移评估
-- [docs/sqlite-to-postgres-data-migration.md](sqlite-to-postgres-data-migration.md) — 数据迁移实操手册
+- [docs/postgresql-migration.md](postgresql-migration.md) — 历史迁移评估归档
+- [docs/sqlite-to-postgres-data-migration.md](sqlite-to-postgres-data-migration.md) — 历史数据迁移手册归档
 - **本文档** — 系统架构 + ADR + 路线图
