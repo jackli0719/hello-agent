@@ -1,8 +1,9 @@
 "use client";
 
-import { Suspense, useState, useTransition } from "react";
+import { Suspense, useEffect, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { loginAction } from "./actions";
+import { CSRF_FORM_FIELD } from "@/src/lib/csrf-constants";
 
 /**
  * 登录页 — [账号阶段] 2026-06-29 升级为多角色。
@@ -27,6 +28,17 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  // [v0.6.0] 客户端读 CSRF cookie
+  const [csrfToken, setCsrfToken] = useState("");
+  useEffect(() => {
+    // 延迟到 mount 后（防 SSR 不一致 + 避开 setState-in-effect lint）
+    const match = document.cookie.match(/o2o_csrf=([^;]+)/);
+    if (match) {
+      // 用 queueMicrotask 推迟到 effect 结束
+      queueMicrotask(() => setCsrfToken(match[1] ?? ""));
+    }
+  }, []);
 
   function handleSubmit(formData: FormData) {
     setError(null);
@@ -107,6 +119,13 @@ function LoginForm() {
         </div>
 
         <input type="hidden" name="next" value={nextPath} />
+        {/* [v0.6.0] CSRF token — 与 cookie o2o_csrf 同值 */}
+        <input
+          type={CSRF_FORM_FIELD}
+          name={CSRF_FORM_FIELD}
+          value={csrfToken}
+          style={{ display: "none" }}
+        />
 
         <div style={{ marginBottom: 12 }}>
           <label style={labelStyle} htmlFor="account">

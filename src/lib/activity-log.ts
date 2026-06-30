@@ -47,11 +47,11 @@ export async function createActivityLog(
     if (input.actorId === undefined && input.actorName === undefined) {
       // 默认从 session 取
       const session = await getSession();
-      if (session) {
-        actorId = session.id;
+      if (session.userId) {
+        actorId = session.userId;
         // 用 userId 反查 name（cookie 没存 name）
         const user = await prisma.user.findUnique({
-          where: { id: session.id },
+          where: { id: session.userId },
           select: { name: true, role: true },
         });
         if (user) {
