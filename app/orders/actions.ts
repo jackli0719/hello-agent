@@ -12,7 +12,11 @@ import {
 } from "@/src/lib/orders";
 import { releaseMaster, ReleaseOrderError } from "@/src/lib/repos/orders";
 import { createActivityLog } from "@/src/lib/activity-log";
-import { CSRF_FORM_FIELD, verifyCsrfToken } from "@/src/lib/csrf";
+import {
+  CSRF_FORM_FIELD,
+  verifyCsrfOrigin,
+  verifyCsrfToken,
+} from "@/src/lib/csrf";
 import {
   requireAdmin,
   requireCsrf,
@@ -120,10 +124,15 @@ export async function assignOrderAction(
   orderId: string,
   masterId: string,
 ): Promise<AssignOrderActionResult> {
-  // [v0.9.4] P0 鉴权收口：admin（非 FormData，CSRF 在 v0.9.7 评估）
+  // [v0.9.4] P0 鉴权收口：admin
   const auth = await requireAdmin();
   if (!auth.ok) {
     return { ok: false, category: auth.category, error: auth.error };
+  }
+  // [v0.9.7] P0 CSRF：非 FormData action 用 Origin 头校验
+  const csrf = await verifyCsrfOrigin();
+  if (!csrf.ok) {
+    return { ok: false, category: "validation", error: csrf.error };
   }
 
   const result = await assignOrder(orderId, masterId);
@@ -163,10 +172,15 @@ export async function assignOrderAction(
 export async function cancelDispatchAction(
   orderId: string,
 ): Promise<CancelDispatchActionResult> {
-  // [v0.9.4] P0 鉴权收口：admin（非 FormData，CSRF 在 v0.9.7 评估）
+  // [v0.9.4] P0 鉴权收口：admin
   const auth = await requireAdmin();
   if (!auth.ok) {
     return { ok: false, category: auth.category, error: auth.error };
+  }
+  // [v0.9.7] P0 CSRF：Origin 头校验
+  const csrf = await verifyCsrfOrigin();
+  if (!csrf.ok) {
+    return { ok: false, category: "validation", error: csrf.error };
   }
 
   try {
@@ -295,10 +309,15 @@ async function runTransition(
 export async function startServiceAction(
   orderId: string,
 ): Promise<TransitionActionResult> {
-  // [v0.9.4] P0 鉴权收口：admin（非 FormData，CSRF 在 v0.9.7 评估）
+  // [v0.9.4] P0 鉴权收口：admin
   const auth = await requireAdmin();
   if (!auth.ok) {
     return { ok: false, category: auth.category, error: auth.error };
+  }
+  // [v0.9.7] P0 CSRF：Origin 头校验
+  const csrf = await verifyCsrfOrigin();
+  if (!csrf.ok) {
+    return { ok: false, category: "validation", error: csrf.error };
   }
   return runTransition(orderId, "in_service", "开始服务");
 }
@@ -312,10 +331,15 @@ export async function completeOrderAction(
   orderId: string,
   serviceSummary?: string,
 ): Promise<TransitionActionResult> {
-  // [v0.9.4] P0 鉴权收口：admin（非 FormData，CSRF 在 v0.9.7 评估）
+  // [v0.9.4] P0 鉴权收口：admin
   const auth = await requireAdmin();
   if (!auth.ok) {
     return { ok: false, category: auth.category, error: auth.error };
+  }
+  // [v0.9.7] P0 CSRF：Origin 头校验
+  const csrf = await verifyCsrfOrigin();
+  if (!csrf.ok) {
+    return { ok: false, category: "validation", error: csrf.error };
   }
   // [v0.7.8] serviceSummary 写在 transitionOrder 内部（同事务）
   const result = await runTransition(
@@ -335,10 +359,15 @@ export async function cancelOrderAction(
   orderId: string,
   cancelReason?: string,
 ): Promise<TransitionActionResult> {
-  // [v0.9.4] P0 鉴权收口：admin（非 FormData，CSRF 在 v0.9.7 评估）
+  // [v0.9.4] P0 鉴权收口：admin
   const auth = await requireAdmin();
   if (!auth.ok) {
     return { ok: false, category: auth.category, error: auth.error };
+  }
+  // [v0.9.7] P0 CSRF：Origin 头校验
+  const csrf = await verifyCsrfOrigin();
+  if (!csrf.ok) {
+    return { ok: false, category: "validation", error: csrf.error };
   }
   return runTransition(
     orderId,

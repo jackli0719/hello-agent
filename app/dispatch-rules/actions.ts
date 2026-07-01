@@ -14,6 +14,7 @@ import {
 import { parseSkillsString } from "@/src/lib/masters";
 import { createActivityLog } from "@/src/lib/activity-log";
 import { requireAdmin, requireCsrf } from "@/src/lib/auth-helpers";
+import { verifyCsrfOrigin } from "@/src/lib/csrf";
 
 export type DispatchRuleActionResult =
   Exclude<DispatchRuleResult, { ok: true }> | { ok: true; id: string };
@@ -141,10 +142,15 @@ export async function updateRuleAction(
 export async function toggleRuleEnabledAction(
   id: string,
 ): Promise<ToggleEnabledActionResult> {
-  // [v0.9.4] P0 鉴权收口：admin（toggle 是非 FormData，CSRF 在 v0.9.7 评估）
+  // [v0.9.4] P0 鉴权收口：admin
   const auth = await requireAdmin();
   if (!auth.ok) {
     return { ok: false, category: auth.category, error: auth.error };
+  }
+  // [v0.9.7] P0 CSRF：Origin 头校验
+  const csrf = await verifyCsrfOrigin();
+  if (!csrf.ok) {
+    return { ok: false, category: "validation", error: csrf.error };
   }
 
   const result = await toggleRuleEnabled(id);

@@ -16,7 +16,7 @@
 // ⚠️ 此文件 import next/headers — 只能 server action / RSC 用
 //    常量（CSRF_COOKIE / CSRF_FORM_FIELD）在 csrf-constants.ts，client 也可 import
 
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import crypto from "node:crypto";
 import { CSRF_COOKIE, CSRF_FORM_FIELD } from "./csrf-constants";
 
@@ -54,6 +54,52 @@ export async function readCsrfCookie(): Promise<string> {
     return c.get(CSRF_COOKIE)?.value ?? "";
   } catch {
     return "";
+  }
+}
+
+/**
+ * [v0.9.7] 同源 Origin 头校验 — 给非 FormData action 用
+ *
+ * 攻击场景：用户登录 admin 后访问攻击者网站 → 攻击者诱导浏览器 POST /api/xxx
+ * 防御：检查 Origin 头必须是当前 host（浏览器跨域 POST 自动带 Origin 头，攻击者无法伪造）
+ *
+ * 用法：
+ * ```ts
+ * const csrfOk = await verifyCsrfOrigin();
+ * if (!csrfOk.ok) return { ok: false, error: csrfOk.error };
+ * ```
+ *
+ * # MVP: 仅防 CSRF 不防同源 XSS（同源策略已隐式覆盖）
+ * - 生产环境必须配置 HTTPS + secure cookie + SameSite=strict
+ * - 失败时**不抛** redirect 异常，返 ok:false 让调用方处理
+ */
+export async function verifyCsrfOrigin(): Promise<
+  { ok: true } | { ok: false; error: string }
+> {
+  try {
+    const h = await headers();
+    const origin = h.get("origin");
+    const referer = h.get("referer");
+    // server action 通过 fetch 调用，浏览器会带 origin 头
+    // 直连 form submit 也会带 referer
+    const requestOrigin = origin ?? (referer ? new URL(referer).origin : null);
+    if (!requestOrigin) {
+      // 某些场景（如 SSR、测试）无 origin — 放行（requireAdmin 已挡未登录）
+      return { ok: true };
+    }
+    // 从 env 拿当前 host（dev 默认 localhost:3000，prod 从 .env 读）
+    const expectedOrigin =
+      process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+    if (requestOrigin !== expectedOrigin) {
+      return {
+        ok: false,
+        error: "CSRF 校验失败：Origin 不匹配",
+      };
+    }
+    return { ok: true };
+  } catch {
+    // 单测 / RSC 环境无 headers — 放行（requireAdmin 已挡）
+    return { ok: true };
   }
 }
 
