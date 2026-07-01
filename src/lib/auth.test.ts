@@ -17,6 +17,10 @@ describe("isProtectedPath", () => {
     expect(isProtectedPath("/services/skus/new")).toBe(true);
     expect(isProtectedPath("/masters")).toBe(true);
     expect(isProtectedPath("/masters/new")).toBe(true);
+    expect(isProtectedPath("/platform-areas")).toBe(true);
+    expect(isProtectedPath("/platform-areas/new")).toBe(true);
+    expect(isProtectedPath("/merchants")).toBe(true);
+    expect(isProtectedPath("/merchants/new")).toBe(true);
     expect(isProtectedPath("/dispatch-rules")).toBe(true);
     expect(isProtectedPath("/dispatch-rules/new")).toBe(true);
     // [账号阶段] 新增的受保护路径
@@ -49,6 +53,10 @@ describe("canAccess", () => {
     ["admin", "/orders", true],
     ["admin", "/services", true],
     ["admin", "/masters", true],
+    ["admin", "/platform-areas", true],
+    ["admin", "/platform-areas/new", true],
+    ["admin", "/merchants", true],
+    ["admin", "/merchants/new", true],
     ["admin", "/dispatch-rules", true],
     ["admin", "/worker", false], // 越权
     ["admin", "/customer/orders", false],
