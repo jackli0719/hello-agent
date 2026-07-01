@@ -13,6 +13,7 @@ import {
 } from "@/src/lib/dispatch-rules";
 import { parseSkillsString } from "@/src/lib/masters";
 import { createActivityLog } from "@/src/lib/activity-log";
+import { requireAdmin, requireCsrf } from "@/src/lib/auth-helpers";
 
 export type DispatchRuleActionResult =
   Exclude<DispatchRuleResult, { ok: true }> | { ok: true; id: string };
@@ -57,6 +58,16 @@ function formDataToUpdateRule(formData: FormData): Partial<UpdateRuleInput> {
 export async function createRuleAction(
   formData: FormData,
 ): Promise<DispatchRuleActionResult | null> {
+  // [v0.9.4] P0 鉴权收口：admin + csrf
+  const auth = await requireAdmin();
+  if (!auth.ok) {
+    return { ok: false, category: auth.category, error: auth.error };
+  }
+  const csrf = await requireCsrf(formData);
+  if (!csrf.ok) {
+    return { ok: false, category: csrf.category, error: csrf.error };
+  }
+
   const input = formDataToCreateRule(formData);
   const result = await createRule(input);
   if (!result.ok) return result;
@@ -86,6 +97,16 @@ export async function createRuleAction(
 export async function updateRuleAction(
   formData: FormData,
 ): Promise<DispatchRuleActionResult | null> {
+  // [v0.9.4] P0 鉴权收口：admin + csrf
+  const auth = await requireAdmin();
+  if (!auth.ok) {
+    return { ok: false, category: auth.category, error: auth.error };
+  }
+  const csrf = await requireCsrf(formData);
+  if (!csrf.ok) {
+    return { ok: false, category: csrf.category, error: csrf.error };
+  }
+
   const input = formDataToUpdateRule(formData);
   const result = await updateRule(input);
   if (!result.ok) return result;
@@ -120,6 +141,12 @@ export async function updateRuleAction(
 export async function toggleRuleEnabledAction(
   id: string,
 ): Promise<ToggleEnabledActionResult> {
+  // [v0.9.4] P0 鉴权收口：admin（toggle 是非 FormData，CSRF 在 v0.9.7 评估）
+  const auth = await requireAdmin();
+  if (!auth.ok) {
+    return { ok: false, category: auth.category, error: auth.error };
+  }
+
   const result = await toggleRuleEnabled(id);
   if (result.ok) {
     // 写操作日志

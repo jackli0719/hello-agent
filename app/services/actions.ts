@@ -13,6 +13,7 @@ import {
 } from "@/src/lib/services";
 import { parseSkillsString } from "@/src/lib/masters";
 import { createActivityLog } from "@/src/lib/activity-log";
+import { requireAdmin, requireCsrf } from "@/src/lib/auth-helpers";
 
 export type ServiceActionResult =
   Exclude<ServiceResult, { ok: true }> | { ok: true; id: string };
@@ -61,6 +62,16 @@ function formDataToUpdateSku(formData: FormData): Partial<UpdateSkuInput> {
 export async function createCategoryAction(
   formData: FormData,
 ): Promise<ServiceActionResult | null> {
+  // [v0.9.4] P0 鉴权收口：admin + csrf
+  const auth = await requireAdmin();
+  if (!auth.ok) {
+    return { ok: false, category: auth.category, error: auth.error };
+  }
+  const csrf = await requireCsrf(formData);
+  if (!csrf.ok) {
+    return { ok: false, category: csrf.category, error: csrf.error };
+  }
+
   const result = await createCategory(formDataToCategory(formData));
   if (!result.ok) return result;
 
@@ -77,6 +88,16 @@ export async function createCategoryAction(
 export async function createSkuAction(
   formData: FormData,
 ): Promise<ServiceActionResult | null> {
+  // [v0.9.4] P0 鉴权收口：admin + csrf
+  const auth = await requireAdmin();
+  if (!auth.ok) {
+    return { ok: false, category: auth.category, error: auth.error };
+  }
+  const csrf = await requireCsrf(formData);
+  if (!csrf.ok) {
+    return { ok: false, category: csrf.category, error: csrf.error };
+  }
+
   const input = formDataToSku(formData);
   const result = await createSku(input);
   if (!result.ok) return result;
@@ -107,6 +128,16 @@ export async function createSkuAction(
 export async function updateSkuAction(
   formData: FormData,
 ): Promise<ServiceActionResult | null> {
+  // [v0.9.4] P0 鉴权收口：admin + csrf
+  const auth = await requireAdmin();
+  if (!auth.ok) {
+    return { ok: false, category: auth.category, error: auth.error };
+  }
+  const csrf = await requireCsrf(formData);
+  if (!csrf.ok) {
+    return { ok: false, category: csrf.category, error: csrf.error };
+  }
+
   const input = formDataToUpdateSku(formData);
   const result = await updateSku(input);
   if (!result.ok) return result;

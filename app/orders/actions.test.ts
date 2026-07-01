@@ -7,7 +7,7 @@
 // 这里测不到成功路径（只能验证「合法输入下确实走到了 redirect」— 但 redirect 抛错说明走到了，
 // 算是一种间接验证）。
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createOrderAction,
   cancelDispatchAction,
@@ -16,6 +16,24 @@ import {
   cancelOrderAction,
 } from "@/app/orders/actions";
 import { prisma } from "@/src/lib/db";
+
+// [v0.9.4] mock 鉴权 — 默认返 admin 角色，让现有 case 不被新鉴权破坏
+// 权限失败路径测试在 v0.9.8 组 5
+vi.mock("@/src/lib/auth-helpers", () => ({
+  requireAdmin: async () => ({
+    ok: true,
+    user: { id: "admin1", name: "admin", role: "admin" },
+  }),
+  requireWorker: async () => ({
+    ok: true,
+    user: { id: "w1", name: "worker", role: "worker", workerId: "T001" },
+  }),
+  requireRole: async () => ({
+    ok: true,
+    user: { id: "c1", name: "customer", role: "customer" },
+  }),
+  requireCsrf: async () => ({ ok: true, user: null }),
+}));
 
 // 重置订单回 seed 初值（不同测试用不同订单做隔离）
 async function resetOrder(

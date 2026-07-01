@@ -13,6 +13,12 @@ import {
 import { releaseMaster, ReleaseOrderError } from "@/src/lib/repos/orders";
 import { createActivityLog } from "@/src/lib/activity-log";
 import { CSRF_FORM_FIELD, verifyCsrfToken } from "@/src/lib/csrf";
+import {
+  requireAdmin,
+  requireCsrf,
+  requireWorker,
+  requireRole,
+} from "@/src/lib/auth-helpers";
 
 // 失败时返回的判别联合 — 成功路径通过 redirect 走，函数本身不返回。
 export type CreateOrderActionResult = Exclude<CreateOrderResult, { ok: true }>;
@@ -40,6 +46,16 @@ export type TransitionActionResult =
 export async function createOrderAction(
   formData: FormData,
 ): Promise<CreateOrderActionResult | null> {
+  // [v0.9.4] P0 鉴权收口：admin + csrf
+  const auth = await requireAdmin();
+  if (!auth.ok) {
+    return { ok: false, error: auth.error };
+  }
+  const csrf = await requireCsrf(formData);
+  if (!csrf.ok) {
+    return { ok: false, error: csrf.error };
+  }
+
   const scheduledAtRaw = String(formData.get("scheduledAt") ?? "").trim();
   const amountRaw = String(formData.get("amount") ?? "").trim();
 
@@ -104,6 +120,12 @@ export async function assignOrderAction(
   orderId: string,
   masterId: string,
 ): Promise<AssignOrderActionResult> {
+  // [v0.9.4] P0 鉴权收口：admin（非 FormData，CSRF 在 v0.9.7 评估）
+  const auth = await requireAdmin();
+  if (!auth.ok) {
+    return { ok: false, category: auth.category, error: auth.error };
+  }
+
   const result = await assignOrder(orderId, masterId);
 
   if (result.ok) {
@@ -141,6 +163,12 @@ export async function assignOrderAction(
 export async function cancelDispatchAction(
   orderId: string,
 ): Promise<CancelDispatchActionResult> {
+  // [v0.9.4] P0 鉴权收口：admin（非 FormData，CSRF 在 v0.9.7 评估）
+  const auth = await requireAdmin();
+  if (!auth.ok) {
+    return { ok: false, category: auth.category, error: auth.error };
+  }
+
   try {
     const order = await releaseMaster(orderId, "cancelled");
     // 写操作日志
@@ -267,6 +295,11 @@ async function runTransition(
 export async function startServiceAction(
   orderId: string,
 ): Promise<TransitionActionResult> {
+  // [v0.9.4] P0 鉴权收口：admin（非 FormData，CSRF 在 v0.9.7 评估）
+  const auth = await requireAdmin();
+  if (!auth.ok) {
+    return { ok: false, category: auth.category, error: auth.error };
+  }
   return runTransition(orderId, "in_service", "开始服务");
 }
 
@@ -279,6 +312,11 @@ export async function completeOrderAction(
   orderId: string,
   serviceSummary?: string,
 ): Promise<TransitionActionResult> {
+  // [v0.9.4] P0 鉴权收口：admin（非 FormData，CSRF 在 v0.9.7 评估）
+  const auth = await requireAdmin();
+  if (!auth.ok) {
+    return { ok: false, category: auth.category, error: auth.error };
+  }
   // [v0.7.8] serviceSummary 写在 transitionOrder 内部（同事务）
   const result = await runTransition(
     orderId,
@@ -297,6 +335,11 @@ export async function cancelOrderAction(
   orderId: string,
   cancelReason?: string,
 ): Promise<TransitionActionResult> {
+  // [v0.9.4] P0 鉴权收口：admin（非 FormData，CSRF 在 v0.9.7 评估）
+  const auth = await requireAdmin();
+  if (!auth.ok) {
+    return { ok: false, category: auth.category, error: auth.error };
+  }
   return runTransition(
     orderId,
     "cancelled",
@@ -317,6 +360,11 @@ export type UpdateInternalRemarkResult =
 export async function updateInternalRemarkAction(
   formData: FormData,
 ): Promise<UpdateInternalRemarkResult> {
+  // [v0.9.4] P0 鉴权收口：admin
+  const auth = await requireAdmin();
+  if (!auth.ok) {
+    return { ok: false, error: auth.error };
+  }
   // [v0.7.7] CSRF 校验（修 ADR-013 B6 同类 v0.7.2 logout bug）
   const csrfToken = String(formData.get(CSRF_FORM_FIELD) ?? "");
   if (!(await verifyCsrfToken(csrfToken))) {
@@ -386,6 +434,11 @@ export async function updateInternalRemarkAction(
 export async function workerCancelOrderAction(
   formData: FormData,
 ): Promise<TransitionActionResult> {
+  // [v0.9.4] P0 鉴权收口：worker（v0.9.6 组 3 加 masterId 归属校验）
+  const auth = await requireWorker();
+  if (!auth.ok) {
+    return { ok: false, category: auth.category, error: auth.error };
+  }
   // [v0.7.9] CSRF 校验（防 v0.7.2/v0.7.7 同类 bug）
   const { CSRF_FORM_FIELD, verifyCsrfToken } = await import("@/src/lib/csrf");
   const csrfToken = String(formData.get(CSRF_FORM_FIELD) ?? "");
@@ -457,6 +510,11 @@ export async function workerCancelOrderAction(
 export async function customerCancelOrderAction(
   formData: FormData,
 ): Promise<TransitionActionResult> {
+  // [v0.9.4] P0 鉴权收口：customer
+  const auth = await requireRole(["customer"]);
+  if (!auth.ok) {
+    return { ok: false, category: auth.category, error: auth.error };
+  }
   // [v0.7.9] CSRF 校验
   const { CSRF_FORM_FIELD, verifyCsrfToken } = await import("@/src/lib/csrf");
   const csrfToken = String(formData.get(CSRF_FORM_FIELD) ?? "");

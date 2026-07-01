@@ -11,6 +11,7 @@ import {
   parseSkillsString,
 } from "@/src/lib/masters";
 import { createActivityLog } from "@/src/lib/activity-log";
+import { requireAdmin, requireCsrf } from "@/src/lib/auth-helpers";
 
 // UI 错误类型（给客户端组件展示用）
 export type MasterActionResult =
@@ -44,6 +45,21 @@ function formDataToInput(formData: FormData): Partial<CreateMasterInput> {
 export async function createMasterAction(
   formData: FormData,
 ): Promise<MasterActionResult | null> {
+  // [v0.9.4] P0 鉴权收口：admin + csrf
+  const auth = await requireAdmin();
+  if (!auth.ok) {
+    return {
+      ok: false,
+      category: auth.category,
+      error: auth.error,
+      field: "name",
+    };
+  }
+  const csrf = await requireCsrf(formData);
+  if (!csrf.ok) {
+    return { ok: false, category: csrf.category, error: csrf.error };
+  }
+
   const input = formDataToInput(formData);
   const result = await createMaster(input);
   if (!result.ok) return result;
@@ -72,6 +88,21 @@ export async function createMasterAction(
 export async function updateMasterAction(
   formData: FormData,
 ): Promise<MasterActionResult | null> {
+  // [v0.9.4] P0 鉴权收口：admin + csrf
+  const auth = await requireAdmin();
+  if (!auth.ok) {
+    return {
+      ok: false,
+      category: auth.category,
+      error: auth.error,
+      field: "name",
+    };
+  }
+  const csrf = await requireCsrf(formData);
+  if (!csrf.ok) {
+    return { ok: false, category: csrf.category, error: csrf.error };
+  }
+
   const input = formDataToInput(formData);
   const id = String(formData.get("id") ?? "").trim();
   if (!id) {
