@@ -17,6 +17,20 @@ vi.mock("@/src/lib/auth-helpers", () => ({
   requireWorker: () => mockRequireWorker(),
 }));
 
+// [v0.9.10] CSRF mock — 用 vi.hoisted 让 mock 函数在 vi.mock 之前可用
+const { mockVerifyCsrfOrigin } = vi.hoisted(() => ({
+  mockVerifyCsrfOrigin: vi.fn<any>(),
+}));
+
+vi.mock("@/src/lib/csrf", async () => {
+  const actual =
+    await vi.importActual<typeof import("@/src/lib/csrf")>("@/src/lib/csrf");
+  return {
+    ...actual,
+    verifyCsrfOrigin: () => mockVerifyCsrfOrigin(),
+  };
+});
+
 const WORKER_OK = {
   ok: true,
   user: {
@@ -28,7 +42,11 @@ const WORKER_OK = {
 };
 
 beforeEach(() => {
+  mockRequireWorker.mockReset();
   mockRequireWorker.mockResolvedValue(WORKER_OK);
+  mockVerifyCsrfOrigin.mockReset();
+  // [v0.9.10] 默认 mock verifyCsrfOrigin 成功
+  mockVerifyCsrfOrigin.mockResolvedValue({ ok: true });
 });
 
 afterEach(async () => {
@@ -36,6 +54,10 @@ afterEach(async () => {
   await prisma.order.update({
     where: { id: "O20260628003" },
     data: { status: "assigned", masterId: "T002", masterName: "赵师傅" },
+  });
+  await prisma.order.update({
+    where: { id: "O20260628001" },
+    data: { status: "assigned", masterId: "T001", masterName: "李师傅" },
   });
   await prisma.order.update({
     where: { id: "O20260629011" },
@@ -96,5 +118,44 @@ describe("越权防护", () => {
     const r = (await workerStartServiceAction("NOT-EXIST")) as any;
     expect(r.ok).toBe(false);
     expect(r.error).toBe("订单不存在");
+  });
+});
+
+// ============================================================
+// [v0.9.10] CSRF Origin 头校验
+// ============================================================
+
+describe("CSRF Origin 头校验", () => {
+  // # spec: 跨源 Origin → 拒绝（防 CSRF 攻击）
+  it("跨源 Origin → workerStartServiceAction 返 CSRF 失败", async () => {
+    // O20260628001 masterId=T001（李师傅），WORKER_OK workerId=T001 → masterId 通过
+    mockVerifyCsrfOrigin.mockResolvedValueOnce({
+      ok: false,
+      error: "CSRF 校验失败：Origin 不匹配",
+    });
+    const r = (await workerStartServiceAction("O20260628001")) as any;
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/CSRF 校验失败/);
+  });
+
+  // # spec: 跨源 Origin → 拒绝
+  it("跨源 Origin → workerCompleteOrderAction 返 CSRF 失败", async () => {
+    // O20260629011 masterId=T001 in_service
+    mockVerifyCsrfOrigin.mockResolvedValueOnce({
+      ok: false,
+      error: "CSRF 校验失败：Origin 不匹配",
+    });
+    const r = (await workerCompleteOrderAction("O20260629011")) as any;
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/CSRF 校验失败/);
+  });
+
+  // # spec: 无 origin header（SSR/RSC 环境）→ 放行
+  it("无 origin header → workerStartServiceAction 继续走 masterId 校验", async () => {
+    mockVerifyCsrfOrigin.mockResolvedValueOnce({ ok: true });
+    // O20260628003 masterId=T002，WORKER_OK workerId=T001 → 越权失败
+    const r = (await workerStartServiceAction("O20260628003")) as any;
+    expect(r.ok).toBe(false);
+    expect(r.error).toBe("该订单不属于您");
   });
 });

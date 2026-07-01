@@ -237,11 +237,10 @@ describe("createMaster — 新师傅能参与派单推荐", () => {
     const found = result.candidates.find((m) => m.id === r.masterId);
     expect(found).toBeDefined();
     expect(found?.name).toBe("新保洁师傅");
-    // 新师傅 rating 4.99 排第一 — [v0.7.6] 排序稳定
-    const sortedByRating = [...result.candidates].sort(
-      (a, b) => b.rating - a.rating,
-    );
-    expect(sortedByRating[0].id).toBe(r.masterId);
+    // [v0.9.10] seed-demo 里已有 5.0 分师傅，新增 4.99 不应硬断言第一。
+    // 这里验证「新师傅进入候选」和「候选整体按评分降序」。
+    const ratings = result.candidates.map((m) => m.rating);
+    expect(ratings).toEqual([...ratings].sort((a, b) => b - a));
   });
 });
 

@@ -166,7 +166,7 @@ describe("listOrdersForPage — 时间范围 + 分页", () => {
   // [v0.9.2] 用 6/27 测试「只含当天」
   it("dateTo 不含当天（< 次日 00:00）", async () => {
     // dateTo = 2026-06-27 → 只包含 2026-06-27 当天
-    // demo seed 没 6/27 的订单 → totalCount = 0 是预期
+    // demo seed 有 2 条 6/27 completed 订单
     const dateFrom = new Date("2026-06-27T00:00:00");
     const dateTo = new Date("2026-06-27T00:00:00");
     const r = await listOrdersForPage({
@@ -180,8 +180,9 @@ describe("listOrdersForPage — 时间范围 + 分页", () => {
     expect(r.orders.find((o) => o.id === "O20260626002")).toBeUndefined();
     // 2026-06-29 不该出现
     expect(r.orders.find((o) => o.id === "O20260629011")).toBeUndefined();
-    // totalCount = 0（没有 6/27 的订单）
-    expect(r.totalCount).toBe(0);
+    expect(r.orders.find((o) => o.id === "O20260627001")).toBeDefined();
+    expect(r.orders.find((o) => o.id === "O20260627002")).toBeDefined();
+    expect(r.totalCount).toBe(2);
   });
 
   // # spec: 订单列表分页 — page + pageSize 控制分页且不同页 ID 不重复

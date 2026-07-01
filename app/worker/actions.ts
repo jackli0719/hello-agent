@@ -2,21 +2,25 @@
 
 // 师傅端 server actions — 状态流转动作。
 //
-// 设计：直接复用 app/orders/actions.ts 已有的 startServiceAction / completeOrderAction，
-// 业务逻辑（乐观锁、释放师傅）在 src/lib/orders.ts 的 transitionOrder 里集中实现。
-// 这里只是「师傅端也能调这些 action」的转发层。
+// 设计：直接调底层 transitionOrder（src/lib/orders.ts）— 业务逻辑（乐观锁、释放师傅）
+// 集中实现。app/orders/actions.ts 的同名 action 已被 v0.9.5 收口为 admin 专用
+// （requireAdmin），师傅端走独立路径避开 requireAdmin。
+//
+// [v0.9.6] 鉴权 + 越权收口：
+// - requireWorker 校验 worker 角色 + workerId
+// - masterId 归属校验（防师傅操作别人的订单）
+// - verifyCsrfOrigin 校验同源（CSRF 防御）
 //
 // 为什么不做薄一层 wrapper：
 // - 业务逻辑零差异（同样是 assigned→in_service、in_service→completed）
 // - 想复制业务逻辑就是制造分叉（违反 P0-4「业务逻辑简化即 bug」）
-// - 真要给师傅端加额外校验（比如校验「调用者必须是该订单的 masterId」），也在这里加
-//   — 当前阶段按需求 #1 不做师傅登录，所以这一层暂时只 revalidate /worker
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/src/lib/db";
 import { createActivityLog } from "@/src/lib/activity-log";
 import { transitionOrder, type TransitionOrderResult } from "@/src/lib/orders";
 import { requireWorker } from "@/src/lib/auth-helpers";
+import { verifyCsrfOrigin } from "@/src/lib/csrf";
 
 /** 师傅端 server action 返回值 */
 export type WorkerActionResult =
@@ -56,6 +60,17 @@ export async function workerStartServiceAction(
       ok: false,
       category: "validation",
       error: "该订单不属于您",
+    };
+  }
+
+  // [v0.9.10] P0 CSRF：Origin 头校验（非 FormData action）
+  const csrf = (await verifyCsrfOrigin()) as
+    { ok: true } | { ok: false; error: string };
+  if (!csrf.ok) {
+    return {
+      ok: false,
+      category: "validation",
+      error: csrf.error,
     };
   }
 
@@ -123,6 +138,17 @@ export async function workerCompleteOrderAction(
     };
   }
 
+  // [v0.9.10] P0 CSRF：Origin 头校验（非 FormData action）
+  const csrf = (await verifyCsrfOrigin()) as
+    { ok: true } | { ok: false; error: string };
+  if (!csrf.ok) {
+    return {
+      ok: false,
+      category: "validation",
+      error: csrf.error,
+    };
+  }
+
   const result = await transitionOrder(orderId, "completed", serviceSummary);
 
   if (result.ok) {
@@ -154,6 +180,3 @@ export async function workerCompleteOrderAction(
   }
   return { ok: false, category: "system", error: result.error };
 }
-
-// 抑制 unused import 警告
-void transitionOrder as unknown as TransitionOrderResult;

@@ -14,13 +14,29 @@ import { prisma } from "@/src/lib/db";
 // 测试隔离
 // ============================================================
 // seed 注入的订单 ID — 测试假设「除了这些订单，DB 没有其他订单」
+// [v0.9.10] 修复：v0.9.2 seed-demo 写入 20 订单（之前列表只 6 个 → deleteMany 误删 14 个 demo 订单）
+// 与 prisma/seed-demo.ts ORDERS 数组保持完全一致
 const SEED_ORDER_IDS = [
-  "O20260629011",
   "O20260629001",
+  "O20260629002",
+  "O20260629003",
+  "O20260630001",
+  "O20260630002",
+  "O20260630003",
+  "O20260630004",
+  "O20260630005",
+  "O20260628001",
+  "O20260628002",
   "O20260628003",
+  "O20260628004",
+  "O20260629011",
+  "O20260629012",
+  "O20260629013",
+  "O20260629014",
+  "O20260627001",
+  "O20260627002",
   "O20260626001",
   "O20260626002",
-  "O20260630001",
 ];
 
 /**
@@ -33,20 +49,62 @@ async function resetOrdersToSeed() {
     string,
     { status: string; masterId: string | null; masterName: string | null }
   > = {
-    O20260629011: {
-      status: "in_service",
+    O20260629001: { status: "pending", masterId: null, masterName: null },
+    O20260629002: { status: "pending", masterId: null, masterName: null },
+    O20260629003: { status: "pending", masterId: null, masterName: null },
+    O20260630001: { status: "pending", masterId: null, masterName: null },
+    O20260630002: { status: "pending", masterId: null, masterName: null },
+    O20260630003: { status: "pending", masterId: null, masterName: null },
+    O20260630004: { status: "pending", masterId: null, masterName: null },
+    O20260630005: { status: "pending", masterId: null, masterName: null },
+    O20260628001: {
+      status: "assigned",
       masterId: "T001",
       masterName: "李师傅",
     },
-    O20260629001: { status: "pending", masterId: null, masterName: null },
+    O20260628002: {
+      status: "assigned",
+      masterId: "T004",
+      masterName: "孙师傅",
+    },
     O20260628003: {
       status: "assigned",
       masterId: "T002",
       masterName: "赵师傅",
     },
+    O20260628004: { status: "assigned", masterId: "T003", masterName: "周姐" },
+    O20260629011: {
+      status: "in_service",
+      masterId: "T001",
+      masterName: "李师傅",
+    },
+    O20260629012: {
+      status: "in_service",
+      masterId: "T004",
+      masterName: "孙师傅",
+    },
+    O20260629013: {
+      status: "in_service",
+      masterId: "T002",
+      masterName: "赵师傅",
+    },
+    O20260629014: {
+      status: "in_service",
+      masterId: "T003",
+      masterName: "周姐",
+    },
+    O20260627001: {
+      status: "completed",
+      masterId: "T001",
+      masterName: "李师傅",
+    },
+    O20260627002: {
+      status: "completed",
+      masterId: "T004",
+      masterName: "孙师傅",
+    },
     O20260626001: { status: "completed", masterId: "T003", masterName: "周姐" },
     O20260626002: { status: "cancelled", masterId: null, masterName: null },
-    O20260630001: { status: "pending", masterId: null, masterName: null },
   };
   for (const [id, data] of Object.entries(map)) {
     await prisma.order.update({ where: { id }, data });
@@ -60,9 +118,9 @@ async function resetOrdersToSeed() {
 /** 重置师傅状态到 seed 默认值（同样防止污染） */
 async function resetMastersToSeed() {
   const map: Record<string, "available" | "busy" | "offline"> = {
-    T001: "busy", // seed 里李师傅有 in_service 订单 → busy
-    T002: "busy",
-    T003: "busy",
+    T001: "available",
+    T002: "available",
+    T003: "available",
     T004: "available",
   };
   for (const [id, status] of Object.entries(map)) {
@@ -80,34 +138,47 @@ describe("listOrdersForMaster — 按师傅过滤", () => {
     await Promise.all([resetOrdersToSeed(), resetMastersToSeed()]);
   });
 
-  // # spec: 师傅过滤 — T001 是订单 O20260629011 的接单师傅，应只返回这一单（in_service）
-  it("T001 (李师傅) → 只返回 O20260629011（in_service）", async () => {
+  // # spec: 师傅过滤 — T001 只返回自己名下的 assigned/in_service/completed 订单
+  it("T001 (李师傅) → 只返回自己 3 单", async () => {
     const orders = await listOrdersForMaster("T001");
-    expect(orders).toHaveLength(1);
-    expect(orders[0].id).toBe("O20260629011");
-    expect(orders[0].status).toBe("in_service");
+    expect(orders).toHaveLength(3);
+    expect(orders.map((o) => o.id).sort()).toEqual([
+      "O20260627001",
+      "O20260628001",
+      "O20260629011",
+    ]);
   });
 
-  // # spec: 师傅过滤 — T002 是订单 O20260628003 的接单师傅，应只返回这一单（assigned）
-  it("T002 (赵师傅) → 只返回 O20260628003（assigned）", async () => {
+  // # spec: 师傅过滤 — T002 只返回自己名下的 assigned/in_service 订单
+  it("T002 (赵师傅) → 只返回自己 2 单", async () => {
     const orders = await listOrdersForMaster("T002");
-    expect(orders).toHaveLength(1);
-    expect(orders[0].id).toBe("O20260628003");
-    expect(orders[0].status).toBe("assigned");
+    expect(orders).toHaveLength(2);
+    expect(orders.map((o) => o.id).sort()).toEqual([
+      "O20260628003",
+      "O20260629013",
+    ]);
   });
 
-  // # spec: 师傅过滤 — T003 是订单 O20260626001 的接单师傅，应只返回这一单（completed）
-  it("T003 (周姐) → 只返回 O20260626001（completed）", async () => {
+  // # spec: 师傅过滤 — T003 只返回自己名下的 assigned/in_service/completed 订单
+  it("T003 (周姐) → 只返回自己 3 单", async () => {
     const orders = await listOrdersForMaster("T003");
-    expect(orders).toHaveLength(1);
-    expect(orders[0].id).toBe("O20260626001");
-    expect(orders[0].status).toBe("completed");
+    expect(orders).toHaveLength(3);
+    expect(orders.map((o) => o.id).sort()).toEqual([
+      "O20260626001",
+      "O20260628004",
+      "O20260629014",
+    ]);
   });
 
-  // # spec: 师傅过滤 — T004 没有任何关联订单，应返回空数组
-  it("T004 (无订单) → 空数组", async () => {
+  // # spec: 师傅过滤 — T004 只返回自己名下的 assigned/in_service/completed 订单
+  it("T004 (孙师傅) → 只返回自己 3 单", async () => {
     const orders = await listOrdersForMaster("T004");
-    expect(orders).toHaveLength(0);
+    expect(orders).toHaveLength(3);
+    expect(orders.map((o) => o.id).sort()).toEqual([
+      "O20260627002",
+      "O20260628002",
+      "O20260629012",
+    ]);
   });
 });
 
@@ -130,13 +201,15 @@ describe("listOrdersForMaster — 排除 pending", () => {
       data: { status: "pending", masterId: "T001", masterName: "李师傅" },
     });
     const orders = await listOrdersForMaster("T001");
-    expect(orders).toHaveLength(0);
+    expect(orders.map((o) => o.id)).not.toContain("O20260629011");
+    expect(orders).toHaveLength(2);
   });
 
   // # spec: 排除 pending — pending 订单不属于任何师傅，师傅端不应出现
-  it("不会返回 T004 的 pending 订单（O20260629001 / O20260630001 都是 pending）", async () => {
+  it("不会返回 T004 的 pending 订单", async () => {
     const orders = await listOrdersForMaster("T004");
-    expect(orders).toHaveLength(0);
+    expect(orders.every((o) => o.status !== "pending")).toBe(true);
+    expect(orders).toHaveLength(3);
   });
 });
 
@@ -159,9 +232,10 @@ describe("listOrdersForMaster — cancelled 订单保留展示", () => {
       data: { masterId: "T002", masterName: "赵师傅" },
     });
     const orders = await listOrdersForMaster("T002");
-    expect(orders).toHaveLength(2);
+    expect(orders).toHaveLength(3);
     expect(orders.find((o) => o.id === "O20260626002")).toBeDefined();
     expect(orders.find((o) => o.id === "O20260628003")).toBeDefined();
+    expect(orders.find((o) => o.id === "O20260629013")).toBeDefined();
   });
 });
 
