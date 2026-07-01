@@ -67,9 +67,9 @@ jobs:
       - name: Apply migrations
         run: npx prisma migrate deploy
 
-      # 2. Seed base data（测试依赖基础品类、师傅、订单、规则）
-      - name: Seed database
-        run: npm run db:seed
+      # 2. Seed demo data（集成测试依赖固定订单号、师傅、规则）
+      - name: Seed demo database
+        run: npm run seed:demo
 
       # 3. TypeScript + 路径 lint（快速反馈）
       - name: Check (TypeScript + 目录约定)
