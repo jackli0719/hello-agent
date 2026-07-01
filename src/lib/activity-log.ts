@@ -13,7 +13,13 @@ import { getSession } from "./auth";
 export type ActivityRole = "admin" | "worker" | "customer" | "system";
 
 export type ActivityTargetType =
-  "order" | "master" | "serviceCategory" | "serviceSku" | "dispatchRule";
+  | "order"
+  | "master"
+  | "serviceCategory"
+  | "serviceSku"
+  | "dispatchRule"
+  | "platformArea"
+  | "merchant";
 
 export interface CreateActivityLogInput {
   action: string;

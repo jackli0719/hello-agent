@@ -11,46 +11,72 @@ const prisma = new PrismaClient();
 // [v0.5.0] 密码哈希 — bcrypt rounds=10（演示足够）
 const BCRYPT_ROUNDS = 10;
 
-/**
- * seed 前的「孤儿引用检测」。
- * 当直接跑 db:seed（不清表）时：如果 DB 里有订单引用了「新 seed 列表里没有」的 skuCode，
- * 我们删不掉这条引用（因为外键约束），seed 就会卡住或半成功。
- *
- * 这个函数给出清晰的错误：「以下订单引用的 skuCode 不在本次 seed 列表」+「请先清理」。
- *
- * db:reset 路径（先 deleteMany 再 seed）这个函数返回空数组，不影响流程。
- */
-async function checkOrphanedReferences(): Promise<{
-  sku: string[];
-  category: string[];
-}> {
-  const newSkuCodes = new Set(MOCK_SERVICES.map((s) => s.skuCode));
-  const newCategoryCodes = new Set(MOCK_SERVICES.map((s) => s.categoryCode));
+const PLATFORM_AREAS = [
+  {
+    province: "广东省",
+    city: "深圳市",
+    district: "南山区",
+    street: "粤海街道",
+    enabled: true,
+  },
+  {
+    province: "广东省",
+    city: "深圳市",
+    district: "福田区",
+    street: "华强北街道",
+    enabled: true,
+  },
+  {
+    province: "广东省",
+    city: "广州市",
+    district: "天河区",
+    street: "石牌街道",
+    enabled: true,
+  },
+  {
+    province: "广东省",
+    city: "深圳市",
+    district: "宝安区",
+    street: "西乡街道",
+    enabled: true,
+  },
+];
 
-  // 查所有「被 Order 引用、但不在新 seed 列表」的 SKU code
-  const usedSkuCodes = await prisma.order.findMany({
-    where: { serviceSkuId: { not: null } },
-    select: { serviceSku: { select: { skuCode: true } } },
-  });
-  const orphanedSkus = usedSkuCodes
-    .map((r) => r.serviceSku?.skuCode)
-    .filter(
-      (code): code is string => code !== undefined && !newSkuCodes.has(code),
-    );
-  const uniqueOrphanedSkus = Array.from(new Set(orphanedSkus));
-
-  // 同理检查 category（Order 不直接引 category，但 Master.skills 可能引；
-  // 当前 schema Master.skills 是字符串数组，不做 deep 检查）
-  // 简单做法：列出现在 DB 里有但 seed 列表里没的 categoryCode
-  const dbCategories = await prisma.serviceCategory.findMany({
-    select: { categoryCode: true },
-  });
-  const orphanedCategories = dbCategories
-    .map((c) => c.categoryCode)
-    .filter((code) => !newCategoryCodes.has(code));
-
-  return { sku: uniqueOrphanedSkus, category: orphanedCategories };
-}
+const MERCHANTS = [
+  {
+    name: "深圳南山服务商 A",
+    contactName: "南山负责人",
+    phone: "13900001001",
+    status: "active",
+    province: "广东省",
+    city: "深圳市",
+    district: "南山区",
+    street: "粤海街道",
+    addressDetail: "科技园演示地址 1 号",
+  },
+  {
+    name: "深圳福田服务商 B",
+    contactName: "福田负责人",
+    phone: "13900001002",
+    status: "active",
+    province: "广东省",
+    city: "深圳市",
+    district: "福田区",
+    street: "华强北街道",
+    addressDetail: "华强北演示地址 2 号",
+  },
+  {
+    name: "广州天河服务商 C",
+    contactName: "天河负责人",
+    phone: "13900001003",
+    status: "active",
+    province: "广东省",
+    city: "广州市",
+    district: "天河区",
+    street: "石牌街道",
+    addressDetail: "石牌演示地址 3 号",
+  },
+];
 
 async function main() {
   console.log("🌱 开始 seed...");
@@ -64,23 +90,6 @@ async function main() {
     assertValidCode(s.skuCode, `ServiceSku.skuCode for "${s.name}"`);
   }
 
-  // ----- 0.5. 检测孤儿引用（直接 db:seed 时才有意义；db:reset 先清表会得到空数组） -----
-  const orphans = await checkOrphanedReferences();
-  if (orphans.sku.length > 0 || orphans.category.length > 0) {
-    const lines: string[] = [];
-    if (orphans.sku.length > 0) {
-      lines.push(
-        `  被订单引用的 SKU code（seed 中已不存在）: ${orphans.sku.join(", ")}`,
-      );
-    }
-    if (orphans.category.length > 0) {
-      lines.push(`  已下架的类目 code: ${orphans.category.join(", ")}`);
-    }
-    throw new Error(
-      `seed 检测到孤儿引用，请先清理或跑 db:reset：\n${lines.join("\n")}`,
-    );
-  }
-
   // ----- 1. 清表（按依赖倒序） -----
   await prisma.activityLog.deleteMany();
   await prisma.user.deleteMany();
@@ -89,6 +98,8 @@ async function main() {
   await prisma.serviceCategory.deleteMany();
   await prisma.master.deleteMany();
   await prisma.dispatchRule.deleteMany();
+  await prisma.merchant.deleteMany();
+  await prisma.platformArea.deleteMany();
   console.log("  ✓ 清空旧数据");
 
   // ----- 2. ServiceCategory -----
@@ -241,6 +252,13 @@ async function main() {
 
   console.log("  ✓ DispatchRule × 2");
 
+  // ----- 6.5. PlatformArea / Merchant（任务 1：商家平台模式底座）-----
+  await prisma.platformArea.createMany({ data: PLATFORM_AREAS });
+  console.log(`  ✓ PlatformArea × ${PLATFORM_AREAS.length}`);
+
+  await prisma.merchant.createMany({ data: MERCHANTS });
+  console.log(`  ✓ Merchant × ${MERCHANTS.length}`);
+
   // ----- 7. ActivityLog（操作日志示例）-----
   // 仅 5 条示例，让 Dashboard 启动就有内容看
   await prisma.activityLog.createMany({
@@ -308,6 +326,8 @@ async function main() {
     masters: await prisma.master.count(),
     orders: await prisma.order.count(),
     rules: await prisma.dispatchRule.count(),
+    platformAreas: await prisma.platformArea.count(),
+    merchants: await prisma.merchant.count(),
     users: await prisma.user.count(),
     activityLogs: await prisma.activityLog.count(),
   };
@@ -318,6 +338,8 @@ async function main() {
     counts.skus !== MOCK_SERVICES.length ||
     counts.masters !== MOCK_TECHNICIANS.length ||
     counts.orders !== MOCK_ORDERS.length ||
+    counts.platformAreas !== PLATFORM_AREAS.length ||
+    counts.merchants !== MERCHANTS.length ||
     counts.users !== 3 ||
     counts.activityLogs !== 5
   ) {

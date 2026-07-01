@@ -166,6 +166,49 @@ model DispatchRule {
 }
 
 // ============================================================
+// 平台合作区域（任务 1：服务商 / 商家平台模式底座）
+//
+// 含义：平台确认开放合作的四级服务区域。
+// 注意：本阶段只建平台区域主数据，不做 MerchantArea，不让商家绑定区域。
+// ============================================================
+model PlatformArea {
+  id        String   @id @default(cuid())
+  province  String
+  city      String
+  district  String
+  street    String
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([province, city, district, street])
+  @@index([enabled])
+}
+
+// ============================================================
+// 服务商 / 商家基础资料（任务 1）
+//
+// 本阶段 Merchant 只是商家基础资料，不做服务区域绑定、不绑定师傅。
+// ============================================================
+model Merchant {
+  id            String   @id @default(cuid())
+  name          String
+  contactName   String
+  phone         String
+  status        String   @default("active") // active | inactive
+  province      String
+  city          String
+  district      String
+  street        String
+  addressDetail String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([status])
+  @@index([province, city, district, street])
+}
+
+// ============================================================
 // 操作日志（[v0.4.0] 2026-06-29 引入）
 // 用于后台 Dashboard「最近动态」展示 + 业务追溯。
 //

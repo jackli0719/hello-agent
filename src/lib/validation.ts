@@ -16,6 +16,8 @@
 // 13. 派单规则 requiredSkills 不能为空，逗号分隔后至少有一个有效技能。
 // 14. 取消订单时 cancelReason 不能为空。
 // 15. 师傅完成订单时 serviceSummary 可以为空，但如果填写，需要去除首尾空格。
+// 16. 平台合作区域省 / 市 / 区县 / 街道不能为空。
+// 17. 商家名称 / 联系人不能为空，商家状态只能是 active / inactive。
 //
 // 设计：
 // - 纯函数 + 单职责：每个函数只回答一个问题
@@ -50,6 +52,28 @@ export function validatePhone(phone: unknown): ValidationResult {
   if (!trimmed) return fail("手机号不能为空");
   if (!/^1\d{10}$/.test(trimmed)) {
     return fail("手机号格式不正确（11 位数字，1 开头）");
+  }
+  return ok();
+}
+
+export function validateRequiredText(
+  value: unknown,
+  label: string,
+  maxLength = 100,
+): ValidationResult {
+  if (typeof value !== "string") return fail(`请填写${label}`);
+  const trimmed = value.trim();
+  if (!trimmed) return fail(`请填写${label}`);
+  if (trimmed.length > maxLength) {
+    return fail(`${label}不能超过 ${maxLength} 个字符`);
+  }
+  return ok();
+}
+
+export function validateMerchantStatus(status: unknown): ValidationResult {
+  if (typeof status !== "string") return fail("商家状态不正确");
+  if (status !== "active" && status !== "inactive") {
+    return fail("商家状态只能是 active / inactive");
   }
   return ok();
 }
