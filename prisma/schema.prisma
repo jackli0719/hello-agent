@@ -81,13 +81,14 @@ model Master {
 // - admin  : 后台管理员（workerId null）
 // - worker : 师傅账号（workerId 绑 Master.id）
 // - customer : 用户（按 phone 查订单）
-// # MVP: password 明文（按需求 — 不做哈希、不做注册）
+// # [v0.3.0] 密码 bcrypt 哈希（修 ADR-013 A1 P0 风险）— rounds=10
+// # 旧版注释「MVP 明文」是 v0.2.x 历史遗留，已不再准确
 // ============================================================
 model User {
   id        String   @id @default(cuid())
   name      String   @unique               // 登录账号（admin / worker1 / customer1）
   phone     String?                       // customer/worker 绑手机号；admin 可空
-  password  String                        // # MVP: 明文存（按需求）
+  password  String                        // bcrypt(rounds=10) 哈希，验证用 bcrypt.compare
   role      String                        // admin | worker | customer
   workerId  String?   @unique             // role=worker 时绑 Master.id
   createdAt DateTime @default(now())

@@ -11,12 +11,46 @@
 //
 // 用法：npm run seed:demo
 // （外键顺序：清表倒序，写表正序 — 见 CLAUDE.md 业务规则 #7）
+//
+// # [v0.9.9] 生产保护：演示期项目，缺保护会清掉生产数据
+// 触发条件（任一即拒执行）：
+//   1. NODE_ENV === "production"
+//   2. DATABASE_URL 指向非本地 DB（postgres:// 不含 localhost/127.0.0.1）
+// 显式覆盖：设置 ALLOW_DEMO_SEED=1 可绕过保护（测试用）
 
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 const BCRYPT_ROUNDS = 10;
+
+// ============================================================
+// [v0.9.9] 生产保护
+// ============================================================
+function guardProduction() {
+  if (process.env.ALLOW_DEMO_SEED === "1") {
+    console.log("⚠️  ALLOW_DEMO_SEED=1 — 跳过生产保护（不推荐，仅测试用）");
+    return;
+  }
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "seed:demo 在生产环境被禁用：会清空所有业务数据。\n" +
+        "如果确认要跑，设置 ALLOW_DEMO_SEED=1。\n" +
+        "（CLAUDE.md 错误卡类 4「流程纪律」+ v0.9.9 节点）",
+    );
+  }
+  const dbUrl = process.env.DATABASE_URL ?? "";
+  if (
+    dbUrl.startsWith("postgres://") &&
+    !/localhost|127\.0\.0\.1/.test(dbUrl)
+  ) {
+    throw new Error(
+      `seed:demo 在远程 DB 被禁用：${dbUrl}\n` +
+        "如果确认要跑，设置 ALLOW_DEMO_SEED=1。",
+    );
+  }
+  console.log("✓ 生产保护通过（本地 DB 或显式 ALLOW）");
+}
 
 // ============================================================
 // 清表（按依赖倒序）
@@ -468,6 +502,9 @@ const ORDERS = [
 
 async function main() {
   console.log("🌱 开始 seed:demo — 一键重置完整演示数据");
+
+  // [v0.9.9] 生产保护（演示期项目必加）
+  guardProduction();
 
   // ============================================================
   // 0. 清表（按依赖倒序）
