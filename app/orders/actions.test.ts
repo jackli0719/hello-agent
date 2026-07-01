@@ -10,6 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createOrderAction,
+  assignOrderAction,
   cancelDispatchAction,
   startServiceAction,
   completeOrderAction,
@@ -19,21 +20,73 @@ import { prisma } from "@/src/lib/db";
 
 // [v0.9.4] mock 鉴权 — 默认返 admin 角色，让现有 case 不被新鉴权破坏
 // 权限失败路径测试在 v0.9.8 组 5
+const {
+  mockRequireAdmin,
+  mockRequireCsrf,
+  mockRequireRole,
+  mockRequireWorker,
+} = vi.hoisted(() => {
+  return {
+    // mock 函数签名用 any 让 TS 接受 mockResolvedValueOnce 的 ok:false
+    mockRequireAdmin: vi.fn<any>(),
+    mockRequireCsrf: vi.fn<any>(),
+    mockRequireRole: vi.fn<any>(),
+    mockRequireWorker: vi.fn<any>(),
+  };
+});
+
+// 默认 mock 全部成功
+const ADMIN_OK = {
+  ok: true,
+  user: { id: "admin1", name: "admin", role: "admin" as const },
+};
+const WORKER_OK = {
+  ok: true,
+  user: { id: "w1", name: "worker", role: "worker" as const, workerId: "T001" },
+};
+const CUSTOMER_OK = {
+  ok: true,
+  user: { id: "c1", name: "customer", role: "customer" as const },
+};
+const CSRF_OK = { ok: true, user: null };
+
 vi.mock("@/src/lib/auth-helpers", () => ({
-  requireAdmin: async () => ({
+  requireAdmin: () => mockRequireAdmin(),
+  requireCsrf: () => mockRequireCsrf(),
+  requireRole: () => mockRequireRole(),
+  requireWorker: () => mockRequireWorker(),
+}));
+
+// 同样 mock csrf origin — 默认成功
+const { mockVerifyCsrfOrigin } = vi.hoisted(() => ({
+  mockVerifyCsrfOrigin: vi.fn<any>(),
+}));
+vi.mock("@/src/lib/csrf", async () => {
+  const actual =
+    await vi.importActual<typeof import("@/src/lib/csrf")>("@/src/lib/csrf");
+  return {
+    ...actual,
+    verifyCsrfOrigin: () => mockVerifyCsrfOrigin(),
+  };
+});
+
+beforeEach(() => {
+  // 默认 mock 全部成功
+  mockRequireAdmin.mockResolvedValue({
     ok: true,
     user: { id: "admin1", name: "admin", role: "admin" },
-  }),
-  requireWorker: async () => ({
-    ok: true,
-    user: { id: "w1", name: "worker", role: "worker", workerId: "T001" },
-  }),
-  requireRole: async () => ({
+  });
+  mockRequireCsrf.mockResolvedValue({ ok: true, user: null });
+  mockRequireRole.mockResolvedValue({
     ok: true,
     user: { id: "c1", name: "customer", role: "customer" },
-  }),
-  requireCsrf: async () => ({ ok: true, user: null }),
-}));
+  });
+  mockRequireWorker.mockResolvedValue({
+    ok: true,
+    user: { id: "w1", name: "worker", role: "worker", workerId: "T001" },
+  });
+  mockVerifyCsrfOrigin.mockResolvedValue({ ok: true });
+});
 
 // 重置订单回 seed 初值（不同测试用不同订单做隔离）
 async function resetOrder(
@@ -320,4 +373,65 @@ describe("cancelOrderAction", () => {
     if (r.ok) return;
     expect(r.category).toBe("validation");
   });
+});
+
+// ============================================================
+// [v0.9.8] 组 5：鉴权失败路径测试
+// ============================================================
+
+describe("鉴权失败路径", () => {
+  // # spec: 未登录调 admin action → 守卫失败，action 透传守卫结果
+  it("未登录 → createOrderAction 返守卫失败", async () => {
+    mockRequireAdmin.mockResolvedValueOnce({
+      ok: false,
+      category: "validation",
+      error: "请重新登录后再操作",
+    });
+    const r = await createOrderAction(fd(validOrder));
+    expect(r).not.toBeNull();
+    if (!r) return;
+
+    expect(r.error).toBe("请重新登录后再操作");
+  });
+
+  // # spec: customer 角色调 admin action → 守卫拒绝
+  it("customer 角色 → assignOrderAction 返「仅管理员可执行此操作」", async () => {
+    mockRequireAdmin.mockResolvedValueOnce({
+      ok: false,
+      category: "validation",
+      error: "仅管理员可执行此操作",
+    });
+    // assignOrderAction 返回类型包含 {ok:true, ...} 分支
+    // 我们的 mock 强制失败 — TS 收窄不到 fail 分支，用 as any 强转
+    const r = (await assignOrderAction("O20260628003", "T001")) as any;
+    expect(r.ok).toBe(false);
+    expect(r.error).toBe("仅管理员可执行此操作");
+  });
+
+  // # spec: 缺 CSRF token → 守卫拒绝
+  it("缺 _csrf → createOrderAction 返「会话已过期」", async () => {
+    mockRequireCsrf.mockResolvedValueOnce({
+      ok: false,
+      category: "validation",
+      error: "会话已过期，请刷新页面后重试",
+    });
+    const r = (await createOrderAction(fd(validOrder))) as any;
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/会话已过期/);
+  });
+
+  // # spec: 跨源 Origin 头 → 非 FormData action 拒绝
+  it("跨源 Origin → assignOrderAction 返 CSRF 校验失败", async () => {
+    mockVerifyCsrfOrigin.mockResolvedValueOnce({
+      ok: false,
+      error: "CSRF 校验失败：Origin 不匹配",
+    });
+    const r = (await assignOrderAction("O20260628003", "T001")) as any;
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/CSRF 校验失败/);
+  });
+
+  // # spec: 跨源 Origin → toggleRuleEnabledAction 拒绝（dispatch-rules）
+  // 注：toggleRuleEnabledAction 来自 dispatch-rules/actions.ts，
+  // 本文件只测 orders 6 个 action。dispatch-rules 鉴权测试在那个文件。
 });
