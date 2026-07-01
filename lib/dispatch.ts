@@ -30,14 +30,32 @@ export interface RecommendationResult {
   reason: string; // 一句话说明（为什么有 / 为什么没有）
 }
 
+export interface PlatformAreaRow {
+  id: string;
+  province: string;
+  city: string;
+  district: string;
+  street: string;
+  enabled: boolean;
+}
+
+export interface MerchantAreaRow {
+  merchantId: string;
+  platformAreaId: string;
+  enabled: boolean;
+}
+
 /** 输入：订单的 SKU 和类目，加上规则库 + 师傅池 */
 export interface RecommendArgs {
   order: {
     skuId: string | null;
     categoryId: string | null;
+    address?: string | null;
   };
   rules: DispatchRuleRow[];
   masters: Technician[];
+  platformAreas?: PlatformAreaRow[];
+  merchantAreas?: MerchantAreaRow[];
 }
 
 /**
@@ -59,7 +77,21 @@ export interface RecommendArgs {
 export function recommendMastersForOrder(
   args: RecommendArgs,
 ): RecommendationResult {
-  const { order, rules, masters } = args;
+  const { order, rules } = args;
+
+  let masters = args.masters;
+  if (args.platformAreas && args.merchantAreas) {
+    const areaResult = filterMastersByArea({
+      address: order.address ?? "",
+      masters,
+      platformAreas: args.platformAreas,
+      merchantAreas: args.merchantAreas,
+    });
+    if (!areaResult.ok) {
+      return { rule: null, candidates: [], reason: areaResult.reason };
+    }
+    masters = areaResult.masters;
+  }
 
   // 1. 找命中的规则 — SKU 精确优先
   const enabledRules = rules.filter((r) => r.enabled);
@@ -125,6 +157,83 @@ function pickTopRule(rules: DispatchRuleRow[]): DispatchRuleRow {
     if (b.priority !== a.priority) return b.priority - a.priority;
     return a.id.localeCompare(b.id);
   })[0];
+}
+
+function filterMastersByArea(args: {
+  address: string;
+  masters: Technician[];
+  platformAreas: PlatformAreaRow[];
+  merchantAreas: MerchantAreaRow[];
+}): { ok: true; masters: Technician[] } | { ok: false; reason: string } {
+  const matchedArea = pickPlatformAreaForAddress(
+    args.address,
+    args.platformAreas,
+  );
+  if (!matchedArea) {
+    return {
+      ok: false,
+      reason: "订单地址不在平台已开放合作区域，请人工处理",
+    };
+  }
+
+  const merchantIds = new Set(
+    args.merchantAreas
+      .filter((ma) => ma.enabled && ma.platformAreaId === matchedArea.id)
+      .map((ma) => ma.merchantId),
+  );
+  if (merchantIds.size === 0) {
+    return {
+      ok: false,
+      reason: `平台区域「${formatPlatformArea(matchedArea)}」暂无启用商家覆盖，请人工处理`,
+    };
+  }
+
+  const masters = args.masters.filter(
+    (m) => m.merchantId !== undefined && merchantIds.has(m.merchantId),
+  );
+  if (masters.length === 0) {
+    return {
+      ok: false,
+      reason: `平台区域「${formatPlatformArea(matchedArea)}」的商家下暂无师傅，请人工处理`,
+    };
+  }
+
+  return { ok: true, masters };
+}
+
+function pickPlatformAreaForAddress(
+  address: string,
+  platformAreas: PlatformAreaRow[],
+): PlatformAreaRow | null {
+  const normalizedAddress = normalizeAreaText(address);
+  const matches = platformAreas
+    .filter((area) => area.enabled)
+    .filter((area) =>
+      [area.province, area.city, area.district, area.street].every((part) =>
+        normalizedAddress.includes(normalizeAreaText(part)),
+      ),
+    );
+  if (matches.length === 0) return null;
+  return matches.sort((a, b) => {
+    const lenA = areaTextLength(a);
+    const lenB = areaTextLength(b);
+    if (lenB !== lenA) return lenB - lenA;
+    return a.id.localeCompare(b.id);
+  })[0];
+}
+
+function normalizeAreaText(value: string): string {
+  return value.replace(/\s+/g, "");
+}
+
+function areaTextLength(area: PlatformAreaRow): number {
+  return [area.province, area.city, area.district, area.street]
+    .map(normalizeAreaText)
+    .join("").length;
+}
+
+function formatPlatformArea(area: PlatformAreaRow): string {
+  return `${area.province}/${area.city}/${area.district}/${area.street}`;
 }
 
 /**

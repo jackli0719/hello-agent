@@ -98,6 +98,7 @@ function toDomainMaster(row: {
   completedJobs: number;
   status: string;
   serviceArea: string;
+  merchantId: string;
 }): Technician {
   let skills: string[] = [];
   try {
@@ -116,6 +117,7 @@ function toDomainMaster(row: {
     completedJobs: row.completedJobs,
     status: row.status as Technician["status"],
     serviceArea: row.serviceArea,
+    merchantId: row.merchantId,
   };
 }
 
@@ -207,7 +209,14 @@ export async function listOrdersForPage(
     where[dateField] = dateWhere;
   }
 
-  const [orderRows, ruleRows, masterRows, totalCount] = await Promise.all([
+  const [
+    orderRows,
+    ruleRows,
+    masterRows,
+    platformAreaRows,
+    merchantAreaRows,
+    totalCount,
+  ] = await Promise.all([
     prisma.order.findMany({
       where: Object.keys(where).length > 0 ? where : undefined,
       orderBy: { createdAt: "desc" },
@@ -258,6 +267,26 @@ export async function listOrdersForPage(
         completedJobs: true,
         status: true,
         serviceArea: true,
+        merchantId: true,
+      },
+    }),
+    prisma.platformArea.findMany({
+      where: { enabled: true },
+      select: {
+        id: true,
+        province: true,
+        city: true,
+        district: true,
+        street: true,
+        enabled: true,
+      },
+    }),
+    prisma.merchantArea.findMany({
+      where: { enabled: true, merchant: { status: "active" } },
+      select: {
+        merchantId: true,
+        platformAreaId: true,
+        enabled: true,
       },
     }),
     prisma.order.count({
@@ -282,9 +311,11 @@ export async function listOrdersForPage(
     const recommendation =
       r.status === "pending"
         ? recommendMastersForOrder({
-            order: { skuId, categoryId },
+            order: { skuId, categoryId, address: r.address },
             rules,
             masters,
+            platformAreas: platformAreaRows,
+            merchantAreas: merchantAreaRows,
           })
         : { rule: null, candidates: [], reason: "—（非待派单状态）" };
 

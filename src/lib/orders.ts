@@ -430,6 +430,7 @@ async function computeRecommendationForOrder(order: {
   id: string;
   serviceSkuId: string | null;
   status: string;
+  address: string;
 }) {
   const { recommendMastersForOrder, parseRuleJson } =
     await import("@/lib/dispatch");
@@ -442,6 +443,7 @@ async function computeRecommendationForOrder(order: {
     completedJobs: number;
     status: string;
     serviceArea: string;
+    merchantId: string;
   };
 
   // 加载 SKU 拿 categoryId
@@ -454,30 +456,51 @@ async function computeRecommendationForOrder(order: {
     categoryId = sku?.categoryId ?? null;
   }
 
-  const [ruleRows, masterRows] = await Promise.all([
-    prisma.dispatchRule.findMany({
-      where: { enabled: true },
-      select: {
-        id: true,
-        name: true,
-        priority: true,
-        enabled: true,
-        ruleJson: true,
-      },
-    }),
-    prisma.master.findMany({
-      select: {
-        id: true,
-        name: true,
-        phone: true,
-        skills: true,
-        rating: true,
-        completedJobs: true,
-        status: true,
-        serviceArea: true,
-      },
-    }),
-  ]);
+  const [ruleRows, masterRows, platformAreaRows, merchantAreaRows] =
+    await Promise.all([
+      prisma.dispatchRule.findMany({
+        where: { enabled: true },
+        select: {
+          id: true,
+          name: true,
+          priority: true,
+          enabled: true,
+          ruleJson: true,
+        },
+      }),
+      prisma.master.findMany({
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          skills: true,
+          rating: true,
+          completedJobs: true,
+          status: true,
+          serviceArea: true,
+          merchantId: true,
+        },
+      }),
+      prisma.platformArea.findMany({
+        where: { enabled: true },
+        select: {
+          id: true,
+          province: true,
+          city: true,
+          district: true,
+          street: true,
+          enabled: true,
+        },
+      }),
+      prisma.merchantArea.findMany({
+        where: { enabled: true, merchant: { status: "active" } },
+        select: {
+          merchantId: true,
+          platformAreaId: true,
+          enabled: true,
+        },
+      }),
+    ]);
 
   const rules = ruleRows.map((r) => ({
     id: r.id,
@@ -509,14 +532,17 @@ async function computeRecommendationForOrder(order: {
         completedJobs: row.completedJobs,
         status: row.status as import("@/src/types").TechnicianStatus,
         serviceArea: row.serviceArea ?? "",
+        merchantId: row.merchantId,
       };
     },
   );
 
   return recommendMastersForOrder({
-    order: { skuId: order.serviceSkuId, categoryId },
+    order: { skuId: order.serviceSkuId, categoryId, address: order.address },
     rules,
     masters,
+    platformAreas: platformAreaRows,
+    merchantAreas: merchantAreaRows,
   });
 }
 

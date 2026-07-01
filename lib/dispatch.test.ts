@@ -3,6 +3,8 @@ import {
   recommendMastersForOrder,
   parseRuleJson,
   type DispatchRuleRow,
+  type MerchantAreaRow,
+  type PlatformAreaRow,
 } from "./dispatch";
 import type { Technician } from "./types";
 
@@ -28,6 +30,31 @@ function makeRule(overrides: Partial<DispatchRuleRow>): DispatchRuleRow {
     priority: 0,
     enabled: true,
     spec: { match: {}, requiredSkills: [] },
+    ...overrides,
+  };
+}
+
+function makePlatformArea(
+  overrides: Partial<PlatformAreaRow> = {},
+): PlatformAreaRow {
+  return {
+    id: "PA001",
+    province: "广东省",
+    city: "深圳市",
+    district: "南山区",
+    street: "粤海街道",
+    enabled: true,
+    ...overrides,
+  };
+}
+
+function makeMerchantArea(
+  overrides: Partial<MerchantAreaRow> = {},
+): MerchantAreaRow {
+  return {
+    merchantId: "MERCHANT-1",
+    platformAreaId: "PA001",
+    enabled: true,
     ...overrides,
   };
 }
@@ -290,5 +317,93 @@ describe("recommendMastersForOrder", () => {
       masters: [makeMaster({ skills: ["空调维修"] })],
     });
     expect(r.rule?.id).toBe("R-B");
+  });
+
+  // # spec: 区域过滤前置 — 订单地址必须命中 enabled PlatformArea 四级字段，否则不进入 SKU/技能匹配
+  it("订单地址不在平台合作区域 → 不推荐师傅", () => {
+    const r = recommendMastersForOrder({
+      order: {
+        skuId: "S003",
+        categoryId: null,
+        address: "上海市浦东新区世纪大道 100 号",
+      },
+      rules: [
+        makeRule({
+          spec: { match: { skuId: "S003" }, requiredSkills: ["保洁"] },
+        }),
+      ],
+      masters: [
+        makeMaster({ id: "M1", skills: ["保洁"], merchantId: "MERCHANT-1" }),
+      ],
+      platformAreas: [makePlatformArea()],
+      merchantAreas: [makeMerchantArea()],
+    });
+    expect(r.rule).toBeNull();
+    expect(r.candidates).toEqual([]);
+    expect(r.reason).toMatch(/不在平台已开放合作区域/);
+  });
+
+  // # spec: 区域过滤前置 — 平台区域命中后，必须有 enabled MerchantArea 覆盖该区域
+  it("平台区域命中但没有启用商家覆盖 → 不推荐师傅", () => {
+    const r = recommendMastersForOrder({
+      order: {
+        skuId: "S003",
+        categoryId: null,
+        address: "广东省深圳市南山区粤海街道科技园 1 号",
+      },
+      rules: [
+        makeRule({
+          spec: { match: { skuId: "S003" }, requiredSkills: ["保洁"] },
+        }),
+      ],
+      masters: [
+        makeMaster({ id: "M1", skills: ["保洁"], merchantId: "MERCHANT-1" }),
+      ],
+      platformAreas: [makePlatformArea()],
+      merchantAreas: [makeMerchantArea({ enabled: false })],
+    });
+    expect(r.rule).toBeNull();
+    expect(r.candidates).toEqual([]);
+    expect(r.reason).toMatch(/暂无启用商家覆盖/);
+  });
+
+  // # spec: 派单推荐顺序 = 订单区域 → 覆盖商家 → 商家下师傅 → SKU/技能/评分
+  it("只推荐覆盖该区域商家下的师傅，再按技能和评分筛选", () => {
+    const r = recommendMastersForOrder({
+      order: {
+        skuId: "S003",
+        categoryId: null,
+        address: "广东省深圳市南山区粤海街道科技园 1 号",
+      },
+      rules: [
+        makeRule({
+          spec: { match: { skuId: "S003" }, requiredSkills: ["保洁"] },
+        }),
+      ],
+      masters: [
+        makeMaster({
+          id: "M1",
+          skills: ["保洁"],
+          rating: 4.5,
+          merchantId: "MERCHANT-1",
+        }),
+        makeMaster({
+          id: "M2",
+          skills: ["保洁"],
+          rating: 5.0,
+          merchantId: "MERCHANT-2",
+        }),
+        makeMaster({
+          id: "M3",
+          skills: ["空调维修"],
+          rating: 4.9,
+          merchantId: "MERCHANT-1",
+        }),
+      ],
+      platformAreas: [makePlatformArea()],
+      merchantAreas: [makeMerchantArea({ merchantId: "MERCHANT-1" })],
+    });
+    expect(r.rule?.id).toBe("R1");
+    expect(r.candidates.map((m) => m.id)).toEqual(["M1"]);
   });
 });

@@ -245,19 +245,39 @@ export async function assignOrder(orderId: string): Promise<AssignOrderResult> {
   const categoryId = sku?.categoryId ?? null;
 
   // 3. 用新的 dispatch 纯函数做推荐 — 从 DB 读规则 + 师傅
-  const [masters, ruleRows] = await Promise.all([
-    listMasters(),
-    prisma.dispatchRule.findMany({
-      where: { enabled: true },
-      select: {
-        id: true,
-        name: true,
-        priority: true,
-        enabled: true,
-        ruleJson: true,
-      },
-    }),
-  ]);
+  const [masters, ruleRows, platformAreaRows, merchantAreaRows] =
+    await Promise.all([
+      listMasters(),
+      prisma.dispatchRule.findMany({
+        where: { enabled: true },
+        select: {
+          id: true,
+          name: true,
+          priority: true,
+          enabled: true,
+          ruleJson: true,
+        },
+      }),
+      prisma.platformArea.findMany({
+        where: { enabled: true },
+        select: {
+          id: true,
+          province: true,
+          city: true,
+          district: true,
+          street: true,
+          enabled: true,
+        },
+      }),
+      prisma.merchantArea.findMany({
+        where: { enabled: true, merchant: { status: "active" } },
+        select: {
+          merchantId: true,
+          platformAreaId: true,
+          enabled: true,
+        },
+      }),
+    ]);
   const rules = ruleRows.map((r) => ({
     id: r.id,
     name: r.name,
@@ -266,9 +286,11 @@ export async function assignOrder(orderId: string): Promise<AssignOrderResult> {
     spec: parseRuleJson(r.ruleJson) ?? { match: {}, requiredSkills: [] },
   }));
   const recommendation = recommendMastersForOrder({
-    order: { skuId, categoryId },
+    order: { skuId, categoryId, address: order.address },
     rules,
     masters,
+    platformAreas: platformAreaRows,
+    merchantAreas: merchantAreaRows,
   });
   const topCandidate = recommendation.candidates[0];
   if (!topCandidate) {
