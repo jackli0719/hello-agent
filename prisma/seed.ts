@@ -94,6 +94,7 @@ async function main() {
   await prisma.activityLog.deleteMany();
   await prisma.user.deleteMany();
   await prisma.order.deleteMany();
+  await prisma.merchantArea.deleteMany();
   await prisma.serviceSku.deleteMany();
   await prisma.serviceCategory.deleteMany();
   await prisma.master.deleteMany();
@@ -142,6 +143,32 @@ async function main() {
   }
   console.log(`  ✓ ServiceSku × ${MOCK_SERVICES.length}`);
 
+  // ----- 3.5. PlatformArea / Merchant（任务 1：商家平台模式底座）-----
+  await prisma.platformArea.createMany({ data: PLATFORM_AREAS });
+  console.log(`  ✓ PlatformArea × ${PLATFORM_AREAS.length}`);
+
+  await prisma.merchant.createMany({ data: MERCHANTS });
+  const defaultMerchant = await prisma.merchant.findFirst({
+    where: { status: "active" },
+    orderBy: { createdAt: "asc" },
+    select: { id: true },
+  });
+  if (!defaultMerchant) throw new Error("缺少可绑定师傅的 active 商家");
+  console.log(`  ✓ Merchant × ${MERCHANTS.length}`);
+
+  const activeAreas = await prisma.platformArea.findMany({
+    where: { enabled: true },
+    select: { id: true },
+  });
+  await prisma.merchantArea.createMany({
+    data: activeAreas.map((area) => ({
+      merchantId: defaultMerchant.id,
+      platformAreaId: area.id,
+      enabled: true,
+    })),
+  });
+  console.log(`  ✓ MerchantArea × ${activeAreas.length}`);
+
   // ----- 4. Master -----
   for (const m of MOCK_TECHNICIANS) {
     await prisma.master.create({
@@ -154,6 +181,7 @@ async function main() {
         completedJobs: m.completedJobs,
         status: m.status,
         serviceArea: m.serviceArea ?? "",
+        merchantId: defaultMerchant.id,
       },
     });
   }
@@ -252,13 +280,6 @@ async function main() {
 
   console.log("  ✓ DispatchRule × 2");
 
-  // ----- 6.5. PlatformArea / Merchant（任务 1：商家平台模式底座）-----
-  await prisma.platformArea.createMany({ data: PLATFORM_AREAS });
-  console.log(`  ✓ PlatformArea × ${PLATFORM_AREAS.length}`);
-
-  await prisma.merchant.createMany({ data: MERCHANTS });
-  console.log(`  ✓ Merchant × ${MERCHANTS.length}`);
-
   // ----- 7. ActivityLog（操作日志示例）-----
   // 仅 5 条示例，让 Dashboard 启动就有内容看
   await prisma.activityLog.createMany({
@@ -328,6 +349,7 @@ async function main() {
     rules: await prisma.dispatchRule.count(),
     platformAreas: await prisma.platformArea.count(),
     merchants: await prisma.merchant.count(),
+    merchantAreas: await prisma.merchantArea.count(),
     users: await prisma.user.count(),
     activityLogs: await prisma.activityLog.count(),
   };
@@ -340,6 +362,7 @@ async function main() {
     counts.orders !== MOCK_ORDERS.length ||
     counts.platformAreas !== PLATFORM_AREAS.length ||
     counts.merchants !== MERCHANTS.length ||
+    counts.merchantAreas !== PLATFORM_AREAS.length ||
     counts.users !== 3 ||
     counts.activityLogs !== 5
   ) {

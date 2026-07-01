@@ -14,6 +14,8 @@ interface DbMasterRow {
   completedJobs: number;
   status: string;
   serviceArea: string;
+  merchantId: string;
+  merchant: { name: string } | null;
 }
 
 function toTechnician(row: DbMasterRow): Technician {
@@ -34,6 +36,8 @@ function toTechnician(row: DbMasterRow): Technician {
     completedJobs: row.completedJobs,
     status: row.status as TechnicianStatus,
     serviceArea: row.serviceArea,
+    merchantId: row.merchantId,
+    merchantName: row.merchant?.name,
   };
 }
 
@@ -46,6 +50,8 @@ const masterSelect = {
   completedJobs: true,
   status: true,
   serviceArea: true,
+  merchantId: true,
+  merchant: { select: { name: true } },
 } satisfies import("@prisma/client").Prisma.MasterSelect;
 
 /** 列所有师傅 — 派单匹配函数用 */

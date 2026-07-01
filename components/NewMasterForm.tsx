@@ -19,11 +19,14 @@ interface EditInitial {
   rating: number;
   status: "available" | "busy" | "offline";
   serviceArea: string;
+  merchantId: string;
 }
 
 interface Props {
   mode: Mode;
   initial?: EditInitial;
+  csrfToken: string;
+  merchantOptions: { id: string; name: string; status: string }[];
 }
 
 const labelStyle: React.CSSProperties = {
@@ -74,7 +77,12 @@ const STATUS_COLOR: Record<string, { bg: string; fg: string }> = {
  * status 字段**不在表单里编辑** — 它由派单/释放自动管理。
  * edit 模式下用只读 chip 展示当前 status，让用户能看到但不能改。
  */
-export function NewMasterForm({ mode, initial }: Props) {
+export function NewMasterForm({
+  mode,
+  initial,
+  csrfToken,
+  merchantOptions,
+}: Props) {
   const [isPending, startTransition] = useTransition();
   const [result, setResult] = useState<MasterActionResult | null>(null);
 
@@ -101,6 +109,7 @@ export function NewMasterForm({ mode, initial }: Props) {
 
   return (
     <form onSubmit={handleSubmit} style={{ display: "grid", gap: 16 }}>
+      <input type="hidden" name="_csrf" value={csrfToken} />
       {mode === "edit" && initial && (
         <input type="hidden" name="id" value={initial.id} />
       )}
@@ -160,6 +169,33 @@ export function NewMasterForm({ mode, initial }: Props) {
         />
         <div style={helpStyle}>用逗号（中英文都可）分隔多个技能标签</div>
         {error?.field === "skills" && (
+          <div style={errorStyle}>{error.error}</div>
+        )}
+      </div>
+
+      {/* 所属商家 */}
+      <div>
+        <label style={labelStyle} htmlFor="merchantId">
+          所属商家 <span style={{ color: "#b91c1c" }}>*</span>
+        </label>
+        <select
+          id="merchantId"
+          name="merchantId"
+          defaultValue={initial?.merchantId ?? ""}
+          style={inputStyle}
+          required
+        >
+          <option value="">请选择所属商家</option>
+          {merchantOptions.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.name}
+            </option>
+          ))}
+        </select>
+        {merchantOptions.length === 0 && (
+          <div style={errorStyle}>暂无启用商家，请先创建并启用商家</div>
+        )}
+        {error?.field === "merchantId" && (
           <div style={errorStyle}>{error.error}</div>
         )}
       </div>

@@ -19,7 +19,8 @@ export type ActivityTargetType =
   | "serviceSku"
   | "dispatchRule"
   | "platformArea"
-  | "merchant";
+  | "merchant"
+  | "merchantArea";
 
 export interface CreateActivityLogInput {
   action: string;

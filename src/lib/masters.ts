@@ -10,7 +10,7 @@ import {
 } from "@/src/lib/validation";
 
 export type MasterField =
-  "name" | "phone" | "skills" | "rating" | "serviceArea";
+  "name" | "phone" | "skills" | "rating" | "serviceArea" | "merchantId"; // [任务 2] 商家必填
 
 export interface CreateMasterInput {
   name: string;
@@ -18,6 +18,8 @@ export interface CreateMasterInput {
   skills: string[]; // 数组，内部会 JSON.stringify
   rating: number;
   serviceArea: string;
+  // [任务 2] 师傅必须归属一个商家 — 平台合作模式必填
+  merchantId: string;
   // 注意：available/status 不在表单字段里 — 由系统（派单/释放）自动管理
 }
 
@@ -80,6 +82,27 @@ export function skillsToString(skills: string[]): string {
  * 通用校验：返回一个 result 或者 ok。
  * server action 和纯单测都调它，保证两边校验一致。
  */
+// [任务 2] 校验商家存在 + active
+export async function requireActiveMerchant(
+  merchantId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!merchantId) return { ok: false, error: "请选择所属商家" };
+  const m = await prisma.merchant.findUnique({ where: { id: merchantId } });
+  if (!m) return { ok: false, error: "所属商家不存在" };
+  if (m.status !== "active") {
+    return { ok: false, error: "所属商家已停用，不能新绑定师傅" };
+  }
+  return { ok: true };
+}
+
+/** 列出 active 商家（供师傅表单下拉） */
+export async function listActiveMerchants() {
+  return prisma.merchant.findMany({
+    where: { status: "active" },
+    orderBy: [{ createdAt: "desc" }],
+  });
+}
+
 export function validateMasterInput(input: Partial<CreateMasterInput>):
   | {
       ok: true;
@@ -118,9 +141,19 @@ export function validateMasterInput(input: Partial<CreateMasterInput>):
     };
   }
 
+  // [任务 2] 师傅必须归属商家 — 必填校验
+  const merchantId = (input.merchantId ?? "").trim();
+  if (!merchantId) {
+    return {
+      ok: false,
+      error: "请选择所属商家",
+      field: "merchantId",
+    };
+  }
+
   return {
     ok: true,
-    cleaned: { name, phone, skills, rating, serviceArea },
+    cleaned: { name, phone, skills, rating, serviceArea, merchantId },
   };
 }
 
@@ -143,6 +176,17 @@ export async function createMaster(
   }
   const c = validated.cleaned;
 
+  // [任务 2] 商家必须存在 + active
+  const merchantCheck = await requireActiveMerchant(c.merchantId);
+  if (!merchantCheck.ok) {
+    return {
+      ok: false,
+      category: "validation",
+      error: merchantCheck.error,
+      field: "merchantId",
+    };
+  }
+
   try {
     const row = await prisma.master.create({
       data: {
@@ -153,6 +197,8 @@ export async function createMaster(
         // 新师傅默认 available — status 由后续派单/释放自动管
         status: "available",
         serviceArea: c.serviceArea,
+        // [任务 2] 师傅归属商家 — FK merchantId（validated.cleaned 必填）
+        merchant: { connect: { id: c.merchantId } },
       },
       select: { id: true },
     });
@@ -206,6 +252,17 @@ export async function updateMaster(
   }
   const c = validated.cleaned;
 
+  // [任务 2] 改换所属商家时也校验 active
+  const merchantCheck = await requireActiveMerchant(c.merchantId);
+  if (!merchantCheck.ok) {
+    return {
+      ok: false,
+      category: "validation",
+      error: merchantCheck.error,
+      field: "merchantId",
+    };
+  }
+
   try {
     await prisma.master.update({
       where: { id },
@@ -216,6 +273,8 @@ export async function updateMaster(
         rating: c.rating,
         // 注意：status 不在这里改 — 由 assignOrder / releaseMaster 自动管
         serviceArea: c.serviceArea,
+        // [任务 2] 改换所属商家 — FK merchantId
+        merchant: { connect: { id: c.merchantId } },
       },
     });
     return { ok: true, masterId: id };

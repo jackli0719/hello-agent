@@ -1,14 +1,22 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { card } from "@/components/ui";
-import { updateMerchantAction } from "@/app/merchants/actions";
+import { card, StatusBadge, td, th } from "@/components/ui";
+import {
+  bindMerchantAreaAction,
+  toggleMerchantAreaAction,
+  updateMerchantAction,
+} from "@/app/merchants/actions";
 import { DEFAULT_LANDING, getCurrentUser } from "@/src/lib/auth";
-import { getMerchant } from "@/src/lib/merchants";
+import {
+  getMerchant,
+  listAvailablePlatformAreas,
+  listMerchantAreas,
+} from "@/src/lib/merchants";
 import { ensureCsrfCookie } from "@/src/lib/csrf";
 
 interface PageProps {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; bound?: string; toggled?: string }>;
 }
 
 const inputStyle: React.CSSProperties = {
@@ -60,12 +68,16 @@ export default async function EditMerchantPage({
   if (!user) redirect("/login");
   if (user.role !== "admin") redirect(DEFAULT_LANDING[user.role]);
 
-  const [{ id }, { error }, csrfToken] = await Promise.all([
+  const [{ id }, { error, bound, toggled }, csrfToken] = await Promise.all([
     params,
     searchParams,
     ensureCsrfCookie(),
   ]);
-  const merchant = await getMerchant(id);
+  const [merchant, merchantAreas, availableAreas] = await Promise.all([
+    getMerchant(id),
+    listMerchantAreas(id),
+    listAvailablePlatformAreas(id),
+  ]);
   if (!merchant) notFound();
 
   return (
@@ -104,6 +116,20 @@ export default async function EditMerchantPage({
             }}
           >
             {error}
+          </div>
+        )}
+        {(bound || toggled) && (
+          <div
+            style={{
+              padding: "10px 14px",
+              background: "#dcfce7",
+              color: "#15803d",
+              borderRadius: 6,
+              fontSize: 13,
+              marginBottom: 16,
+            }}
+          >
+            {bound ? "区域绑定成功" : "区域绑定状态已更新"}
           </div>
         )}
         <form action={updateMerchantAction}>
@@ -183,6 +209,115 @@ export default async function EditMerchantPage({
             保存
           </button>
         </form>
+      </section>
+
+      <section style={{ ...card, maxWidth: 920 }}>
+        <h2 style={{ fontSize: 18, margin: "0 0 14px 0" }}>合作区域绑定</h2>
+        <form
+          action={bindMerchantAreaAction}
+          style={{
+            display: "flex",
+            gap: 12,
+            alignItems: "center",
+            marginBottom: 18,
+          }}
+        >
+          <input type="hidden" name="_csrf" value={csrfToken} />
+          <input type="hidden" name="merchantId" value={merchant.id} />
+          <select
+            name="platformAreaId"
+            required
+            disabled={availableAreas.length === 0}
+            style={{ ...inputStyle, maxWidth: 460 }}
+            defaultValue=""
+          >
+            <option value="">选择平台合作区域</option>
+            {availableAreas.map((area) => (
+              <option key={area.id} value={area.id}>
+                {area.province} / {area.city} / {area.district} / {area.street}
+              </option>
+            ))}
+          </select>
+          <button
+            type="submit"
+            disabled={availableAreas.length === 0}
+            style={{
+              padding: "9px 18px",
+              background: availableAreas.length === 0 ? "#9ca3af" : "#2563eb",
+              color: "#fff",
+              border: "none",
+              borderRadius: 6,
+              fontSize: 14,
+              fontWeight: 500,
+              cursor: availableAreas.length === 0 ? "not-allowed" : "pointer",
+            }}
+          >
+            绑定区域
+          </button>
+        </form>
+
+        {merchantAreas.length === 0 ? (
+          <div style={{ color: "#9ca3af", fontSize: 14 }}>暂无绑定区域</div>
+        ) : (
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                <th style={th}>省</th>
+                <th style={th}>市</th>
+                <th style={th}>区县</th>
+                <th style={th}>街道 / 乡镇</th>
+                <th style={th}>绑定状态</th>
+                <th style={th}>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {merchantAreas.map((area) => (
+                <tr key={area.id}>
+                  <td style={td}>{area.platformArea.province}</td>
+                  <td style={td}>{area.platformArea.city}</td>
+                  <td style={td}>{area.platformArea.district}</td>
+                  <td style={td}>{area.platformArea.street}</td>
+                  <td style={td}>
+                    <StatusBadge
+                      label={area.enabled ? "启用" : "停用"}
+                      tone={area.enabled ? "green" : "gray"}
+                    />
+                  </td>
+                  <td style={td}>
+                    <form action={toggleMerchantAreaAction}>
+                      <input type="hidden" name="_csrf" value={csrfToken} />
+                      <input type="hidden" name="id" value={area.id} />
+                      <input
+                        type="hidden"
+                        name="merchantId"
+                        value={merchant.id}
+                      />
+                      <input
+                        type="hidden"
+                        name="enabled"
+                        value={area.enabled ? "false" : "true"}
+                      />
+                      <button
+                        type="submit"
+                        style={{
+                          padding: "6px 12px",
+                          background: "#fff",
+                          color: "#2563eb",
+                          border: "1px solid #bfdbfe",
+                          borderRadius: 6,
+                          fontSize: 13,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {area.enabled ? "停用" : "启用"}
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </section>
     </main>
   );

@@ -17,6 +17,7 @@ const valid = {
   rating: 4.5,
   available: true,
   serviceArea: "上海",
+  merchantId: "M001", // [任务 2] 商家必填 — 测试需要 active 商家
 };
 
 // # spec: 师傅字段校验 = name 必填且 50 字符内、phone 1xx 11 位格式、rating [0,5]、serviceArea 100 字符内
@@ -177,6 +178,8 @@ describe("createMaster — 新师傅能参与派单推荐", () => {
       skills: ["保洁"],
       rating: 5.0, // [v0.7.6] 跟 seed 默认 rating 5.0 一致（同分时按 id 排第一）
       serviceArea: "上海",
+      // [任务 2] 商家必填
+      merchantId: valid.merchantId,
     });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -267,6 +270,8 @@ describe("updateMaster", () => {
       skills: ["空调维修", "家电清洗"],
       rating: 4.8,
       serviceArea: "北京",
+      // [任务 2] 商家必填
+      merchantId: valid.merchantId,
     });
     expect(u.ok).toBe(true);
 
@@ -301,6 +306,8 @@ describe("updateMaster", () => {
       skills: ["保洁"],
       rating: 4.0,
       serviceArea: "上海",
+      // [任务 2] 商家必填
+      merchantId: valid.merchantId,
     });
     expect(u.ok).toBe(true);
 

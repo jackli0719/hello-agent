@@ -169,6 +169,14 @@ async function migrateMaster(
     .prepare("SELECT * FROM Master ORDER BY createdAt ASC")
     .all() as any[];
   stats.total = rows.length;
+  const defaultMerchant = await dst.merchant.findFirst({
+    where: { status: "active" },
+    orderBy: { createdAt: "asc" },
+    select: { id: true },
+  });
+  if (!defaultMerchant && rows.length > 0) {
+    throw new Error("迁移 Master 前必须先存在 active Merchant");
+  }
 
   // Master 没有 schema 级别的 unique — 用 (name, phone) 组合做幂等键
   for (const row of rows) {
@@ -190,6 +198,7 @@ async function migrateMaster(
           completedJobs: row.completedJobs,
           status: row.status,
           serviceArea: row.serviceArea,
+          merchantId: defaultMerchant!.id,
           createdAt: new Date(row.createdAt),
         },
       });

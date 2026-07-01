@@ -112,6 +112,7 @@ export default async function MastersPage({ searchParams }: PageProps) {
                   <th style={th}>技能</th>
                   <th style={th}>评分</th>
                   <th style={th}>是否可接单</th>
+                  <th style={th}>所属商家</th>
                   <th style={th}>服务区域</th>
                   <th style={th}>操作</th>
                 </tr>
@@ -146,6 +147,9 @@ export default async function MastersPage({ searchParams }: PageProps) {
                         >
                           {STATUS_LABEL[m.status] ?? m.status}
                         </span>
+                      </td>
+                      <td style={td}>
+                        {m.merchantName ?? m.merchantId ?? "—"}
                       </td>
                       <td style={td}>
                         {m.serviceArea || (

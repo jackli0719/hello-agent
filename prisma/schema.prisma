@@ -66,6 +66,10 @@ model Master {
   status        String   @default("available") // available | busy | offline
   // 服务区域 — MVP 阶段存为自由文本（"上海" / "北京, 上海"）
   serviceArea   String   @default("")
+  // [任务 2] 师傅必须归属一个商家 — 平台合作模式必填
+  // # MVP: 必填；演示期不允许师傅独立运营
+  merchantId    String
+  merchant      Merchant @relation(fields: [merchantId], references: [id])
   createdAt     DateTime @default(now())
 
   orders Order[]
@@ -73,6 +77,7 @@ model Master {
   user   User?
 
   @@index([status])
+  @@index([merchantId])
 }
 
 // ============================================================
@@ -181,6 +186,9 @@ model PlatformArea {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // [任务 2] 反向关系：被哪些商家绑定
+  merchantAreas MerchantArea[]
+
   @@unique([province, city, district, street])
   @@index([enabled])
 }
@@ -204,8 +212,40 @@ model Merchant {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
+  // [任务 2] 商家绑定的区域（多对多）
+  merchantAreas MerchantArea[]
+
+  // [任务 2] 商家拥有的师傅（1 对多）
+  masters       Master[]
+
   @@index([status])
   @@index([province, city, district, street])
+}
+
+// ============================================================
+// 商家合作区域绑定（[任务 2] 商家绑定平台合作区域）
+//
+// 设计要点：
+// - merchantId + platformAreaId 联合唯一（防重复绑定）
+// - enabled=false 时该区域不参与派单（任务 3 实施）
+// - 一个商家可绑定多个 PlatformArea
+// - 一个 PlatformArea 可被多个商家绑定
+// - PlatformArea 必须是 enabled=true 才能被绑定
+// ============================================================
+model MerchantArea {
+  id            String   @id @default(cuid())
+  merchantId    String
+  platformAreaId String
+  enabled       Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @default(now())
+
+  merchant      Merchant     @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  platformArea  PlatformArea @relation(fields: [platformAreaId], references: [id], onDelete: Restrict)
+
+  @@unique([merchantId, platformAreaId])
+  @@index([merchantId])
+  @@index([platformAreaId])
 }
 
 // ============================================================

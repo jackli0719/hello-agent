@@ -59,8 +59,24 @@ async function clearAll() {
   await prisma.activityLog.deleteMany();
   await prisma.order.deleteMany();
   await prisma.dispatchRule.deleteMany();
+  // [任务 2] MerchantArea 依赖 Merchant / PlatformArea，先于它俩删
+  try {
+    await prisma.merchantArea.deleteMany();
+  } catch {
+    // 老 Prisma Client 无 merchantArea — 跳过
+  }
   await prisma.user.deleteMany();
   await prisma.master.deleteMany();
+  try {
+    await prisma.merchant.deleteMany();
+  } catch {
+    // 老 Prisma Client 无 merchant — 跳过
+  }
+  try {
+    await prisma.platformArea.deleteMany();
+  } catch {
+    // 老 Prisma Client 无 platformArea — 跳过
+  }
   await prisma.serviceSku.deleteMany();
   await prisma.serviceCategory.deleteMany();
 }
@@ -73,7 +89,6 @@ const CATEGORIES = [
   { code: "APPLIANCE", name: "家电清洗" },
   { code: "REPAIR", name: "维修" },
 ] as const;
-
 // ============================================================
 // 2. 服务 SKU × 8
 // ============================================================
@@ -153,7 +168,101 @@ const SKUS = [
 ] as const;
 
 // ============================================================
-// 3. 师傅 × 4
+// 2.5 平台合作区域 × 4（[任务 1] 平台确认开放合作的服务区域）
+// ============================================================
+const PLATFORM_AREAS = [
+  {
+    id: "PA001",
+    province: "广东省",
+    city: "深圳市",
+    district: "南山区",
+    street: "粤海街道",
+    enabled: true,
+  },
+  {
+    id: "PA002",
+    province: "广东省",
+    city: "深圳市",
+    district: "福田区",
+    street: "华强北街道",
+    enabled: true,
+  },
+  {
+    id: "PA003",
+    province: "广东省",
+    city: "广州市",
+    district: "天河区",
+    street: "石牌街道",
+    enabled: true,
+  },
+  {
+    id: "PA004",
+    province: "广东省",
+    city: "深圳市",
+    district: "宝安区",
+    street: "西乡街道",
+    enabled: true,
+  },
+] as const;
+
+// ============================================================
+// 2.6 服务商 / 商家 × 3（[任务 1] 商家基础资料）
+// ============================================================
+const MERCHANTS = [
+  {
+    id: "M001",
+    name: "深圳南山服务商 A",
+    contactName: "张三",
+    phone: "13900000100",
+    status: "active",
+    province: "广东省",
+    city: "深圳市",
+    district: "南山区",
+    street: "粤海街道",
+    addressDetail: "科技园 1 号楼 5 楼",
+  },
+  {
+    id: "M002",
+    name: "深圳福田服务商 B",
+    contactName: "李四",
+    phone: "13900000200",
+    status: "active",
+    province: "广东省",
+    city: "深圳市",
+    district: "福田区",
+    street: "华强北街道",
+    addressDetail: "华强广场 A 座 12 楼 1203",
+  },
+  {
+    id: "M003",
+    name: "广州天河服务商 C",
+    contactName: "王五",
+    phone: "13900000300",
+    status: "active",
+    province: "广东省",
+    city: "广州市",
+    district: "天河区",
+    street: "石牌街道",
+    addressDetail: "天河路 383 号",
+  },
+] as const;
+
+// ============================================================
+// 2.7 商家合作区域绑定 × 4（[任务 2] 多对多）
+// 覆盖场景：1 商家多区域 / 1 区域多商家
+// 商家 A 绑 1 个、商家 B 绑 2 个、商家 C 绑 1 个
+// 区域 PA001 被 2 个商家绑（验证多对多）
+// ============================================================
+const MERCHANT_AREAS = [
+  { merchantId: "M001", platformAreaId: "PA001", enabled: true },
+  { merchantId: "M002", platformAreaId: "PA001", enabled: true }, // PA001 被多商家
+  { merchantId: "M002", platformAreaId: "PA002", enabled: true }, // 商家 B 绑多区域
+  { merchantId: "M003", platformAreaId: "PA003", enabled: true },
+] as const;
+
+// ============================================================
+// 3. 师傅 × 4（[任务 2] merchantId 必填）
+// T001 绑商家 A, T002 绑商家 B, T003 绑商家 B (同商家多师傅), T004 绑商家 C
 // ============================================================
 const MASTERS = [
   {
@@ -164,6 +273,7 @@ const MASTERS = [
     rating: 4.9,
     completedJobs: 326,
     serviceArea: "上海",
+    merchantId: "M001", // 深圳南山服务商 A
   },
   {
     id: "T002",
@@ -173,6 +283,7 @@ const MASTERS = [
     rating: 4.8,
     completedJobs: 412,
     serviceArea: "上海, 苏州",
+    merchantId: "M002", // 深圳福田服务商 B
   },
   {
     id: "T003",
@@ -182,6 +293,7 @@ const MASTERS = [
     rating: 5.0,
     completedJobs: 89,
     serviceArea: "上海",
+    merchantId: "M002", // 深圳福田服务商 B（同商家多师傅）
   },
   {
     id: "T004",
@@ -191,6 +303,7 @@ const MASTERS = [
     rating: 4.6,
     completedJobs: 207,
     serviceArea: "上海, 北京",
+    merchantId: "M003", // 广州天河服务商 C
   },
 ] as const;
 
@@ -265,7 +378,7 @@ const ORDERS = [
     customerPhone: "13900000001",
     skuCode: "CLEAN-DEEP-3H",
     masterId: null,
-    address: "上海市浦东新区世纪大道 100 号",
+    address: "广东省深圳市南山区粤海街道科技园 100 号",
     scheduledAt: "2026-06-29T10:00:00",
     amount: 268,
     status: "pending",
@@ -276,7 +389,7 @@ const ORDERS = [
     customerPhone: "13900000002",
     skuCode: "APPLIANCE-AC-WALL",
     masterId: null,
-    address: "上海市徐汇区漕溪北路 88 号",
+    address: "广东省深圳市福田区华强北街道华强路 88 号",
     scheduledAt: "2026-06-29T14:00:00",
     amount: 128,
     status: "pending",
@@ -287,7 +400,7 @@ const ORDERS = [
     customerPhone: "13900000003",
     skuCode: "REPAIR-PIPE",
     masterId: null,
-    address: "上海市闵行区莘庄镇 1234 弄",
+    address: "广东省广州市天河区石牌街道天河路 1234 号",
     scheduledAt: "2026-06-29T16:30:00",
     amount: 180,
     status: "pending",
@@ -298,7 +411,7 @@ const ORDERS = [
     customerPhone: "13900000099", // customer1 的手机号 → 演示 customer1 登录能看到
     skuCode: "CLEAN-DAILY-2H",
     masterId: null,
-    address: "上海市浦东新区世纪大道 200 号",
+    address: "广东省深圳市南山区粤海街道科技园 200 号",
     scheduledAt: "2026-06-30T09:00:00",
     amount: 158,
     status: "pending",
@@ -310,7 +423,7 @@ const ORDERS = [
     customerPhone: "13900000004",
     skuCode: "APPLIANCE-AC-CABINET",
     masterId: null,
-    address: "上海市长宁区中山公园路 12 号",
+    address: "广东省深圳市宝安区西乡街道宝源路 12 号",
     scheduledAt: "2026-06-30T11:00:00",
     amount: 168,
     status: "pending",
@@ -321,7 +434,7 @@ const ORDERS = [
     customerPhone: "13900000005",
     skuCode: "REPAIR-APPLIANCE",
     masterId: null,
-    address: "上海市黄浦区南京东路 200 号",
+    address: "广东省深圳市福田区华强北街道振华路 200 号",
     scheduledAt: "2026-06-30T14:00:00",
     amount: 120,
     status: "pending",
@@ -333,7 +446,7 @@ const ORDERS = [
     customerPhone: "13900000006",
     skuCode: "CLEAN-LOCKSMITH",
     masterId: null,
-    address: "上海市徐汇区天钥桥路 333 号",
+    address: "广东省深圳市南山区粤海街道高新南一道 333 号",
     scheduledAt: "2026-06-30T15:00:00",
     amount: 199,
     status: "pending",
@@ -346,7 +459,7 @@ const ORDERS = [
     customerPhone: "13900000007",
     skuCode: "CLEAN-LOCKSMITH",
     masterId: null,
-    address: "上海市虹口区四川北路 1888 号",
+    address: "广东省广州市天河区石牌街道石牌西路 1888 号",
     scheduledAt: "2026-06-30T17:00:00",
     amount: 199,
     status: "pending",
@@ -358,7 +471,7 @@ const ORDERS = [
     customerPhone: "13900000011",
     skuCode: "CLEAN-DAILY-2H",
     masterId: "T001", // 李师傅 — worker1 看得到
-    address: "上海市黄浦区人民广场 1 号",
+    address: "广东省深圳市南山区粤海街道科技园 1 号",
     scheduledAt: "2026-06-28T10:00:00",
     amount: 158,
     status: "assigned",
@@ -370,7 +483,7 @@ const ORDERS = [
     customerPhone: "13900000012",
     skuCode: "APPLIANCE-AC-WALL",
     masterId: "T004", // 孙师傅 — worker4 看得到
-    address: "上海市杨浦区五角场 88 号",
+    address: "广东省广州市天河区石牌街道五山路 88 号",
     scheduledAt: "2026-06-28T14:00:00",
     amount: 128,
     status: "assigned",
@@ -381,7 +494,7 @@ const ORDERS = [
     customerPhone: "13900000013",
     skuCode: "REPAIR-PIPE",
     masterId: "T002", // 赵师傅 — worker2 看得到
-    address: "上海市虹口区四川北路 2000 号",
+    address: "广东省深圳市福田区华强北街道深南中路 2000 号",
     scheduledAt: "2026-06-28T15:30:00",
     amount: 180,
     status: "assigned",
@@ -393,7 +506,7 @@ const ORDERS = [
     customerPhone: "13900000088", // customer2 的手机号
     skuCode: "REPAIR-APPLIANCE",
     masterId: "T003", // 周姐 — worker3 看得到
-    address: "上海市徐汇区肇嘉浜路 1027 号",
+    address: "广东省深圳市福田区华强北街道燕南路 1027 号",
     scheduledAt: "2026-06-28T17:00:00",
     amount: 120,
     status: "assigned",
@@ -406,7 +519,7 @@ const ORDERS = [
     customerPhone: "13900000021",
     skuCode: "CLEAN-DEEP-3H",
     masterId: "T001",
-    address: "上海市浦东新区张江高科园区",
+    address: "广东省深圳市南山区粤海街道张江高科园区",
     scheduledAt: "2026-06-29T09:00:00",
     amount: 268,
     status: "in_service",
@@ -417,7 +530,7 @@ const ORDERS = [
     customerPhone: "13900000022",
     skuCode: "APPLIANCE-AC-WALL",
     masterId: "T004",
-    address: "上海市普陀区长寿路 1000 号",
+    address: "广东省广州市天河区石牌街道长寿路 1000 号",
     scheduledAt: "2026-06-29T11:00:00",
     amount: 128,
     status: "in_service",
@@ -428,7 +541,7 @@ const ORDERS = [
     customerPhone: "13900000023",
     skuCode: "REPAIR-PIPE",
     masterId: "T002",
-    address: "上海市杨浦区控江路 1500 号",
+    address: "广东省深圳市福田区华强北街道控江路 1500 号",
     scheduledAt: "2026-06-29T13:30:00",
     amount: 180,
     status: "in_service",
@@ -439,7 +552,7 @@ const ORDERS = [
     customerPhone: "13900000024",
     skuCode: "REPAIR-APPLIANCE",
     masterId: "T003",
-    address: "上海市静安区南京西路 1601 号",
+    address: "广东省深圳市福田区华强北街道南京西路 1601 号",
     scheduledAt: "2026-06-29T15:00:00",
     amount: 120,
     status: "in_service",
@@ -452,7 +565,7 @@ const ORDERS = [
     customerPhone: "13900000031",
     skuCode: "CLEAN-DEEP-3H",
     masterId: "T001",
-    address: "上海市徐汇区漕溪北路 100 号",
+    address: "广东省深圳市南山区粤海街道漕溪北路 100 号",
     scheduledAt: "2026-06-27T10:00:00",
     amount: 268,
     status: "completed",
@@ -464,7 +577,7 @@ const ORDERS = [
     customerPhone: "13900000032",
     skuCode: "APPLIANCE-AC-WALL",
     masterId: "T004",
-    address: "上海市浦东新区陆家嘴金融区",
+    address: "广东省广州市天河区石牌街道陆家嘴金融区",
     scheduledAt: "2026-06-27T14:00:00",
     amount: 128,
     status: "completed",
@@ -477,7 +590,7 @@ const ORDERS = [
     customerPhone: "13900000033",
     skuCode: "REPAIR-APPLIANCE",
     masterId: "T003",
-    address: "上海市长宁区天山路 888 号",
+    address: "广东省深圳市福田区华强北街道天山路 888 号",
     scheduledAt: "2026-06-26T15:00:00",
     amount: 120,
     status: "completed",
@@ -491,7 +604,7 @@ const ORDERS = [
     customerPhone: "13900000041",
     skuCode: "CLEAN-DAILY-2H",
     masterId: null,
-    address: "上海市虹口区鲁迅公园",
+    address: "广东省深圳市南山区粤海街道鲁迅公园",
     scheduledAt: "2026-06-26T09:00:00",
     amount: 158,
     status: "cancelled",
@@ -532,6 +645,30 @@ async function main() {
   );
 
   // ============================================================
+  // 2.5 PlatformArea × 4（[任务 1]）
+  // ============================================================
+  for (const a of PLATFORM_AREAS) {
+    await prisma.platformArea.create({ data: a });
+  }
+  console.log(`  ✓ PlatformArea × ${PLATFORM_AREAS.length}`);
+
+  // ============================================================
+  // 2.6 Merchant × 3（[任务 1]）
+  // ============================================================
+  for (const m of MERCHANTS) {
+    await prisma.merchant.create({ data: m });
+  }
+  console.log(`  ✓ Merchant × ${MERCHANTS.length}`);
+
+  // ============================================================
+  // 2.7 MerchantArea × 4（[任务 2] 多对多绑定）
+  // ============================================================
+  for (const ma of MERCHANT_AREAS) {
+    await prisma.merchantArea.create({ data: ma });
+  }
+  console.log(`  ✓ MerchantArea × ${MERCHANT_AREAS.length}`);
+
+  // ============================================================
   // 2. ServiceSku × 8
   // ============================================================
   const skuRecords = [];
@@ -569,6 +706,8 @@ async function main() {
         completedJobs: m.completedJobs,
         status: "available", // demo seed 全部 available — 让 dashboard 推荐数对得上
         serviceArea: m.serviceArea,
+        // [任务 2] 师傅必须归属商家 — FK merchantId
+        merchant: { connect: { id: m.merchantId } },
       },
     });
     masterRecords.push(rec);
@@ -855,6 +994,9 @@ async function main() {
   const counts = {
     categories: await prisma.serviceCategory.count(),
     skus: await prisma.serviceSku.count(),
+    platformAreas: await prisma.platformArea.count(), // [任务 1]
+    merchants: await prisma.merchant.count(), // [任务 1]
+    merchantAreas: await prisma.merchantArea.count(), // [任务 2]
     masters: await prisma.master.count(),
     users: await prisma.user.count(),
     orders: await prisma.order.count(),

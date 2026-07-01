@@ -1,8 +1,15 @@
 import Link from "next/link";
 import { NewMasterForm } from "@/components/NewMasterForm";
 import { card } from "@/components/ui";
+import { ensureCsrfCookie } from "@/src/lib/csrf";
+import { listActiveMerchants } from "@/src/lib/masters";
 
-export default function NewMasterPage() {
+export default async function NewMasterPage() {
+  const [csrfToken, merchants] = await Promise.all([
+    ensureCsrfCookie(),
+    listActiveMerchants(),
+  ]);
+
   return (
     <>
       <main
@@ -29,7 +36,15 @@ export default function NewMasterPage() {
         </p>
 
         <section style={{ ...card, maxWidth: 640 }}>
-          <NewMasterForm mode="create" />
+          <NewMasterForm
+            mode="create"
+            csrfToken={csrfToken}
+            merchantOptions={merchants.map((m) => ({
+              id: m.id,
+              name: m.name,
+              status: m.status,
+            }))}
+          />
         </section>
       </main>
     </>

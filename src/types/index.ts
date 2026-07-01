@@ -34,6 +34,8 @@ export interface Technician {
   completedJobs: number;
   status: TechnicianStatus;
   serviceArea: string;
+  merchantId?: string;
+  merchantName?: string;
 }
 
 export interface Service {

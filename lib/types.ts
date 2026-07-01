@@ -31,6 +31,8 @@ export interface Technician {
   completedJobs: number; // 累计完成单数
   status: TechnicianStatus;
   serviceArea: string;
+  merchantId?: string;
+  merchantName?: string;
 }
 
 export interface Service {

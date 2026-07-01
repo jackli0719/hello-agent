@@ -2,8 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { NewMasterForm } from "@/components/NewMasterForm";
 import { card } from "@/components/ui";
+import { ensureCsrfCookie } from "@/src/lib/csrf";
 import { prisma } from "@/src/lib/db";
-import { skillsToString } from "@/src/lib/masters";
+import { listActiveMerchants, skillsToString } from "@/src/lib/masters";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -12,7 +13,11 @@ interface PageProps {
 export default async function EditMasterPage({ params }: PageProps) {
   const { id } = await params;
 
-  const m = await prisma.master.findUnique({ where: { id } });
+  const [m, csrfToken, merchants] = await Promise.all([
+    prisma.master.findUnique({ where: { id } }),
+    ensureCsrfCookie(),
+    listActiveMerchants(),
+  ]);
   if (!m) notFound();
 
   // skills 是 JSON 字符串 → 数组 → 表单用的逗号分隔
@@ -63,7 +68,14 @@ export default async function EditMasterPage({ params }: PageProps) {
               rating: m.rating,
               status: m.status as "available" | "busy" | "offline",
               serviceArea: m.serviceArea,
+              merchantId: m.merchantId,
             }}
+            csrfToken={csrfToken}
+            merchantOptions={merchants.map((merchant) => ({
+              id: merchant.id,
+              name: merchant.name,
+              status: merchant.status,
+            }))}
           />
         </section>
       </main>
