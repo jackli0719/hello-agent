@@ -67,27 +67,31 @@ jobs:
       - name: Apply migrations
         run: npx prisma migrate deploy
 
-      # 2. TypeScript + 路径 lint（快速反馈）
+      # 2. Seed base data（测试依赖基础品类、师傅、订单、规则）
+      - name: Seed database
+        run: npm run db:seed
+
+      # 3. TypeScript + 路径 lint（快速反馈）
       - name: Check (TypeScript + 目录约定)
         run: npm run check
 
-      # 3. ESLint
+      # 4. ESLint
       - name: Lint
         run: npm run lint
 
-      # 4. Prettier 格式检查（不自动修，CI 仅 fail）
+      # 5. Prettier 格式检查（不自动修，CI 仅 fail）
       - name: Format check
         run: npm run format:check
 
-      # 5. 单元 + 端到端测试（连真 Postgres）
+      # 6. 单元 + 端到端测试（连真 Postgres）
       - name: Test
         run: npm run test
 
-      # 6. 生产构建（验证可构建）
+      # 7. 生产构建（验证可构建）
       - name: Build
         run: npm run build
 
-      # 7. 上传 build artifacts
+      # 8. 上传 build artifacts
       - name: Upload .next
         if: success()
         uses: actions/upload-artifact@v4
