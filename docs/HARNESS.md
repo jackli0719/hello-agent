@@ -36,6 +36,20 @@
 | v0.9.6  | 2026-07-01 | `423a822`           | **PR 前权限收口 3/6**：worker 越权收口（masterId 归属校验）               | （本节 v0.9.6 详）                                       |
 | v0.9.7  | 2026-07-01 | `27ea9fe`           | **PR 前权限收口 4/6**：CSRF 全覆盖（Origin 头校验）                       | （本节 v0.9.7 详）                                       |
 | v0.9.8  | 2026-07-01 | `1a730b6`+`25257f7` | **PR 前权限收口 5/6**：补鉴权失败 + csrf origin 测试                      | （本节 v0.9.8 详）                                       |
+| v0.9.9  | 2026-07-02 | (未提交)            | 后台页面鉴权矩阵 + stale session 防回归                                   | （本节 v0.9.9 详）                                       |
+
+---
+
+## [v0.9.9] — 2026-07-02 — 后台页面鉴权矩阵
+
+| 检查点          | 必须动作                                                                                 | 证据文件               |
+| --------------- | ---------------------------------------------------------------------------------------- | ---------------------- |
+| 路由保护矩阵    | `PROTECTED_PATHS` 包含新路径，`ROLE_ALLOWED.admin` 包含新路径                            | `src/lib/auth.ts`      |
+| 权限矩阵测试    | 增加 `isProtectedPath` + `canAccess("admin", path)` 断言                                 | `src/lib/auth.test.ts` |
+| middleware 测试 | 未登录访问新后台路径必须带 `next` 去登录；旧 Fe26 cookie 不能让 `/login` 直跳 dashboard  | `middleware.test.ts`   |
+| 页面守卫        | 后台页面用 `getCurrentUser()` 查真实用户；只有非 admin 才跳 `DEFAULT_LANDING[user.role]` | `app/<page>/page.tsx`  |
+
+关键点：新增后台页不能只加页面和导航，必须同步权限矩阵和测试；middleware 不能只凭 cookie 存在把 `/login` 跳 `/dashboard`，避免 seed / 测试重建 `User` 后旧 cookie 形成假登录。
 
 ---
 

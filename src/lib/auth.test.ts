@@ -27,6 +27,7 @@ describe("isProtectedPath", () => {
     expect(isProtectedPath("/merchant-settlements")).toBe(true);
     expect(isProtectedPath("/dispatch-rules")).toBe(true);
     expect(isProtectedPath("/dispatch-rules/new")).toBe(true);
+    expect(isProtectedPath("/activity-logs")).toBe(true);
     // [账号阶段] 新增的受保护路径
     expect(isProtectedPath("/worker")).toBe(true);
     expect(isProtectedPath("/customer/orders")).toBe(true);
@@ -66,6 +67,7 @@ describe("canAccess", () => {
     ["admin", "/settlements", true],
     ["admin", "/merchant-settlements", true],
     ["admin", "/dispatch-rules", true],
+    ["admin", "/activity-logs", true],
     ["admin", "/worker", false], // 越权
     ["admin", "/customer/orders", false],
     // worker

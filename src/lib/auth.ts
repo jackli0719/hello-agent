@@ -46,6 +46,7 @@ export const PROTECTED_PATHS = [
   "/settlements",
   "/merchant-settlements",
   "/dispatch-rules",
+  "/activity-logs",
   "/admin",
   "/worker",
   "/customer/orders",
@@ -78,6 +79,7 @@ export const ROLE_ALLOWED: Record<Role, string[]> = {
     "/settlements",
     "/merchant-settlements",
     "/dispatch-rules",
+    "/activity-logs",
     "/admin",
   ],
   worker: ["/worker"],
@@ -182,8 +184,8 @@ export async function getCurrentUser(): Promise<AuthenticatedUser | null> {
 }
 
 export async function isAuthenticated(): Promise<boolean> {
-  const session = await getSession();
-  return !!session.userId && !!session.role;
+  const user = await getCurrentUser();
+  return !!user;
 }
 
 // ============================================================

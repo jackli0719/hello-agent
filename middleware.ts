@@ -66,9 +66,9 @@ export function middleware(request: NextRequest) {
 
   // 0. 公开路径 — 放行
   if (PUBLIC_PATHS.includes(pathname)) {
-    if (pathname === "/login" && isLoggedIn) {
-      return NextResponse.redirect(new URL(DEFAULT_LANDING.admin, request.url));
-    }
+    // middleware 无法解密 iron-session / 反查 DB。seed 重建 User 后，浏览器里可能
+    // 还留着旧 Fe26 cookie；如果这里凭 cookie 存在就跳 dashboard，会形成：
+    // 目标页 -> /login -> /dashboard 的假登录跳转。登录页自己处理真实登录态。
     return NextResponse.next();
   }
 
