@@ -177,3 +177,64 @@ export async function listMerchantSettlementsByMerchant(merchantId: string) {
     orderBy: [{ period: "desc" }],
   });
 }
+
+/**
+ * [任务 8] 详情页 helper — 查 merchant + period 内的 SettlementPreview（订单明细）
+ * @param id MerchantSettlement.id
+ */
+export async function getMerchantSettlementDetail(id: string) {
+  const summary = await prisma.merchantSettlement.findUnique({
+    where: { id },
+    include: {
+      merchant: {
+        select: {
+          id: true,
+          name: true,
+          status: true,
+          contactName: true,
+          phone: true,
+          province: true,
+          city: true,
+          district: true,
+          street: true,
+          addressDetail: true,
+          inviteCode: true,
+          inviteCodeEnabled: true,
+        },
+      },
+    },
+  });
+  if (!summary) return null;
+
+  // 查该 (merchant, period) 内的所有 SettlementPreview（订单明细）
+  const periodStart = new Date(`${summary.period}-01T00:00:00`);
+  // period 末 = 下个月 1 号
+  const periodEnd = new Date(periodStart);
+  periodEnd.setMonth(periodEnd.getMonth() + 1);
+
+  const previews = await prisma.settlementPreview.findMany({
+    where: {
+      merchantId: summary.merchantId,
+      createdAt: { gte: periodStart, lt: periodEnd },
+    },
+    include: {
+      order: {
+        select: {
+          id: true,
+          customerName: true,
+          customerPhone: true,
+          serviceName: true,
+          serviceSkuId: true,
+          amount: true,
+          status: true,
+          createdAt: true,
+        },
+      },
+      master: { select: { id: true, name: true, phone: true } },
+      strategy: { select: { id: true, name: true, strategyType: true } },
+    },
+    orderBy: { createdAt: "asc" },
+  });
+
+  return { summary, previews };
+}

@@ -197,21 +197,24 @@ export default async function MerchantSettlementsPage({
               {settlements.map((s) => (
                 <tr key={s.id}>
                   <td style={td}>
-                    <span
+                    <Link
+                      href={`/merchant-settlements/${s.id}`}
                       style={{
                         fontFamily: "monospace",
                         background: "#f3f4f6",
                         padding: "2px 6px",
                         borderRadius: 3,
                         fontSize: 12,
+                        color: "#1f2937",
+                        textDecoration: "none",
                       }}
                     >
                       {s.period}
-                    </span>
+                    </Link>
                   </td>
                   <td style={td}>
                     <Link
-                      href={`/merchants/${s.merchantId}/edit`}
+                      href={`/merchant-settlements/${s.id}`}
                       style={{
                         color: "#2563eb",
                         fontSize: 13,
