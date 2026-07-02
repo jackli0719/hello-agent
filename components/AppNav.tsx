@@ -39,26 +39,28 @@ export function AppNav({
       style={{
         height: 56,
         background: "#fff",
-        borderBottom: "1px solid #e5e7eb",
+        borderBottom: "1px solid #dee2e6",
         display: "flex",
         alignItems: "center",
-        padding: "0 32px",
+        padding: "0 24px",
         gap: 16,
         fontFamily:
           "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif",
         position: "sticky",
         top: 0,
         zIndex: 50,
+        boxShadow: "0 1px 0 rgba(15, 23, 42, 0.04)",
       }}
     >
       <Link
         href="/dashboard"
         style={{
-          fontSize: 16,
+          fontSize: 15,
           fontWeight: 600,
-          color: "#111827",
+          color: "#0f172a",
           textDecoration: "none",
           marginRight: 8,
+          letterSpacing: "0.02em",
         }}
       >
         O2O 管理后台
@@ -72,11 +74,13 @@ export function AppNav({
         style={{
           padding: "6px 14px",
           borderRadius: 6,
-          fontSize: 14,
-          color: isDashboard ? "#2563eb" : "#374151",
-          background: isDashboard ? "#eff6ff" : "transparent",
+          fontSize: 13,
+          color: isDashboard ? "#fff" : "#475569",
+          background: isDashboard ? "#2563eb" : "transparent",
           textDecoration: "none",
-          fontWeight: isDashboard ? 600 : 400,
+          fontWeight: isDashboard ? 600 : 500,
+          letterSpacing: "0.01em",
+          transition: "background 0.15s, color 0.15s",
         }}
       >
         总览
@@ -91,12 +95,26 @@ export function AppNav({
             style={{
               padding: "6px 14px",
               background: "transparent",
-              color: "#b91c1c",
-              border: "1px solid #fca5a5",
+              color: "#64748b",
+              border: "1px solid #cbd5e1",
               borderRadius: 6,
-              fontSize: 13,
+              fontSize: 12,
               fontWeight: 500,
               cursor: "pointer",
+              letterSpacing: "0.01em",
+              transition: "background 0.15s, color 0.15s, border-color 0.15s",
+            }}
+            onMouseEnter={(e) => {
+              const el = e.currentTarget as HTMLButtonElement;
+              el.style.background = "#fef2f2";
+              el.style.color = "#b91c1c";
+              el.style.borderColor = "#fca5a5";
+            }}
+            onMouseLeave={(e) => {
+              const el = e.currentTarget as HTMLButtonElement;
+              el.style.background = "transparent";
+              el.style.color = "#64748b";
+              el.style.borderColor = "#cbd5e1";
             }}
           >
             退出

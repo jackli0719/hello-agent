@@ -11,9 +11,11 @@
 // - 小屏（< 1024px）：自动隐藏，回退到顶部横排由 AppNav 处理
 //
 // 视觉层级：
-// - 父级（组标题）：左侧 8px 蓝条 + 文字 13px 600
-// - 子项：文字 13px 400 + paddingLeft 32px，✓ 时蓝字
-// - 折叠态：只显示图标（emoji 占位）
+// - 父级（组标题）：左侧 3px 蓝条 + 文字 13px 600，hover #f1f3f5，active 浅蓝填充
+// - 子项：文字 13px 500 + paddingLeft 32px，hover #f1f3f5，active 实色 #2563eb 填充 + 白字 + 圆角 6px
+// - 折叠态：只显示图标（emoji 占位），active 实色填充图标
+// - 整体：背景 #f8f9fb（与主体 #f7f8fa 一致），边框 #dee2e6（Notion / Lark 风）
+// - 圆角：父级 0 / 子项 6px / 折叠按钮 6px
 //
 // 决策回报（P2-3）：
 // - 我决定不做什么：不做权限分组（admin 全可见）/ 不做暗黑模式 / 不做 mobile sidebar drawer
@@ -195,8 +197,8 @@ export function Sidebar() {
         height: "calc(100vh - 56px)",
         position: "sticky",
         top: 56,
-        background: "#fff",
-        borderRight: "1px solid #e5e7eb",
+        background: "#f8f9fb",
+        borderRight: "1px solid #dee2e6",
         overflowY: "auto",
         overflowX: "hidden",
         transition: "width 0.18s ease",
@@ -211,25 +213,35 @@ export function Sidebar() {
         title={collapsed ? "展开侧边栏" : "折叠侧边栏"}
         data-testid="sidebar-toggle"
         style={{
-          width: "100%",
-          padding: "10px 0",
+          padding: collapsed ? "12px 0" : "10px 12px",
+          margin: collapsed ? 0 : "8px 8px",
+          width: collapsed ? "100%" : "calc(100% - 16px)",
           background: "transparent",
           border: "none",
-          borderBottom: "1px solid #f3f4f6",
+          borderRadius: 6,
           cursor: "pointer",
           color: "#6b7280",
-          fontSize: 14,
+          fontSize: 12,
           display: "flex",
           alignItems: "center",
-          justifyContent: collapsed ? "center" : "flex-end",
-          paddingRight: collapsed ? 0 : 12,
+          justifyContent: collapsed ? "center" : "flex-start",
+          gap: 6,
+          transition: "background 0.15s",
+        }}
+        onMouseEnter={(e) => {
+          (e.currentTarget as HTMLButtonElement).style.background = "#eef0f3";
+        }}
+        onMouseLeave={(e) => {
+          (e.currentTarget as HTMLButtonElement).style.background =
+            "transparent";
         }}
       >
-        {collapsed ? "»" : "« 折叠"}
+        <span style={{ fontSize: 14 }}>{collapsed ? "»" : "«"}</span>
+        {!collapsed && <span>折叠</span>}
       </button>
 
       {/* 4 组 */}
-      <nav style={{ padding: "8px 0" }}>
+      <nav style={{ padding: "4px 8px" }}>
         {SIDEBAR_GROUPS.map((g) => {
           const isOpen = openGroups.has(g.key) || collapsed; // 折叠态强制展开（否则看不到）
           const isActiveGroup = activeGroup === g.key;
@@ -239,35 +251,46 @@ export function Sidebar() {
               <button
                 type="button"
                 onClick={() => !collapsed && toggleGroup(g.key)}
+                onMouseEnter={(e) => {
+                  if (!isActiveGroup)
+                    (e.currentTarget as HTMLButtonElement).style.background =
+                      "#f1f3f5";
+                }}
+                onMouseLeave={(e) => {
+                  if (!isActiveGroup)
+                    (e.currentTarget as HTMLButtonElement).style.background =
+                      "transparent";
+                }}
                 data-testid={`group-${g.key}`}
                 data-active={isActiveGroup ? "1" : "0"}
                 title={collapsed ? g.label : undefined}
                 style={{
                   width: "100%",
-                  padding: collapsed ? "8px 0" : "8px 12px",
-                  background: isActiveGroup ? "#eff6ff" : "transparent",
+                  padding: collapsed ? "8px 0" : "9px 12px",
+                  margin: collapsed ? 0 : "2px 0",
+                  background: isActiveGroup ? "#e7f1ff" : "transparent",
                   border: "none",
-                  borderLeft: isActiveGroup
-                    ? "3px solid #2563eb"
-                    : "3px solid transparent",
+                  borderRadius: 6,
                   cursor: collapsed ? "default" : "pointer",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: collapsed ? "center" : "flex-start",
-                  gap: 8,
+                  gap: 10,
                   fontSize: 13,
                   fontWeight: isActiveGroup ? 600 : 500,
-                  color: isActiveGroup ? "#1e40af" : "#374151",
+                  color: isActiveGroup ? "#1e40af" : "#1f2937",
+                  letterSpacing: "0.01em",
+                  transition: "background 0.15s",
                 }}
               >
-                <span style={{ fontSize: 16 }}>{g.icon}</span>
+                <span style={{ fontSize: 15, lineHeight: 1 }}>{g.icon}</span>
                 {!collapsed && <span>{g.label}</span>}
                 {!collapsed && (
                   <span
                     style={{
                       marginLeft: "auto",
-                      fontSize: 11,
-                      color: "#9ca3af",
+                      fontSize: 9,
+                      color: isActiveGroup ? "#1e40af" : "#9ca3af",
                       transform: isOpen ? "rotate(90deg)" : "rotate(0deg)",
                       transition: "transform 0.15s",
                     }}
@@ -289,54 +312,61 @@ export function Sidebar() {
                   {g.items.map((it) => {
                     const active = isItemActive(pathname, it.href);
                     return (
-                      <li key={it.key}>
+                      <li key={it.key} style={{ padding: "1px 0" }}>
                         <Link
                           href={it.href}
                           data-testid={`item-${it.key}`}
                           data-active={active ? "1" : "0"}
                           title={collapsed ? it.label : undefined}
+                          onMouseEnter={(e) => {
+                            if (!active)
+                              (
+                                e.currentTarget as HTMLAnchorElement
+                              ).style.background = "#f1f3f5";
+                          }}
+                          onMouseLeave={(e) => {
+                            if (!active)
+                              (
+                                e.currentTarget as HTMLAnchorElement
+                              ).style.background = "transparent";
+                          }}
                           style={{
                             display: "flex",
                             alignItems: "center",
-                            gap: 8,
-                            padding: collapsed ? "8px 0" : "7px 12px 7px 32px",
+                            gap: 10,
+                            padding: collapsed ? "8px 0" : "7px 12px 7px 36px",
                             justifyContent: collapsed ? "center" : "flex-start",
-                            background: active ? "#eff6ff" : "transparent",
-                            color: active ? "#2563eb" : "#4b5563",
+                            margin: collapsed ? 0 : "1px 0",
+                            background: active ? "#2563eb" : "transparent",
+                            color: active ? "#fff" : "#4b5563",
                             fontSize: 13,
-                            fontWeight: active ? 600 : 400,
+                            fontWeight: active ? 600 : 500,
                             textDecoration: "none",
-                            borderLeft: active
-                              ? "3px solid #2563eb"
-                              : "3px solid transparent",
+                            borderRadius: 6,
+                            letterSpacing: "0.01em",
+                            transition: "background 0.15s, color 0.15s",
                           }}
                         >
                           {collapsed ? (
-                            <span style={{ fontSize: 16 }}>{it.icon}</span>
+                            <span style={{ fontSize: 15, lineHeight: 1 }}>
+                              {it.icon}
+                            </span>
                           ) : (
                             <>
+                              <span style={{ fontSize: 15, lineHeight: 1 }}>
+                                {it.icon}
+                              </span>
+                              <span style={{ flex: 1 }}>{it.label}</span>
                               {active && (
                                 <span
                                   style={{
-                                    color: "#2563eb",
-                                    fontWeight: 700,
-                                    fontSize: 11,
+                                    fontSize: 10,
+                                    opacity: 0.9,
                                   }}
                                 >
                                   ✓
                                 </span>
                               )}
-                              {!active && (
-                                <span
-                                  style={{
-                                    color: "transparent",
-                                    fontSize: 11,
-                                  }}
-                                >
-                                  ·
-                                </span>
-                              )}
-                              <span>{it.label}</span>
                             </>
                           )}
                         </Link>

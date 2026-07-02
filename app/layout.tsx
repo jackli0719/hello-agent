@@ -40,10 +40,11 @@ export default async function RootLayout({
           style={{
             textAlign: "center",
             padding: "12px 16px",
-            color: "#9ca3af",
+            color: "#94a3b8",
             fontSize: 11,
-            borderTop: "1px solid #e5e7eb",
+            borderTop: "1px solid #dee2e6",
             background: "#fff",
+            letterSpacing: "0.02em",
           }}
         >
           🎬 第一版 MVP 演示版 · 本地 SQLite · 生产需迁移 PostgreSQL
