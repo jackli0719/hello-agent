@@ -173,6 +173,23 @@ export default async function MerchantSettlementDetailPage({
             归档后只读
           </span>
         )}
+        {/* [任务 11] 导出本条 CSV — 仅 confirmed/archived 可导（pending 不导） */}
+        {(summary.status === "confirmed" || summary.status === "archived") && (
+          <a
+            href={`/api/merchant-settlements/export?scope=one&id=${summary.id}`}
+            style={{
+              padding: "8px 18px",
+              background: "#7c3aed",
+              color: "#fff",
+              borderRadius: 6,
+              fontSize: 14,
+              fontWeight: 500,
+              textDecoration: "none",
+            }}
+          >
+            导出本条 CSV
+          </a>
+        )}
       </div>
 
       {/* 1. 商家信息 */}

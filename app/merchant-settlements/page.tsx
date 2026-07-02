@@ -115,6 +115,21 @@ export default async function MerchantSettlementsPage({
             生成汇总（从 SettlementPreview 聚合）
           </button>
         </form>
+        {/* [任务 11] 导出全部已确认/已归档结算 CSV — GET 触发下载 */}
+        <a
+          href="/api/merchant-settlements/export?scope=all"
+          style={{
+            padding: "8px 18px",
+            background: "#7c3aed",
+            color: "#fff",
+            borderRadius: 6,
+            fontSize: 14,
+            fontWeight: 500,
+            textDecoration: "none",
+          }}
+        >
+          导出 CSV（已确认 + 已归档）
+        </a>
       </div>
       <p style={{ color: "#6b7280", margin: "0 0 12px 0", fontSize: 14 }}>
         共 {settlements.length} 条记录 · {periodTotals.size} 个期间
