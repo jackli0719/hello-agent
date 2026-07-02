@@ -20,6 +20,7 @@ type AppPage =
   | "merchant-settlements"
   | "payout-records"
   | "withdraw-requests"
+  | "finance-ledgers"
   | "dispatch-rules"
   | "metrics"
   | "activity-logs";
@@ -44,6 +45,7 @@ const ITEMS: { key: AppPage; label: string; href: string }[] = [
   }, // [任务 7]
   { key: "payout-records", label: "打款记录", href: "/payout-records" }, // [任务 12]
   { key: "withdraw-requests", label: "提现申请", href: "/withdraw-requests" }, // [任务 13]
+  { key: "finance-ledgers", label: "财务流水", href: "/finance-ledgers" }, // [任务 14]
   { key: "dispatch-rules", label: "派单规则", href: "/dispatch-rules" },
   { key: "activity-logs", label: "操作日志", href: "/activity-logs" }, // [v0.8.0]
   { key: "metrics", label: "业务指标", href: "/admin/metrics" },
@@ -62,6 +64,7 @@ function detectCurrent(pathname: string): AppPage | undefined {
   if (pathname.startsWith("/merchant-settlements"))
     return "merchant-settlements";
   if (pathname.startsWith("/withdraw-requests")) return "withdraw-requests";
+  if (pathname.startsWith("/finance-ledgers")) return "finance-ledgers";
   if (pathname.startsWith("/dispatch-rules")) return "dispatch-rules";
   if (pathname.startsWith("/activity-logs")) return "activity-logs";
   if (pathname.startsWith("/admin")) return "metrics";

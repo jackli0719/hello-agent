@@ -47,4 +47,13 @@ describe("middleware", () => {
     expect(location).toContain("/login");
     expect(location).toContain("next=%2Fwithdraw-requests");
   });
+
+  // # spec: [任务 14] /finance-ledgers 受保护，未登录跳登录页
+  it("未登录访问 /finance-ledgers → /login?next=%2Ffinance-ledgers", () => {
+    const res = middleware(request("/finance-ledgers"));
+    expect(res.status).toBe(307);
+    const location = res.headers.get("location") ?? "";
+    expect(location).toContain("/login");
+    expect(location).toContain("next=%2Ffinance-ledgers");
+  });
 });

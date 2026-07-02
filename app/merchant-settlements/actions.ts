@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createActivityLog } from "@/src/lib/activity-log";
 import { requireAdmin, requireCsrf } from "@/src/lib/auth-helpers";
+import { prisma } from "@/src/lib/db";
+import { recordOrderCommission, recordPayout } from "@/src/lib/finance-ledger";
 import {
   archiveMerchantSettlement,
   confirmMerchantSettlement,
@@ -95,6 +97,25 @@ export async function confirmMerchantSettlementAction(formData: FormData) {
     redirect(`${back}?error=${encodeURIComponent(r.error)}`);
   }
 
+  // [任务 14] 事件触发：settlement.confirmed → 记 order_commission 流水
+  // 只在「状态变更时」记账（幂等 — 已 confirmed 不会再 confirm，所以 ok 即可）
+  try {
+    const settlement = await prisma.merchantSettlement.findUnique({
+      where: { id },
+      select: { id: true, merchantId: true, merchantIncome: true },
+    });
+    if (settlement && settlement.merchantIncome > 0) {
+      await recordOrderCommission({
+        settlementId: settlement.id,
+        merchantId: settlement.merchantId,
+        merchantIncomeCents: settlement.merchantIncome,
+        remark: `结算汇总结算 ${settlement.id.slice(0, 12)}`,
+      });
+    }
+  } catch {
+    // 写 ledger 失败不阻塞主流程（但会在 /admin/metrics 显示 ledger 数量偏少）
+  }
+
   try {
     await createActivityLog({
       action: "merchant_settlement_confirmed",
@@ -109,6 +130,7 @@ export async function confirmMerchantSettlementAction(formData: FormData) {
 
   revalidatePath("/merchant-settlements");
   revalidatePath(back);
+  revalidatePath("/finance-ledgers");
   redirect(back);
 }
 
@@ -159,6 +181,18 @@ export async function createPayoutAction(formData: FormData) {
     redirect(`${back}?error=${encodeURIComponent(r.error)}`);
   }
 
+  // [任务 14] 事件触发：payout.created → 记 payout 流水
+  try {
+    await recordPayout({
+      payoutRecordId: r.id,
+      merchantId: r.merchantId,
+      amountCents: amountCents,
+      remark: `线下打款 ${r.id.slice(0, 12)}`,
+    });
+  } catch {
+    // 写 ledger 失败不阻塞
+  }
+
   try {
     await createActivityLog({
       action: "payout_record_created",
@@ -182,5 +216,6 @@ export async function createPayoutAction(formData: FormData) {
 
   revalidatePath(back);
   revalidatePath("/payout-records");
+  revalidatePath("/finance-ledgers");
   redirect(`${back}?payout=${r.id}`);
 }

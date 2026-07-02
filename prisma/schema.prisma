@@ -256,6 +256,9 @@ model Merchant {
   // [任务 13] 提现申请（1 对多 — 同一商家多次申请）
   withdrawRequests WithdrawRequest[]
 
+  // [任务 14] 财务流水（1 对多 — 商家维度账）
+  financeLedgers FinanceLedger[]
+
   @@index([status])
   @@index([province, city, district, street])
 }
@@ -469,6 +472,46 @@ model WithdrawRequest {
 
   @@index([merchantId])
   @@index([status])
+  @@index([createdAt])
+}
+
+// ============================================================
+// [任务 14] 财务流水（FinanceLedger）
+//
+// 设计要点：
+// - 商家维度账（merchantId 必填）
+// - type: order_commission（订单分成）/ withdraw（提现）/ payout（打款）
+// - direction: 'out'（平台减项）— MVP 简化，所有流水都是 out
+// - sourceId: 关联业务对象的 id（MerchantSettlement.id / WithdrawRequest.id / PayoutRecord.id）
+// - 幂等约束：@@unique([type, sourceId]) — 同 type 同 sourceId 只能记 1 笔
+// - 触发：
+//   - order_commission: settlement.confirmed 时记录（按 settlement.merchantIncome）
+//   - withdraw: WithdrawRequest.approved 时记录（按 withdraw.amount）
+//   - payout: PayoutRecord.create 时记录（按 payout.amount）
+// - amount: Decimal(12,2) — PG 原生支持；SQLite 演示期不写
+// - 只记账，不接银行
+// ============================================================
+model FinanceLedger {
+  id        String   @id @default(cuid())
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  // 类型
+  type      String   // order_commission | withdraw | payout
+  // 方向 — MVP 全部 'out'
+  direction String   @default("out") // out
+  // 关联业务对象 id（settlement / withdrawRequest / payoutRecord）
+  sourceId  String
+  // 关联订单 id（仅 order_commission 才有；其他 NULL）
+  orderId   String?
+  // 金额（Decimal(12,2) — 元；PG 原生）
+  amount    Decimal  @db.Decimal(12, 2)
+  // 备注
+  remark    String?
+  createdAt DateTime @default(now())
+
+  @@unique([type, sourceId])
+  @@index([merchantId])
+  @@index([type])
   @@index([createdAt])
 }
 

@@ -19,7 +19,7 @@
 //   2. DATABASE_URL 指向非本地 DB（postgres:// 不含 localhost/127.0.0.1）
 // 显式覆盖：设置 ALLOW_DEMO_SEED=1 可绕过保护（测试用）
 
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
@@ -69,6 +69,12 @@ async function clearAll() {
     await prisma.withdrawRequest.deleteMany();
   } catch {
     // 老 Prisma Client 无 withdrawRequest — 跳过
+  }
+  try {
+    // [任务 14] FinanceLedger 依赖 Merchant，先删
+    await prisma.financeLedger.deleteMany();
+  } catch {
+    // 老 Prisma Client 无 financeLedger — 跳过
   }
   try {
     await prisma.merchantSettlement.deleteMany();
@@ -1251,6 +1257,69 @@ async function main() {
   );
 
   // ============================================================
+  // 7.5. [任务 14] 财务流水 — 按已存在业务事件自动生成
+  // - order_commission: 所有 confirmed/archived MerchantSettlement
+  // - withdraw: 所有 approved WithdrawRequest
+  // - payout: 所有 PayoutRecord
+  // ============================================================
+  const allConfirmedSettlements = await prisma.merchantSettlement.findMany({
+    where: { status: { in: ["confirmed", "archived"] } },
+  });
+  let ledgerCount = 0;
+  for (const s of allConfirmedSettlements) {
+    if (s.merchantIncome <= 0) continue;
+    const yuan = (s.merchantIncome / 100).toFixed(2);
+    await prisma.financeLedger.create({
+      data: {
+        merchantId: s.merchantId,
+        type: "order_commission",
+        direction: "out",
+        sourceId: s.id,
+        amount: yuan as unknown as Prisma.Decimal,
+        remark: `结算汇总结算 ${s.period}`,
+      },
+    });
+    ledgerCount++;
+  }
+
+  const approvedWithdraws = await prisma.withdrawRequest.findMany({
+    where: { status: "approved" },
+  });
+  for (const w of approvedWithdraws) {
+    if (w.amount <= 0) continue;
+    const yuan = (w.amount / 100).toFixed(2);
+    await prisma.financeLedger.create({
+      data: {
+        merchantId: w.merchantId,
+        type: "withdraw",
+        direction: "out",
+        sourceId: w.id,
+        amount: yuan as unknown as Prisma.Decimal,
+        remark: `提现申请 ${w.id.slice(0, 12)}`,
+      },
+    });
+    ledgerCount++;
+  }
+
+  const allPayouts = await prisma.payoutRecord.findMany();
+  for (const p of allPayouts) {
+    if (p.amount <= 0) continue;
+    const yuan = (p.amount / 100).toFixed(2);
+    await prisma.financeLedger.create({
+      data: {
+        merchantId: p.merchantId,
+        type: "payout",
+        direction: "out",
+        sourceId: p.id,
+        amount: yuan as unknown as Prisma.Decimal,
+        remark: `线下打款 ${p.id.slice(0, 12)}`,
+      },
+    });
+    ledgerCount++;
+  }
+  console.log(`  ✓ FinanceLedger × ${ledgerCount}（事件触发自动记账）`);
+
+  // ============================================================
   // 8. 校验
   // ============================================================
   const counts = {
@@ -1266,6 +1335,9 @@ async function main() {
     commissionStrategies: await prisma.commissionStrategy.count(), // [任务 5]
     settlementPreviews: await prisma.settlementPreview.count(), // [任务 6]
     merchantSettlements: await prisma.merchantSettlement.count(), // [任务 7]
+    payoutRecords: await prisma.payoutRecord.count(), // [任务 12]
+    withdrawRequests: await prisma.withdrawRequest.count(), // [任务 13]
+    financeLedgers: await prisma.financeLedger.count(), // [任务 14]
     activityLogs: await prisma.activityLog.count(),
   };
   console.log("📊 当前数据：", counts);

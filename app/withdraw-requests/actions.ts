@@ -11,6 +11,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createActivityLog } from "@/src/lib/activity-log";
 import { requireAdmin, requireCsrf } from "@/src/lib/auth-helpers";
+import { prisma } from "@/src/lib/db";
+import { recordWithdraw } from "@/src/lib/finance-ledger";
 import {
   approveWithdrawRequest,
   createWithdrawRequest,
@@ -101,6 +103,24 @@ export async function approveWithdrawRequestAction(formData: FormData) {
     redirect(`${back}?error=${encodeURIComponent(r.error)}`);
   }
 
+  // [任务 14] 事件触发：withdraw.approved → 记 withdraw 流水
+  try {
+    const wr = await prisma.withdrawRequest.findUnique({
+      where: { id },
+      select: { id: true, merchantId: true, amount: true },
+    });
+    if (wr && wr.amount > 0) {
+      await recordWithdraw({
+        withdrawRequestId: wr.id,
+        merchantId: wr.merchantId,
+        amountCents: wr.amount,
+        remark: `提现申请 ${wr.id.slice(0, 12)}`,
+      });
+    }
+  } catch {
+    // 写 ledger 失败不阻塞
+  }
+
   try {
     await createActivityLog({
       action: "withdraw_request_approved",
@@ -117,6 +137,7 @@ export async function approveWithdrawRequestAction(formData: FormData) {
   }
 
   revalidatePath(BACK);
+  revalidatePath("/finance-ledgers");
   redirect(back);
 }
 
