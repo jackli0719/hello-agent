@@ -15,6 +15,7 @@ type AppPage =
   | "masters"
   | "platform-areas"
   | "merchants"
+  | "commission-strategies"
   | "dispatch-rules"
   | "metrics"
   | "activity-logs";
@@ -26,6 +27,11 @@ const ITEMS: { key: AppPage; label: string; href: string }[] = [
   { key: "masters", label: "师傅管理", href: "/masters" },
   { key: "platform-areas", label: "平台合作区域", href: "/platform-areas" },
   { key: "merchants", label: "商家管理", href: "/merchants" },
+  {
+    key: "commission-strategies",
+    label: "分成策略",
+    href: "/commission-strategies",
+  }, // [任务 5]
   { key: "dispatch-rules", label: "派单规则", href: "/dispatch-rules" },
   { key: "activity-logs", label: "操作日志", href: "/activity-logs" }, // [v0.8.0]
   { key: "metrics", label: "业务指标", href: "/admin/metrics" },
@@ -38,6 +44,8 @@ function detectCurrent(pathname: string): AppPage | undefined {
   if (pathname.startsWith("/masters")) return "masters";
   if (pathname.startsWith("/platform-areas")) return "platform-areas";
   if (pathname.startsWith("/merchants")) return "merchants";
+  if (pathname.startsWith("/commission-strategies"))
+    return "commission-strategies";
   if (pathname.startsWith("/dispatch-rules")) return "dispatch-rules";
   if (pathname.startsWith("/activity-logs")) return "activity-logs";
   if (pathname.startsWith("/admin")) return "metrics";

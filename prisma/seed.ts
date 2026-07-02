@@ -168,6 +168,27 @@ async function main() {
   if (!defaultMerchant) throw new Error("缺少可绑定师傅的 active 商家");
   console.log(`  ✓ Merchant × ${MERCHANTS.length}`);
 
+  // [任务 5] 分成策略 — 每个 active 商家至少 1 条（10/20/70）
+  const activeMerchants = await prisma.merchant.findMany({
+    where: { status: "active" },
+    select: { id: true, name: true },
+  });
+  const strategyCount = activeMerchants.length;
+  for (const m of activeMerchants) {
+    await prisma.commissionStrategy.create({
+      data: {
+        merchantId: m.id,
+        name: "默认策略",
+        strategyType: "percentage",
+        platformRate: 0.1,
+        merchantRate: 0.2,
+        workerRate: 0.7,
+        enabled: true,
+      },
+    });
+  }
+  console.log(`  ✓ CommissionStrategy × ${strategyCount}`);
+
   const activeAreas = await prisma.platformArea.findMany({
     where: { enabled: true },
     select: { id: true },

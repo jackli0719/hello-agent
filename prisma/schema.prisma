@@ -236,6 +236,9 @@ model Merchant {
   // [任务 2] 商家拥有的师傅（1 对多）
   masters       Master[]
 
+  // [任务 5] 商家分成策略（1 对多）
+  commissionStrategies CommissionStrategy[]
+
   @@index([status])
   @@index([province, city, district, street])
 }
@@ -264,6 +267,38 @@ model MerchantArea {
   @@unique([merchantId, platformAreaId])
   @@index([merchantId])
   @@index([platformAreaId])
+}
+
+// ============================================================
+// [任务 5] 分成策略（CommissionStrategy）
+//
+// - 归属 Merchant（多对一）
+// - strategyType=percentage：platformRate + merchantRate + workerRate 必须 = 1，每个 0-1
+// - strategyType=fixed：3 个 fixed 金额都必须 >= 0
+// - enabled 默认 true
+// - 一个商家可有多条策略
+// - 不做支付/提现/结算，只做配置
+// ============================================================
+model CommissionStrategy {
+  id        String   @id @default(cuid())
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  name       String   // 策略名（如 "默认策略" "保洁专项"）
+  strategyType String  // percentage | fixed
+  // percentage 模式
+  platformRate  Float  @default(0)
+  merchantRate  Float  @default(0)
+  workerRate    Float  @default(0)
+  // fixed 模式（单位：分）
+  fixedPlatformAmount Int @default(0)
+  fixedMerchantAmount Int @default(0)
+  fixedWorkerAmount   Int @default(0)
+  enabled Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([merchantId])
+  @@index([enabled])
 }
 
 // ============================================================

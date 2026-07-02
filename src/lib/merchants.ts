@@ -109,7 +109,11 @@ export async function listMerchants() {
   return prisma.merchant.findMany({
     include: {
       _count: {
-        select: { merchantAreas: true, masters: true },
+        select: {
+          merchantAreas: true,
+          masters: true,
+          commissionStrategies: true,
+        },
       },
     },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],

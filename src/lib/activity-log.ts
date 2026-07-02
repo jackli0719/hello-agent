@@ -20,7 +20,8 @@ export type ActivityTargetType =
   | "dispatchRule"
   | "platformArea"
   | "merchant"
-  | "merchantArea";
+  | "merchantArea"
+  | "commissionStrategy"; // [任务 5] 分成策略
 
 export interface CreateActivityLogInput {
   action: string;

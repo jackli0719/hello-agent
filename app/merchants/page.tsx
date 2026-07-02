@@ -94,6 +94,7 @@ export default async function MerchantsPage({ searchParams }: PageProps) {
                 <th style={th}>街道</th>
                 <th style={th}>绑定区域</th>
                 <th style={th}>旗下师傅</th>
+                <th style={th}>分成策略</th> {/* [任务 5] */}
                 <th style={th}>详细地址</th>
                 <th style={th}>创建时间</th>
                 <th style={th}>操作</th>
@@ -134,6 +135,10 @@ export default async function MerchantsPage({ searchParams }: PageProps) {
                   <td style={td}>{merchant.street}</td>
                   <td style={td}>{merchant._count.merchantAreas}</td>
                   <td style={td}>{merchant._count.masters}</td>
+                  <td style={td}>
+                    {merchant._count.commissionStrategies}
+                  </td>{" "}
+                  {/* [任务 5] */}
                   <td style={{ ...td, maxWidth: 180 }}>
                     {merchant.addressDetail || "—"}
                   </td>

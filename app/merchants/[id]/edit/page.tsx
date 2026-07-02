@@ -13,6 +13,7 @@ import {
   listMerchantAreas,
 } from "@/src/lib/merchants";
 import { ensureCsrfCookie } from "@/src/lib/csrf";
+import { listCommissionStrategies } from "@/src/lib/commission";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -73,11 +74,13 @@ export default async function EditMerchantPage({
     searchParams,
     ensureCsrfCookie(),
   ]);
-  const [merchant, merchantAreas, availableAreas] = await Promise.all([
-    getMerchant(id),
-    listMerchantAreas(id),
-    listAvailablePlatformAreas(id),
-  ]);
+  const [merchant, merchantAreas, availableAreas, commissionStrategies] =
+    await Promise.all([
+      getMerchant(id),
+      listMerchantAreas(id),
+      listAvailablePlatformAreas(id),
+      listCommissionStrategies(id),
+    ]);
   if (!merchant) notFound();
 
   return (
@@ -402,6 +405,84 @@ export default async function EditMerchantPage({
                   </td>
                 </tr>
               ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+
+      {/* [任务 5] 分成策略模块 */}
+      <section style={{ ...card, maxWidth: 920, marginTop: 24 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 14,
+          }}
+        >
+          <h2 style={{ fontSize: 18, margin: 0 }}>分成策略</h2>
+          <Link
+            href={`/commission-strategies/new?merchantId=${merchant.id}`}
+            style={{
+              padding: "6px 14px",
+              background: "#2563eb",
+              color: "#fff",
+              borderRadius: 6,
+              fontSize: 13,
+              fontWeight: 500,
+              textDecoration: "none",
+            }}
+          >
+            + 新增策略
+          </Link>
+        </div>
+        {commissionStrategies.length === 0 ? (
+          <div style={{ color: "#9ca3af", fontSize: 14 }}>暂无分成策略</div>
+        ) : (
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                <th style={th}>策略名</th>
+                <th style={th}>类型</th>
+                <th style={th}>规则</th>
+                <th style={th}>状态</th>
+                <th style={th}>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {commissionStrategies.map((s) => {
+                const rule =
+                  s.strategyType === "percentage"
+                    ? `平台 ${(s.platformRate * 100).toFixed(0)}% / 商家 ${(s.merchantRate * 100).toFixed(0)}% / 师傅 ${(s.workerRate * 100).toFixed(0)}%`
+                    : `平台 ¥${(s.fixedPlatformAmount / 100).toFixed(2)} / 商家 ¥${(s.fixedMerchantAmount / 100).toFixed(2)} / 师傅 ¥${(s.fixedWorkerAmount / 100).toFixed(2)}`;
+                return (
+                  <tr key={s.id}>
+                    <td style={td}>{s.name}</td>
+                    <td style={td}>
+                      {s.strategyType === "percentage" ? "按比例" : "固定金额"}
+                    </td>
+                    <td style={{ ...td, fontSize: 12 }}>{rule}</td>
+                    <td style={td}>
+                      <StatusBadge
+                        label={s.enabled ? "启用" : "停用"}
+                        tone={s.enabled ? "green" : "gray"}
+                      />
+                    </td>
+                    <td style={td}>
+                      <Link
+                        href={`/commission-strategies/${s.id}/edit`}
+                        style={{
+                          color: "#2563eb",
+                          fontSize: 13,
+                          textDecoration: "none",
+                        }}
+                      >
+                        编辑
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}

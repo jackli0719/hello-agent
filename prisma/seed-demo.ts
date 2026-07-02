@@ -753,6 +753,31 @@ async function main() {
   );
 
   // ============================================================
+  // 4.6. [任务 5] 分成策略 — 每个商家 1 条
+  // ============================================================
+  for (const m of MERCHANTS) {
+    // M001 10/20/70, M002 5/15/80, M003 8/18/74（之和都 = 1）
+    const rates: Record<string, [number, number, number]> = {
+      M001: [0.1, 0.2, 0.7],
+      M002: [0.05, 0.15, 0.8],
+      M003: [0.08, 0.18, 0.74],
+    };
+    const [p, mc, w] = rates[m.id] ?? [0.1, 0.2, 0.7];
+    await prisma.commissionStrategy.create({
+      data: {
+        merchantId: m.id,
+        name: "默认策略",
+        strategyType: "percentage",
+        platformRate: p,
+        merchantRate: mc,
+        workerRate: w,
+        enabled: true,
+      },
+    });
+  }
+  console.log(`  ✓ CommissionStrategy × ${MERCHANTS.length}`);
+
+  // ============================================================
   // 5. Order × 20
   // ============================================================
   for (const o of ORDERS) {
@@ -1021,6 +1046,7 @@ async function main() {
     users: await prisma.user.count(),
     orders: await prisma.order.count(),
     rules: await prisma.dispatchRule.count(),
+    commissionStrategies: await prisma.commissionStrategy.count(), // [任务 5]
     activityLogs: await prisma.activityLog.count(),
   };
   console.log("📊 当前数据：", counts);
@@ -1042,7 +1068,9 @@ async function main() {
     counts.masters !== 5 ||
     counts.users !== 7 ||
     counts.orders !== 20 ||
-    counts.rules !== 8
+    counts.rules !== 8 ||
+    // [任务 5] 3 个分成策略（每个商家 1 条）
+    counts.commissionStrategies !== 3
   ) {
     throw new Error(
       `seed:demo 后行数对不上（期望 categories=3 / skus=8 / masters=5 / users=7 / orders=20 / rules=8）`,
