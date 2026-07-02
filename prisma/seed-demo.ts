@@ -3,10 +3,11 @@
 // 跟 prisma/seed.ts（基础种子）平行存在，互不影响。
 // 业务规则要求：覆盖三端完整演示链路
 // - 1 admin + 2 customer + 4 worker
-// - 4 师傅资料
+// - 5 师傅资料（含 1 个邀请码入驻样本）
 // - 3 服务品类 + 8 服务 SKU
-// - 20 订单覆盖 5 状态
+// - 20 订单覆盖 5 状态，全部写入四级地址字段
 // - 8 派单规则覆盖 SKU 精确 + 品类兜底 + 暂无推荐
+// - 结算预览 + 商家结算汇总演示数据
 // - 若干 Activity Log
 //
 // 用法：npm run seed:demo
@@ -284,8 +285,120 @@ const MERCHANT_AREAS = [
   { merchantId: "M003", platformAreaId: "PA003", enabled: true },
 ] as const;
 
+function parseSeedAddress(address: string) {
+  const candidates = PLATFORM_AREAS.map((area) => {
+    const prefix = `${area.province}${area.city}${area.district}${area.street}`;
+    return { area, prefix };
+  });
+  const matched = candidates.find(({ prefix }) => address.startsWith(prefix));
+  if (!matched) {
+    throw new Error(`seed:demo 地址无法匹配平台合作区域：${address}`);
+  }
+  return {
+    province: matched.area.province,
+    city: matched.area.city,
+    district: matched.area.district,
+    street: matched.area.street,
+    addressDetail: address.slice(matched.prefix.length).trim(),
+  };
+}
+
+function formatPeriod(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+async function seedSettlementPreviewsAndSummaries() {
+  const completedOrders = await prisma.order.findMany({
+    where: { status: "completed" },
+    include: {
+      master: {
+        include: {
+          merchant: {
+            include: {
+              commissionStrategies: {
+                where: { enabled: true },
+                orderBy: { createdAt: "asc" },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  for (const order of completedOrders) {
+    if (!order.master?.merchant) continue;
+    const strategy = order.master.merchant.commissionStrategies[0] ?? null;
+    const platformAmount = strategy
+      ? Math.round(order.amount * strategy.platformRate)
+      : order.amount;
+    const merchantAmount = strategy
+      ? Math.round(order.amount * strategy.merchantRate)
+      : 0;
+    const workerAmount = strategy
+      ? Math.round(order.amount * strategy.workerRate)
+      : 0;
+    await prisma.settlementPreview.create({
+      data: {
+        orderId: order.id,
+        merchantId: order.master.merchant.id,
+        masterId: order.master.id,
+        strategyId: strategy?.id ?? null,
+        orderAmount: order.amount,
+        platformAmount,
+        merchantAmount,
+        workerAmount,
+        status: "generated",
+        createdAt: order.scheduledAt,
+      },
+    });
+  }
+
+  const previews = await prisma.settlementPreview.findMany();
+  const groups = new Map<
+    string,
+    {
+      merchantId: string;
+      period: string;
+      totalOrderCount: number;
+      totalAmount: number;
+      platformFee: number;
+      merchantIncome: number;
+      workerIncome: number;
+    }
+  >();
+  for (const preview of previews) {
+    const period = formatPeriod(preview.createdAt);
+    const key = `${preview.merchantId}|${period}`;
+    const current = groups.get(key) ?? {
+      merchantId: preview.merchantId,
+      period,
+      totalOrderCount: 0,
+      totalAmount: 0,
+      platformFee: 0,
+      merchantIncome: 0,
+      workerIncome: 0,
+    };
+    current.totalOrderCount += 1;
+    current.totalAmount += preview.orderAmount;
+    current.platformFee += preview.platformAmount;
+    current.merchantIncome += preview.merchantAmount;
+    current.workerIncome += preview.workerAmount;
+    groups.set(key, current);
+  }
+
+  for (const group of groups.values()) {
+    await prisma.merchantSettlement.create({ data: group });
+  }
+
+  return {
+    settlementPreviews: completedOrders.length,
+    merchantSettlements: groups.size,
+  };
+}
+
 // ============================================================
-// 3. 师傅 × 4（[任务 2] merchantId 必填）
+// 3. 师傅 × 5（[任务 2] merchantId 必填）
 // T001 绑商家 A, T002 绑商家 B, T003 绑商家 B (同商家多师傅), T004 绑商家 C
 // ============================================================
 const MASTERS = [
@@ -336,6 +449,7 @@ const MASTERS = [
     skills: ["保洁", "家电清洗"],
     rating: 5.0,
     completedJobs: 0,
+    status: "offline",
     serviceArea: "深圳",
     merchantId: "M001", // 通过 NANSHAN01 邀请码入驻
     joinSource: "invite_code", // [任务 4] 邀请码入驻
@@ -658,9 +772,7 @@ async function main() {
   // 0. 清表（按依赖倒序）
   // ============================================================
   await clearAll();
-  console.log(
-    "  ✓ 清空旧数据（ActivityLog → Order → DispatchRule → User → Master → ServiceSku → ServiceCategory）",
-  );
+  console.log("  ✓ 清空旧数据（按外键依赖倒序）");
 
   // ============================================================
   // 1. ServiceCategory × 3
@@ -727,7 +839,7 @@ async function main() {
   console.log(`  ✓ ServiceSku × ${skuRecords.length}`);
 
   // ============================================================
-  // 3. Master × 4
+  // 3. Master × 5
   // ============================================================
   const masterRecords = [];
   for (const m of MASTERS) {
@@ -739,15 +851,16 @@ async function main() {
         skills: JSON.stringify(m.skills),
         rating: m.rating,
         completedJobs: m.completedJobs,
-        status: "available", // demo seed 全部 available — 让 dashboard 推荐数对得上
+        status: "status" in m ? m.status : "available",
         serviceArea: m.serviceArea,
         // [任务 2] 师傅必须归属商家 — FK merchantId
         merchant: { connect: { id: m.merchantId } },
+        joinSource: "joinSource" in m ? m.joinSource : "admin_created",
       },
     });
     masterRecords.push(rec);
   }
-  console.log(`  ✓ Master × ${masterRecords.length}（4 师傅全 available）`);
+  console.log(`  ✓ Master × ${masterRecords.length}（含 1 个 invite_code）`);
 
   // ============================================================
   // 4. User × 7（1 admin + 2 customer + 4 worker）
@@ -810,6 +923,7 @@ async function main() {
           ? (MASTERS.find((m) => m.id === o.masterId)?.name ?? null)
           : null,
         address: o.address,
+        ...parseSeedAddress(o.address),
         scheduledAt: new Date(o.scheduledAt),
         amount: Math.round(o.amount * 100),
         status: o.status,
@@ -823,6 +937,11 @@ async function main() {
   }
   console.log(
     `  ✓ Order × ${ORDERS.length}（pending × 8 / assigned × 4 / in_service × 4 / completed × 3 / cancelled × 1）`,
+  );
+
+  const settlementCounts = await seedSettlementPreviewsAndSummaries();
+  console.log(
+    `  ✓ SettlementPreview × ${settlementCounts.settlementPreviews} / MerchantSettlement × ${settlementCounts.merchantSettlements}`,
   );
 
   // ============================================================
@@ -1062,6 +1181,8 @@ async function main() {
     orders: await prisma.order.count(),
     rules: await prisma.dispatchRule.count(),
     commissionStrategies: await prisma.commissionStrategy.count(), // [任务 5]
+    settlementPreviews: await prisma.settlementPreview.count(), // [任务 6]
+    merchantSettlements: await prisma.merchantSettlement.count(), // [任务 7]
     activityLogs: await prisma.activityLog.count(),
   };
   console.log("📊 当前数据：", counts);
@@ -1085,10 +1206,12 @@ async function main() {
     counts.orders !== 20 ||
     counts.rules !== 8 ||
     // [任务 5] 3 个分成策略（每个商家 1 条）
-    counts.commissionStrategies !== 3
+    counts.commissionStrategies !== 3 ||
+    counts.settlementPreviews !== settlementCounts.settlementPreviews ||
+    counts.merchantSettlements !== settlementCounts.merchantSettlements
   ) {
     throw new Error(
-      `seed:demo 后行数对不上（期望 categories=3 / skus=8 / masters=5 / users=7 / orders=20 / rules=8）`,
+      "seed:demo 后行数对不上（期望 categories=3 / skus=8 / masters=5 / users=7 / orders=20 / rules=8 / commissionStrategies=3 / settlementPreviews=3 / merchantSettlements=3）",
     );
   }
 

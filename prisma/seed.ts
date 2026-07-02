@@ -1,4 +1,4 @@
-// 数据库种子脚本 — 把现有 mock 数据原样写入 SQLite。
+// 数据库种子脚本 — 把现有 mock 数据写入本地 PostgreSQL。
 // 运行：`npm run db:seed`（依赖 db:push 先建好表）
 
 import { PrismaClient } from "@prisma/client";
@@ -13,6 +13,7 @@ const BCRYPT_ROUNDS = 10;
 
 const PLATFORM_AREAS = [
   {
+    id: "PA001",
     province: "广东省",
     city: "深圳市",
     district: "南山区",
@@ -20,6 +21,7 @@ const PLATFORM_AREAS = [
     enabled: true,
   },
   {
+    id: "PA002",
     province: "广东省",
     city: "深圳市",
     district: "福田区",
@@ -27,6 +29,7 @@ const PLATFORM_AREAS = [
     enabled: true,
   },
   {
+    id: "PA003",
     province: "广东省",
     city: "广州市",
     district: "天河区",
@@ -34,6 +37,7 @@ const PLATFORM_AREAS = [
     enabled: true,
   },
   {
+    id: "PA004",
     province: "广东省",
     city: "深圳市",
     district: "宝安区",
@@ -41,6 +45,22 @@ const PLATFORM_AREAS = [
     enabled: true,
   },
 ];
+
+const MERCHANT_AREAS = [
+  { merchantId: "M001", platformAreaId: "PA001", enabled: true },
+  { merchantId: "M001", platformAreaId: "PA004", enabled: true },
+  { merchantId: "M002", platformAreaId: "PA001", enabled: true },
+  { merchantId: "M002", platformAreaId: "PA002", enabled: true },
+  { merchantId: "M003", platformAreaId: "PA003", enabled: true },
+] as const;
+
+const MASTER_MERCHANT_BY_ID: Record<string, string> = {
+  T001: "M001",
+  T002: "M002",
+  T003: "M001",
+  T004: "M002",
+  T005: "M002",
+};
 
 const MERCHANTS = [
   {
@@ -89,6 +109,118 @@ const MERCHANTS = [
     addressDetail: "石牌演示地址 3 号",
   },
 ];
+
+function parseSeedAddress(address: string) {
+  const candidates = PLATFORM_AREAS.map((area) => {
+    const prefix = `${area.province}${area.city}${area.district}${area.street}`;
+    return { area, prefix };
+  });
+  const matched = candidates.find(({ prefix }) => address.startsWith(prefix));
+  if (!matched) {
+    throw new Error(`seed 地址无法匹配平台合作区域：${address}`);
+  }
+  return {
+    province: matched.area.province,
+    city: matched.area.city,
+    district: matched.area.district,
+    street: matched.area.street,
+    addressDetail: address.slice(matched.prefix.length).trim(),
+  };
+}
+
+function formatPeriod(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+async function seedSettlementPreviewsAndSummaries() {
+  const completedOrders = await prisma.order.findMany({
+    where: { status: "completed" },
+    include: {
+      master: {
+        include: {
+          merchant: {
+            include: {
+              commissionStrategies: {
+                where: { enabled: true },
+                orderBy: { createdAt: "asc" },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  for (const order of completedOrders) {
+    if (!order.master?.merchant) continue;
+    const strategy = order.master.merchant.commissionStrategies[0] ?? null;
+    const platformAmount = strategy
+      ? Math.round(order.amount * strategy.platformRate)
+      : order.amount;
+    const merchantAmount = strategy
+      ? Math.round(order.amount * strategy.merchantRate)
+      : 0;
+    const workerAmount = strategy
+      ? Math.round(order.amount * strategy.workerRate)
+      : 0;
+    await prisma.settlementPreview.create({
+      data: {
+        orderId: order.id,
+        merchantId: order.master.merchant.id,
+        masterId: order.master.id,
+        strategyId: strategy?.id ?? null,
+        orderAmount: order.amount,
+        platformAmount,
+        merchantAmount,
+        workerAmount,
+        status: "generated",
+        createdAt: order.scheduledAt,
+      },
+    });
+  }
+
+  const previews = await prisma.settlementPreview.findMany();
+  const groups = new Map<
+    string,
+    {
+      merchantId: string;
+      period: string;
+      totalOrderCount: number;
+      totalAmount: number;
+      platformFee: number;
+      merchantIncome: number;
+      workerIncome: number;
+    }
+  >();
+  for (const preview of previews) {
+    const period = formatPeriod(preview.createdAt);
+    const key = `${preview.merchantId}|${period}`;
+    const current = groups.get(key) ?? {
+      merchantId: preview.merchantId,
+      period,
+      totalOrderCount: 0,
+      totalAmount: 0,
+      platformFee: 0,
+      merchantIncome: 0,
+      workerIncome: 0,
+    };
+    current.totalOrderCount += 1;
+    current.totalAmount += preview.orderAmount;
+    current.platformFee += preview.platformAmount;
+    current.merchantIncome += preview.merchantAmount;
+    current.workerIncome += preview.workerAmount;
+    groups.set(key, current);
+  }
+
+  for (const group of groups.values()) {
+    await prisma.merchantSettlement.create({ data: group });
+  }
+
+  return {
+    settlementPreviews: completedOrders.length,
+    merchantSettlements: groups.size,
+  };
+}
 
 async function main() {
   console.log("🌱 开始 seed...");
@@ -163,21 +295,14 @@ async function main() {
   console.log(`  ✓ PlatformArea × ${PLATFORM_AREAS.length}`);
 
   await prisma.merchant.createMany({ data: MERCHANTS });
-  const defaultMerchant = await prisma.merchant.findFirst({
-    where: { status: "active" },
-    orderBy: { createdAt: "asc" },
-    select: { id: true },
-  });
-  if (!defaultMerchant) throw new Error("缺少可绑定师傅的 active 商家");
   console.log(`  ✓ Merchant × ${MERCHANTS.length}`);
 
-  // [任务 5] 分成策略 — 每个 active 商家至少 1 条（10/20/70）
-  const activeMerchants = await prisma.merchant.findMany({
-    where: { status: "active" },
+  // [任务 5] 分成策略 — 每个商家至少 1 条，结算历史不因商家 inactive 丢失
+  const merchants = await prisma.merchant.findMany({
     select: { id: true, name: true },
   });
-  const strategyCount = activeMerchants.length;
-  for (const m of activeMerchants) {
+  const strategyCount = merchants.length;
+  for (const m of merchants) {
     await prisma.commissionStrategy.create({
       data: {
         merchantId: m.id,
@@ -192,22 +317,13 @@ async function main() {
   }
   console.log(`  ✓ CommissionStrategy × ${strategyCount}`);
 
-  const activeAreas = await prisma.platformArea.findMany({
-    where: { enabled: true },
-    select: { id: true },
-  });
-  await prisma.merchantArea.createMany({
-    data: activeAreas.map((area) => ({
-      merchantId: defaultMerchant.id,
-      platformAreaId: area.id,
-      enabled: true,
-    })),
-  });
-  console.log(`  ✓ MerchantArea × ${activeAreas.length}`);
+  await prisma.merchantArea.createMany({ data: [...MERCHANT_AREAS] });
+  console.log(`  ✓ MerchantArea × ${MERCHANT_AREAS.length}`);
 
   // ----- 4. Master -----
-  // [任务 4] MOCK_TECHNICIANS 5 个师傅全 joinSource=admin_created（后台建，演示用）
+  // [任务 4] MOCK_TECHNICIANS 5 个师傅分布到 M001/M002，避免只测单商家路径
   for (const m of MOCK_TECHNICIANS) {
+    const merchantId = MASTER_MERCHANT_BY_ID[m.id] ?? "M001";
     await prisma.master.create({
       data: {
         id: m.id,
@@ -218,7 +334,7 @@ async function main() {
         completedJobs: m.completedJobs,
         status: m.status,
         serviceArea: m.serviceArea ?? "",
-        merchantId: defaultMerchant.id,
+        merchantId,
       },
     });
   }
@@ -232,7 +348,7 @@ async function main() {
       skills: JSON.stringify(["保洁", "家电清洗"]),
       rating: 5.0,
       completedJobs: 0,
-      status: "available",
+      status: "offline",
       serviceArea: "深圳",
       merchantId: "M001", // 通过 Nanshan01 邀请码入驻
       joinSource: "invite_code",
@@ -293,6 +409,7 @@ async function main() {
           : null,
         masterName: o.technicianName,
         address: o.address,
+        ...parseSeedAddress(o.address),
         scheduledAt: new Date(o.scheduledAt),
         amount: Math.round(o.amount * 100),
         status: o.status,
@@ -334,6 +451,11 @@ async function main() {
   });
 
   console.log("  ✓ DispatchRule × 2");
+
+  const settlementCounts = await seedSettlementPreviewsAndSummaries();
+  console.log(
+    `  ✓ SettlementPreview × ${settlementCounts.settlementPreviews} / MerchantSettlement × ${settlementCounts.merchantSettlements}`,
+  );
 
   // ----- 7. ActivityLog（操作日志示例）-----
   // 仅 5 条示例，让 Dashboard 启动就有内容看
@@ -405,6 +527,9 @@ async function main() {
     platformAreas: await prisma.platformArea.count(),
     merchants: await prisma.merchant.count(),
     merchantAreas: await prisma.merchantArea.count(),
+    commissionStrategies: await prisma.commissionStrategy.count(),
+    settlementPreviews: await prisma.settlementPreview.count(),
+    merchantSettlements: await prisma.merchantSettlement.count(),
     users: await prisma.user.count(),
     activityLogs: await prisma.activityLog.count(),
   };
@@ -418,7 +543,10 @@ async function main() {
     counts.orders !== MOCK_ORDERS.length ||
     counts.platformAreas !== PLATFORM_AREAS.length ||
     counts.merchants !== MERCHANTS.length ||
-    counts.merchantAreas !== PLATFORM_AREAS.length ||
+    counts.merchantAreas !== MERCHANT_AREAS.length ||
+    counts.commissionStrategies !== MERCHANTS.length ||
+    counts.settlementPreviews !== settlementCounts.settlementPreviews ||
+    counts.merchantSettlements !== settlementCounts.merchantSettlements ||
     counts.users !== 3 ||
     counts.activityLogs !== 5
   ) {
