@@ -57,8 +57,23 @@ function guardProduction() {
 // ============================================================
 async function clearAll() {
   await prisma.activityLog.deleteMany();
+  try {
+    await prisma.merchantSettlement.deleteMany();
+  } catch {
+    // 老 Prisma Client 无 merchantSettlement — 跳过
+  }
+  try {
+    await prisma.settlementPreview.deleteMany();
+  } catch {
+    // 老 Prisma Client 无 settlementPreview — 跳过
+  }
   await prisma.order.deleteMany();
   await prisma.dispatchRule.deleteMany();
+  try {
+    await prisma.commissionStrategy.deleteMany();
+  } catch {
+    // 老 Prisma Client 无 commissionStrategy — 跳过
+  }
   // [任务 2] MerchantArea 依赖 Merchant / PlatformArea，先于它俩删
   try {
     await prisma.merchantArea.deleteMany();

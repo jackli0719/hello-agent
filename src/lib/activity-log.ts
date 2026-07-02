@@ -22,7 +22,8 @@ export type ActivityTargetType =
   | "merchant"
   | "merchantArea"
   | "commissionStrategy" // [任务 5] 分成策略
-  | "settlementPreview"; // [任务 6] 结算预览
+  | "settlementPreview" // [任务 6] 结算预览
+  | "merchantSettlement"; // [任务 7] 商家结算汇总
 
 export interface CreateActivityLogInput {
   action: string;

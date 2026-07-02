@@ -17,6 +17,7 @@ type AppPage =
   | "merchants"
   | "commission-strategies"
   | "settlements"
+  | "merchant-settlements"
   | "dispatch-rules"
   | "metrics"
   | "activity-logs";
@@ -34,6 +35,11 @@ const ITEMS: { key: AppPage; label: string; href: string }[] = [
     href: "/commission-strategies",
   }, // [任务 5]
   { key: "settlements", label: "结算预览", href: "/settlements" }, // [任务 6]
+  {
+    key: "merchant-settlements",
+    label: "商家结算汇总",
+    href: "/merchant-settlements",
+  }, // [任务 7]
   { key: "dispatch-rules", label: "派单规则", href: "/dispatch-rules" },
   { key: "activity-logs", label: "操作日志", href: "/activity-logs" }, // [v0.8.0]
   { key: "metrics", label: "业务指标", href: "/admin/metrics" },
@@ -49,6 +55,8 @@ function detectCurrent(pathname: string): AppPage | undefined {
   if (pathname.startsWith("/commission-strategies"))
     return "commission-strategies";
   if (pathname.startsWith("/settlements")) return "settlements";
+  if (pathname.startsWith("/merchant-settlements"))
+    return "merchant-settlements";
   if (pathname.startsWith("/dispatch-rules")) return "dispatch-rules";
   if (pathname.startsWith("/activity-logs")) return "activity-logs";
   if (pathname.startsWith("/admin")) return "metrics";

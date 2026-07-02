@@ -247,6 +247,9 @@ model Merchant {
   // [任务 6] 结算预览（1 对多）
   settlementPreviews SettlementPreview[]
 
+  // [任务 7] 商家结算汇总（1 对多 — 一个商家跨多个月）
+  merchantSettlements MerchantSettlement[]
+
   @@index([status])
   @@index([province, city, district, street])
 }
@@ -344,6 +347,37 @@ model SettlementPreview {
 
   @@index([merchantId])
   @@index([status])
+}
+
+// ============================================================
+// [任务 7] 商家结算汇总（MerchantSettlement）
+//
+// - 按 merchantId + period（year-month，例 "2026-06"）聚合 SettlementPreview
+// - totalOrderCount：completed 订单数
+// - totalAmount：订单总金额（单位：分）
+// - platformFee / merchantIncome / workerIncome：三方分成（单位：分）
+// - (merchantId, period) unique — 同一商家同月只 1 条
+// - 不做打款/提现
+// ============================================================
+model MerchantSettlement {
+  id        String   @id @default(cuid())
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  // 期间（year-month，例 "2026-06"）
+  period    String
+  // 订单数（completed 订单数）
+  totalOrderCount Int @default(0)
+  // 订单总金额（分）
+  totalAmount Int @default(0)
+  // 三方分成（分）
+  platformFee      Int @default(0)
+  merchantIncome   Int @default(0)
+  workerIncome     Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([merchantId, period])
+  @@index([period])
 }
 
 // ============================================================

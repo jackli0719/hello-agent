@@ -104,9 +104,12 @@ async function main() {
 
   // ----- 1. 清表（按依赖倒序） -----
   await prisma.activityLog.deleteMany();
+  await prisma.merchantSettlement.deleteMany();
+  await prisma.settlementPreview.deleteMany();
   await prisma.user.deleteMany();
   await prisma.order.deleteMany();
   await prisma.merchantArea.deleteMany();
+  await prisma.commissionStrategy.deleteMany();
   await prisma.serviceSku.deleteMany();
   await prisma.serviceCategory.deleteMany();
   await prisma.master.deleteMany();
