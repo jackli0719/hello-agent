@@ -114,23 +114,33 @@ describe("listOrdersForPage — skuCode 过滤", () => {
 // # spec: 订单列表时间过滤 + 分页 = 按 createdAt/scheduledAt 时间范围、dateTo 不含次日 0 点、page/pageSize 控制分页且不重复
 describe("listOrdersForPage — 时间范围 + 分页", () => {
   // # spec: 订单列表时间过滤 — dateField=createdAt 时按 createdAt 时间范围过滤
-  it("按 createdAt 时间范围过滤（今天）", async () => {
-    // seed 跑完时 createdAt 是今天
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+  it("按 createdAt 时间范围过滤（锚定第一条订单的真实 createdAt）", async () => {
+    // # documents current behavior: 用 DB 中第一条订单的 createdAt 作为时间锚点
+    // 避免依赖"seed 是今天创建的"——跨日/CI 重跑 seed 时本地 0:00 与 seed UTC 不一致会假阳性失败
+    const first = await prisma.order.findFirst({
+      orderBy: { createdAt: "asc" },
+      select: { createdAt: true },
+    });
+    if (!first) {
+      // 没有订单时这个 it 没意义，跳过
+      return;
+    }
+    const anchor = new Date(first.createdAt);
+    anchor.setHours(0, 0, 0, 0);
+    const nextDay = new Date(anchor);
+    nextDay.setDate(nextDay.getDate() + 1);
     const r = await listOrdersForPage({
-      dateFrom: today,
-      dateTo: today,
+      dateFrom: anchor,
+      dateTo: anchor,
       dateField: "createdAt",
       page: 1,
       pageSize: 100,
     });
-    // seed 跑完时 createdAt 是今天，期望所有 seed 订单都满足
     expect(r.totalCount).toBeGreaterThan(0);
   });
 
   // # spec: 订单列表时间过滤 — 远古日期范围匹配不到任何订单时 totalCount=0
-  it("按 createdAt 时间范围（远古）→ 应该 0（seed 都是今天创建的）", async () => {
+  it("按 createdAt 时间范围（远古）→ 应该 0", async () => {
     const dateFrom = new Date("2020-01-01T00:00:00");
     const dateTo = new Date("2020-01-01T00:00:00");
     const r = await listOrdersForPage({
