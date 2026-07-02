@@ -373,11 +373,17 @@ model MerchantSettlement {
   platformFee      Int @default(0)
   merchantIncome   Int @default(0)
   workerIncome     Int @default(0)
+  // [任务 9+10] 状态机：pending / confirmed / archived
+  // - pending：刚生成，待 admin 确认
+  // - confirmed：已确认（admin 主动确认）
+  // - archived：周期已关闭，只读不可再改
+  status    String   @default("pending")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([merchantId, period])
   @@index([period])
+  @@index([status])
 }
 
 // ============================================================

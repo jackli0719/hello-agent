@@ -1,11 +1,17 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { card, th, td } from "@/components/ui";
+import { card, th, td, StatusBadge } from "@/components/ui";
 import { DEFAULT_LANDING, getCurrentUser } from "@/src/lib/auth";
+import { ensureCsrfCookie } from "@/src/lib/csrf";
 import { getMerchantSettlementDetail } from "@/src/lib/merchant-settlement";
+import {
+  archiveMerchantSettlementAction,
+  confirmMerchantSettlementAction,
+} from "../actions";
 
 interface PageProps {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ error?: string }>;
 }
 
 function formatYuan(cents: number) {
@@ -14,12 +20,17 @@ function formatYuan(cents: number) {
 
 export default async function MerchantSettlementDetailPage({
   params,
+  searchParams,
 }: PageProps) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (user.role !== "admin") redirect(DEFAULT_LANDING[user.role]);
 
-  const { id } = await params;
+  const [{ id }, { error }, csrfToken] = await Promise.all([
+    params,
+    searchParams,
+    ensureCsrfCookie(),
+  ]);
   const data = await getMerchantSettlementDetail(id);
   if (!data) notFound();
   const { summary, previews } = data;
@@ -46,8 +57,16 @@ export default async function MerchantSettlementDetailPage({
       <h1 style={{ fontSize: 24, margin: "0 0 4px 0" }}>
         商家结算详情 — {summary.merchant.name}
       </h1>
-      <p style={{ color: "#6b7280", margin: "0 0 20px 0", fontSize: 14 }}>
-        期间{" "}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          marginBottom: 20,
+          fontSize: 14,
+        }}
+      >
+        <span style={{ color: "#6b7280" }}>期间</span>
         <span
           style={{
             fontFamily: "monospace",
@@ -59,7 +78,102 @@ export default async function MerchantSettlementDetailPage({
         >
           {summary.period}
         </span>
-      </p>
+        <StatusBadge
+          label={
+            summary.status === "pending"
+              ? "待确认"
+              : summary.status === "confirmed"
+                ? "已确认"
+                : "已归档"
+          }
+          tone={
+            summary.status === "pending"
+              ? "gray"
+              : summary.status === "confirmed"
+                ? "green"
+                : "red"
+          }
+        />
+      </div>
+
+      {/* 状态操作按钮 */}
+      {error && (
+        <div
+          style={{
+            padding: "10px 14px",
+            background: "#fee2e2",
+            color: "#b91c1c",
+            borderRadius: 6,
+            fontSize: 13,
+            marginBottom: 16,
+          }}
+        >
+          {error}
+        </div>
+      )}
+      <div
+        style={{
+          display: "flex",
+          gap: 12,
+          marginBottom: 20,
+        }}
+      >
+        {/* pending → 确认按钮 */}
+        {summary.status === "pending" && (
+          <form action={confirmMerchantSettlementAction}>
+            <input type="hidden" name="_csrf" value={csrfToken} />
+            <input type="hidden" name="id" value={summary.id} />
+            <button
+              type="submit"
+              style={{
+                padding: "8px 18px",
+                background: "#15803d",
+                color: "#fff",
+                borderRadius: 6,
+                fontSize: 14,
+                fontWeight: 500,
+                border: "none",
+                cursor: "pointer",
+              }}
+            >
+              确认结算
+            </button>
+          </form>
+        )}
+        {/* pending / confirmed → 关闭周期按钮 */}
+        {summary.status !== "archived" && (
+          <form action={archiveMerchantSettlementAction}>
+            <input type="hidden" name="_csrf" value={csrfToken} />
+            <input type="hidden" name="id" value={summary.id} />
+            <button
+              type="submit"
+              style={{
+                padding: "8px 18px",
+                background: "#fff",
+                color: "#374151",
+                border: "1px solid #d1d5db",
+                borderRadius: 6,
+                fontSize: 14,
+                fontWeight: 500,
+                cursor: "pointer",
+              }}
+            >
+              关闭周期（归档）
+            </button>
+          </form>
+        )}
+        {summary.status === "archived" && (
+          <span
+            style={{
+              padding: "8px 18px",
+              color: "#9ca3af",
+              fontSize: 13,
+            }}
+          >
+            归档后只读
+          </span>
+        )}
+      </div>
 
       {/* 1. 商家信息 */}
       <section style={{ ...card, marginBottom: 16 }}>

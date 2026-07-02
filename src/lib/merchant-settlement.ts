@@ -178,6 +178,66 @@ export async function listMerchantSettlementsByMerchant(merchantId: string) {
   });
 }
 
+// [任务 10] 按 period 过滤（月份筛选）
+export async function listMerchantSettlementsByPeriod(period: string) {
+  return prisma.merchantSettlement.findMany({
+    where: { period },
+    include: { merchant: { select: { id: true, name: true } } },
+    orderBy: [{ merchantId: "asc" }],
+  });
+}
+
+// [任务 9] 状态机 — 三状态：pending / confirmed / archived
+export type MerchantSettlementStatus = "pending" | "confirmed" | "archived";
+
+export type ConfirmResult =
+  { ok: true; status: MerchantSettlementStatus } | { ok: false; error: string };
+
+/**
+ * 确认结算（pending → confirmed，单向不可逆）
+ */
+export async function confirmMerchantSettlement(
+  id: string,
+): Promise<ConfirmResult> {
+  const s = await prisma.merchantSettlement.findUnique({
+    where: { id },
+    select: { id: true, status: true },
+  });
+  if (!s) return { ok: false, error: "结算记录不存在" };
+  if (s.status === "confirmed") {
+    return { ok: true, status: "confirmed" }; // 幂等 — 已确认
+  }
+  if (s.status === "archived") {
+    return { ok: false, error: "已归档的周期不可再确认" };
+  }
+  await prisma.merchantSettlement.update({
+    where: { id },
+    data: { status: "confirmed" },
+  });
+  return { ok: true, status: "confirmed" };
+}
+
+/**
+ * 关闭周期（pending/confirmed → archived，只读不可再改）
+ */
+export async function archiveMerchantSettlement(
+  id: string,
+): Promise<ConfirmResult> {
+  const s = await prisma.merchantSettlement.findUnique({
+    where: { id },
+    select: { id: true, status: true },
+  });
+  if (!s) return { ok: false, error: "结算记录不存在" };
+  if (s.status === "archived") {
+    return { ok: true, status: "archived" }; // 幂等
+  }
+  await prisma.merchantSettlement.update({
+    where: { id },
+    data: { status: "archived" },
+  });
+  return { ok: true, status: "archived" };
+}
+
 /**
  * [任务 8] 详情页 helper — 查 merchant + period 内的 SettlementPreview（订单明细）
  * @param id MerchantSettlement.id
@@ -205,6 +265,7 @@ export async function getMerchantSettlementDetail(id: string) {
     },
   });
   if (!summary) return null;
+  // status 字段已包含在 summary 中（默认 default("pending")）
 
   // 查该 (merchant, period) 内的所有 SettlementPreview（订单明细）
   const periodStart = new Date(`${summary.period}-01T00:00:00`);

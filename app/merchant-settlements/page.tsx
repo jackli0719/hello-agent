@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { card, th, td } from "@/components/ui";
+import { card, th, td, StatusBadge } from "@/components/ui";
 import { listMerchantSettlements } from "@/src/lib/merchant-settlement";
 import { generateMerchantSettlementsAction } from "./actions";
 import { ensureCsrfCookie } from "@/src/lib/csrf";
@@ -11,6 +11,7 @@ interface PageProps {
     created?: string;
     updated?: string;
     error?: string;
+    period?: string;
   }>;
 }
 
@@ -25,11 +26,19 @@ export default async function MerchantSettlementsPage({
   if (!user) redirect("/login");
   if (user.role !== "admin") redirect(DEFAULT_LANDING[user.role]);
 
-  const { created, updated, error } = await searchParams;
-  const [csrfToken, settlements] = await Promise.all([
+  const { created, updated, error, period: filterPeriod } = await searchParams;
+  const [csrfToken, allSettlements] = await Promise.all([
     ensureCsrfCookie(),
     listMerchantSettlements(),
   ]);
+  // [任务 10] 月份筛选 — 列出所有可选 period（去重降序）
+  const periodOptions = Array.from(new Set(allSettlements.map((s) => s.period)))
+    .sort()
+    .reverse();
+  // 应用筛选
+  const settlements = filterPeriod
+    ? allSettlements.filter((s) => s.period === filterPeriod)
+    : allSettlements;
 
   // 汇总：按 period 分组 + 全局汇总
   const periodTotals = new Map<
@@ -107,12 +116,87 @@ export default async function MerchantSettlementsPage({
           </button>
         </form>
       </div>
-      <p style={{ color: "#6b7280", margin: "0 0 20px 0", fontSize: 14 }}>
+      <p style={{ color: "#6b7280", margin: "0 0 12px 0", fontSize: 14 }}>
         共 {settlements.length} 条记录 · {periodTotals.size} 个期间
         <span style={{ color: "#9ca3af", fontSize: 12, marginLeft: 8 }}>
           （仅展示，不做打款/提现）
         </span>
       </p>
+
+      {/* [任务 10] 月份筛选器 */}
+      {periodOptions.length > 0 && (
+        <form
+          method="get"
+          style={{
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+            marginBottom: 16,
+          }}
+        >
+          <label style={{ fontSize: 13, color: "#6b7280" }}>按月份筛选：</label>
+          <select
+            name="period"
+            defaultValue={filterPeriod ?? ""}
+            style={{
+              padding: "6px 10px",
+              border: "1px solid #d1d5db",
+              borderRadius: 6,
+              fontSize: 13,
+              background: "#fff",
+              outline: "none",
+              minWidth: 120,
+            }}
+          >
+            <option value="">全部</option>
+            {periodOptions.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </select>
+          <button
+            type="submit"
+            style={{
+              padding: "6px 14px",
+              background: "#2563eb",
+              color: "#fff",
+              borderRadius: 6,
+              fontSize: 13,
+              border: "none",
+              cursor: "pointer",
+            }}
+          >
+            过滤
+          </button>
+          {filterPeriod && (
+            <Link
+              href="/merchant-settlements"
+              style={{
+                padding: "6px 12px",
+                background: "#fff",
+                color: "#374151",
+                border: "1px solid #d1d5db",
+                borderRadius: 6,
+                fontSize: 13,
+                textDecoration: "none",
+              }}
+            >
+              重置
+            </Link>
+          )}
+          {filterPeriod && (
+            <span
+              style={{
+                fontSize: 12,
+                color: "#9ca3af",
+              }}
+            >
+              当前显示：{filterPeriod}
+            </span>
+          )}
+        </form>
+      )}
 
       {(created !== undefined || error) && (
         <div
@@ -185,6 +269,7 @@ export default async function MerchantSettlementsPage({
               <tr>
                 <th style={th}>期间</th>
                 <th style={th}>商家</th>
+                <th style={th}>状态</th>
                 <th style={th}>订单数</th>
                 <th style={th}>总金额</th>
                 <th style={th}>平台费</th>
@@ -223,6 +308,24 @@ export default async function MerchantSettlementsPage({
                     >
                       {s.merchant.name}
                     </Link>
+                  </td>
+                  <td style={td}>
+                    <StatusBadge
+                      label={
+                        s.status === "pending"
+                          ? "待确认"
+                          : s.status === "confirmed"
+                            ? "已确认"
+                            : "已归档"
+                      }
+                      tone={
+                        s.status === "pending"
+                          ? "gray"
+                          : s.status === "confirmed"
+                            ? "green"
+                            : "red"
+                      }
+                    />
                   </td>
                   <td style={td}>{s.totalOrderCount}</td>
                   <td style={td}>{formatYuan(s.totalAmount)}</td>
