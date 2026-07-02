@@ -29,4 +29,13 @@ describe("middleware", () => {
     expect(location).toContain("/login");
     expect(location).toContain("next=%2Fplatform-areas");
   });
+
+  // # spec: [任务 12] /payout-records 受保护，未登录跳登录页
+  it("未登录访问 /payout-records → /login?next=%2Fpayout-records", () => {
+    const res = middleware(request("/payout-records"));
+    expect(res.status).toBe(307);
+    const location = res.headers.get("location") ?? "";
+    expect(location).toContain("/login");
+    expect(location).toContain("next=%2Fpayout-records");
+  });
 });

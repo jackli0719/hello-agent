@@ -25,6 +25,7 @@ describe("isProtectedPath", () => {
     expect(isProtectedPath("/commission-strategies/new")).toBe(true);
     expect(isProtectedPath("/settlements")).toBe(true);
     expect(isProtectedPath("/merchant-settlements")).toBe(true);
+    expect(isProtectedPath("/payout-records")).toBe(true); // [任务 12] 打款记录
     expect(isProtectedPath("/dispatch-rules")).toBe(true);
     expect(isProtectedPath("/dispatch-rules/new")).toBe(true);
     expect(isProtectedPath("/activity-logs")).toBe(true);
@@ -66,6 +67,7 @@ describe("canAccess", () => {
     ["admin", "/commission-strategies/new", true],
     ["admin", "/settlements", true],
     ["admin", "/merchant-settlements", true],
+    ["admin", "/payout-records", true], // [任务 12] 打款记录
     ["admin", "/dispatch-rules", true],
     ["admin", "/activity-logs", true],
     ["admin", "/worker", false], // 越权
@@ -74,6 +76,7 @@ describe("canAccess", () => {
     ["worker", "/worker", true],
     ["worker", "/worker/orders/abc", true],
     ["worker", "/dashboard", false], // 越权
+    ["worker", "/payout-records", false], // [任务 12] 越权
     ["worker", "/customer/orders", false],
     // customer
     ["customer", "/customer", true],
