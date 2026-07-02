@@ -1,75 +1,15 @@
 "use client";
 
-// 统一导航：所有核心页面共用。
-// 自动用 usePathname 判断 current — 调用方不用传 current。
-// 已登录时显示「退出」按钮（form action 调 logoutAction）。
+// 统一导航：[任务 15] 顶部 header（Logo + Dashboard 总览 + 退出）
+//
+// 视觉层级：
+// - 顶部 56px：Logo + Dashboard 总览 + 退出
+// - 左侧 sidebar：在 AdminShell 里渲染（与本组件解耦，layout 决定布局）
+// - 已登录时显示「退出」按钮（form action 调 logoutAction）
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { logoutAction } from "@/app/login/actions";
-
-type AppPage =
-  | "dashboard"
-  | "orders"
-  | "services"
-  | "masters"
-  | "platform-areas"
-  | "merchants"
-  | "commission-strategies"
-  | "settlements"
-  | "merchant-settlements"
-  | "payout-records"
-  | "withdraw-requests"
-  | "finance-ledgers"
-  | "dispatch-rules"
-  | "metrics"
-  | "activity-logs";
-
-const ITEMS: { key: AppPage; label: string; href: string }[] = [
-  { key: "dashboard", label: "Dashboard", href: "/dashboard" },
-  { key: "orders", label: "订单管理", href: "/orders" },
-  { key: "services", label: "服务管理", href: "/services" },
-  { key: "masters", label: "师傅管理", href: "/masters" },
-  { key: "platform-areas", label: "平台合作区域", href: "/platform-areas" },
-  { key: "merchants", label: "商家管理", href: "/merchants" },
-  {
-    key: "commission-strategies",
-    label: "分成策略",
-    href: "/commission-strategies",
-  }, // [任务 5]
-  { key: "settlements", label: "结算预览", href: "/settlements" }, // [任务 6]
-  {
-    key: "merchant-settlements",
-    label: "商家结算汇总",
-    href: "/merchant-settlements",
-  }, // [任务 7]
-  { key: "payout-records", label: "打款记录", href: "/payout-records" }, // [任务 12]
-  { key: "withdraw-requests", label: "提现申请", href: "/withdraw-requests" }, // [任务 13]
-  { key: "finance-ledgers", label: "财务流水", href: "/finance-ledgers" }, // [任务 14]
-  { key: "dispatch-rules", label: "派单规则", href: "/dispatch-rules" },
-  { key: "activity-logs", label: "操作日志", href: "/activity-logs" }, // [v0.8.0]
-  { key: "metrics", label: "业务指标", href: "/admin/metrics" },
-];
-
-function detectCurrent(pathname: string): AppPage | undefined {
-  if (pathname.startsWith("/dashboard")) return "dashboard";
-  if (pathname.startsWith("/orders")) return "orders";
-  if (pathname.startsWith("/services")) return "services";
-  if (pathname.startsWith("/masters")) return "masters";
-  if (pathname.startsWith("/platform-areas")) return "platform-areas";
-  if (pathname.startsWith("/merchants")) return "merchants";
-  if (pathname.startsWith("/commission-strategies"))
-    return "commission-strategies";
-  if (pathname.startsWith("/settlements")) return "settlements";
-  if (pathname.startsWith("/merchant-settlements"))
-    return "merchant-settlements";
-  if (pathname.startsWith("/withdraw-requests")) return "withdraw-requests";
-  if (pathname.startsWith("/finance-ledgers")) return "finance-ledgers";
-  if (pathname.startsWith("/dispatch-rules")) return "dispatch-rules";
-  if (pathname.startsWith("/activity-logs")) return "activity-logs";
-  if (pathname.startsWith("/admin")) return "metrics";
-  return undefined;
-}
 
 export function AppNav({
   isLoggedIn,
@@ -82,8 +22,7 @@ export function AppNav({
   const pathname = usePathname() ?? "";
 
   // /worker 是师傅端 H5，/customer 是用户端 H5，/ 是三端入口 landing —
-  // 都不该继承后台导航（这些路径没有「后台管理」概念，看到「订单管理 / 服务管理 / 师傅管理」会乱套）
-  // 让这些路径自己渲染极简导航
+  // 都不该继承后台导航（这些路径没有「后台管理」概念）
   if (
     pathname === "/" ||
     pathname.startsWith("/worker") ||
@@ -92,9 +31,11 @@ export function AppNav({
     return null;
   }
 
-  const current = detectCurrent(pathname);
+  const isDashboard = pathname.startsWith("/dashboard");
+
   return (
     <nav
+      data-testid="appnav-header"
       style={{
         height: 56,
         background: "#fff",
@@ -102,9 +43,12 @@ export function AppNav({
         display: "flex",
         alignItems: "center",
         padding: "0 32px",
-        gap: 8,
+        gap: 16,
         fontFamily:
           "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif",
+        position: "sticky",
+        top: 0,
+        zIndex: 50,
       }}
     >
       <Link
@@ -114,35 +58,33 @@ export function AppNav({
           fontWeight: 600,
           color: "#111827",
           textDecoration: "none",
-          marginRight: 24,
+          marginRight: 8,
         }}
       >
         O2O 管理后台
       </Link>
-      {ITEMS.map((item) => {
-        const active = current === item.key;
-        return (
-          <Link
-            key={item.key}
-            href={item.href}
-            style={{
-              padding: "6px 14px",
-              borderRadius: 6,
-              fontSize: 14,
-              color: active ? "#2563eb" : "#374151",
-              background: active ? "#eff6ff" : "transparent",
-              textDecoration: "none",
-              fontWeight: active ? 600 : 400,
-            }}
-          >
-            {item.label}
-          </Link>
-        );
-      })}
-      {/* 退出按钮 — 已登录时显示，form action 调 logoutAction */}
+
+      {/* Dashboard 总览独立入口 */}
+      <Link
+        href="/dashboard"
+        data-testid="appnav-dashboard"
+        data-active={isDashboard ? "1" : "0"}
+        style={{
+          padding: "6px 14px",
+          borderRadius: 6,
+          fontSize: 14,
+          color: isDashboard ? "#2563eb" : "#374151",
+          background: isDashboard ? "#eff6ff" : "transparent",
+          textDecoration: "none",
+          fontWeight: isDashboard ? 600 : 400,
+        }}
+      >
+        总览
+      </Link>
+
+      {/* 退出按钮 — 已登录时显示 */}
       {isLoggedIn && (
         <form action={logoutAction} style={{ marginLeft: "auto" }}>
-          {/* [v0.7.3] CSRF token — layout RSC 阶段已写 cookie */}
           <input type="hidden" name="_csrf" value={csrfToken} />
           <button
             type="submit"

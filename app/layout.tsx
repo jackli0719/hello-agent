@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { AppNav } from "@/components/AppNav";
+import { AdminShell } from "@/components/AdminShell";
 import { isAuthenticated } from "@/src/lib/auth";
 import { ensureCsrfCookie } from "@/src/lib/csrf";
 
@@ -28,11 +29,12 @@ export default async function RootLayout({
           flexDirection: "column",
         }}
       >
-        {/* AppNav 放 layout 里 — 所有页面自动有导航。
+        {/* AppNav 放 layout 里 — 所有页面自动有顶部导航。
             传 isLoggedIn 让导航栏决定是否显示「退出」按钮；
             传 csrfToken 让 logout 表单能通过 CSRF 校验（[v0.7.3]）。 */}
         <AppNav isLoggedIn={loggedIn} csrfToken={csrfToken} />
-        <div style={{ flex: 1 }}>{children}</div>
+        {/* AdminShell：根据 pathname 自动加 sidebar（仅 admin 路径） */}
+        <AdminShell>{children}</AdminShell>
         {/* 全站演示版标识 — 演示者 / 观众一眼看到这是 demo 不是生产 */}
         <footer
           style={{
