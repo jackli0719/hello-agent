@@ -213,6 +213,21 @@ export default async function EditMerchantPage({
 
       <section style={{ ...card, maxWidth: 920 }}>
         <h2 style={{ fontSize: 18, margin: "0 0 14px 0" }}>合作区域绑定</h2>
+        {/* 风险 #3: 商家已停用时,绑定按钮置灰 + tooltip */}
+        {merchant.status !== "active" && (
+          <div
+            style={{
+              padding: "8px 12px",
+              background: "#fef3c7",
+              color: "#92400e",
+              borderRadius: 6,
+              fontSize: 13,
+              marginBottom: 12,
+            }}
+          >
+            商家已停用,不能绑定新合作区域(已绑定区域仍可启用/停用)
+          </div>
+        )}
         <form
           action={bindMerchantAreaAction}
           style={{
@@ -227,7 +242,9 @@ export default async function EditMerchantPage({
           <select
             name="platformAreaId"
             required
-            disabled={availableAreas.length === 0}
+            disabled={
+              availableAreas.length === 0 || merchant.status !== "active"
+            }
             style={{ ...inputStyle, maxWidth: 460 }}
             defaultValue=""
           >
@@ -240,16 +257,31 @@ export default async function EditMerchantPage({
           </select>
           <button
             type="submit"
-            disabled={availableAreas.length === 0}
+            disabled={
+              availableAreas.length === 0 || merchant.status !== "active"
+            }
+            title={
+              merchant.status !== "active"
+                ? "商家已停用,不能绑定新合作区域"
+                : availableAreas.length === 0
+                  ? "暂无可绑定的平台合作区域"
+                  : ""
+            }
             style={{
               padding: "9px 18px",
-              background: availableAreas.length === 0 ? "#9ca3af" : "#2563eb",
+              background:
+                availableAreas.length === 0 || merchant.status !== "active"
+                  ? "#9ca3af"
+                  : "#2563eb",
               color: "#fff",
               border: "none",
               borderRadius: 6,
               fontSize: 14,
               fontWeight: 500,
-              cursor: availableAreas.length === 0 ? "not-allowed" : "pointer",
+              cursor:
+                availableAreas.length === 0 || merchant.status !== "active"
+                  ? "not-allowed"
+                  : "pointer",
             }}
           >
             绑定区域
