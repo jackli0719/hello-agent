@@ -44,10 +44,14 @@ const PLATFORM_AREAS = [
 
 const MERCHANTS = [
   {
+    id: "M001",
     name: "深圳南山服务商 A",
     contactName: "南山负责人",
     phone: "13900001001",
     status: "active",
+    // [任务 4] 邀请码：active + inviteCodeEnabled=true（可入驻）
+    inviteCode: "NANSHAN01",
+    inviteCodeEnabled: true,
     province: "广东省",
     city: "深圳市",
     district: "南山区",
@@ -55,10 +59,14 @@ const MERCHANTS = [
     addressDetail: "科技园演示地址 1 号",
   },
   {
+    id: "M002",
     name: "深圳福田服务商 B",
     contactName: "福田负责人",
     phone: "13900001002",
     status: "active",
+    // [任务 4] 邀请码：active + inviteCodeEnabled=false（禁用 — 用于测拒绝）
+    inviteCode: "FUTIAN02",
+    inviteCodeEnabled: false,
     province: "广东省",
     city: "深圳市",
     district: "福田区",
@@ -66,10 +74,14 @@ const MERCHANTS = [
     addressDetail: "华强北演示地址 2 号",
   },
   {
+    id: "M003",
     name: "广州天河服务商 C",
     contactName: "天河负责人",
     phone: "13900001003",
-    status: "active",
+    status: "inactive",
+    // [任务 4] 邀请码：inactive 商家 — 用于测 status=inactive 拒绝
+    inviteCode: "TIANHE03",
+    inviteCodeEnabled: true,
     province: "广东省",
     city: "广州市",
     district: "天河区",
@@ -170,6 +182,7 @@ async function main() {
   console.log(`  ✓ MerchantArea × ${activeAreas.length}`);
 
   // ----- 4. Master -----
+  // [任务 4] MOCK_TECHNICIANS 5 个师傅全 joinSource=admin_created（后台建，演示用）
   for (const m of MOCK_TECHNICIANS) {
     await prisma.master.create({
       data: {
@@ -185,7 +198,25 @@ async function main() {
       },
     });
   }
-  console.log(`  ✓ Master × ${MOCK_TECHNICIANS.length}`);
+  // [任务 4] 额外 1 个通过邀请码入驻的师傅 — phone 11 位 1 开头 / joinSource=invite_code
+  // 用于演示：/masters 列表可看到 joinSource=invite_code 标记
+  await prisma.master.create({
+    data: {
+      id: "T006",
+      name: "林师傅",
+      phone: "13900088001",
+      skills: JSON.stringify(["保洁", "家电清洗"]),
+      rating: 5.0,
+      completedJobs: 0,
+      status: "available",
+      serviceArea: "深圳",
+      merchantId: "M001", // 通过 Nanshan01 邀请码入驻
+      joinSource: "invite_code",
+    },
+  });
+  console.log(
+    `  ✓ Master × ${MOCK_TECHNICIANS.length + 1}（含 1 个 invite_code）`,
+  );
 
   // ----- 4.5. User（账号体系）-----
   // 测试账号：admin / worker1 / customer1
@@ -358,7 +389,8 @@ async function main() {
   if (
     counts.categories !== categoryNames.length ||
     counts.skus !== MOCK_SERVICES.length ||
-    counts.masters !== MOCK_TECHNICIANS.length ||
+    // [任务 4] MOCK_TECHNICIANS 5 个 + T006 邀请码入驻 1 个 = 6 个
+    counts.masters !== MOCK_TECHNICIANS.length + 1 ||
     counts.orders !== MOCK_ORDERS.length ||
     counts.platformAreas !== PLATFORM_AREAS.length ||
     counts.merchants !== MERCHANTS.length ||

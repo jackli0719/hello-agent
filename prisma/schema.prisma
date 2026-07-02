@@ -59,7 +59,10 @@ model ServiceSku {
 model Master {
   id            String   @id @default(cuid())
   name          String
-  phone         String
+  // [P1-2 修] phone 加 @unique — 防止并发/重复提交时绑错师傅
+  // findFirst({where:{phone}}) 改为 findUnique — 简化 + 强制约束
+  // 注意：MOCK 演示用 "138****1234" 占位不满足 11 位 1 开头，但 unique 约束只要求值唯一（不同 phone 字符串不冲突）
+  phone         String   @unique
   skills        String                       // JSON 字符串
   rating        Float    @default(5.0)
   completedJobs Int      @default(0)
@@ -70,6 +73,9 @@ model Master {
   // # MVP: 必填；演示期不允许师傅独立运营
   merchantId    String
   merchant      Merchant @relation(fields: [merchantId], references: [id])
+  // [任务 4] 入驻来源：admin_created（后台建）/ invite_code（/worker/join 入驻）
+  // # MVP: 必填；演示期不允许"未指定来源"
+  joinSource    String   @default("admin_created") // admin_created | invite_code
   createdAt     DateTime @default(now())
 
   orders Order[]
@@ -212,6 +218,10 @@ model Merchant {
   contactName   String
   phone         String
   status        String   @default("active") // active | inactive
+  // [任务 4] 商家邀请码 — 师傅通过 /worker/join 入驻绑定
+  // 创建时自动生成（8 字符 base36）；seed 也填
+  inviteCode        String   @unique
+  inviteCodeEnabled Boolean  @default(true)
   province      String
   city          String
   district      String

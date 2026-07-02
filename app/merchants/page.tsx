@@ -85,6 +85,9 @@ export default async function MerchantsPage({ searchParams }: PageProps) {
                 <th style={th}>联系人</th>
                 <th style={th}>电话</th>
                 <th style={th}>状态</th>
+                {/* [任务 4] 邀请码展示 — /worker/join 用 */}
+                <th style={th}>邀请码</th>
+                <th style={th}>邀请码状态</th>
                 <th style={th}>省</th>
                 <th style={th}>市</th>
                 <th style={th}>区县</th>
@@ -106,6 +109,23 @@ export default async function MerchantsPage({ searchParams }: PageProps) {
                     <StatusBadge
                       label={merchant.status === "active" ? "启用" : "停用"}
                       tone={merchant.status === "active" ? "green" : "gray"}
+                    />
+                  </td>
+                  {/* [任务 4] 邀请码 — 师傅 /worker/join 用 */}
+                  <td
+                    style={{
+                      ...td,
+                      fontFamily: "monospace",
+                      letterSpacing: 1,
+                      fontSize: 13,
+                    }}
+                  >
+                    {merchant.inviteCode}
+                  </td>
+                  <td style={td}>
+                    <StatusBadge
+                      label={merchant.inviteCodeEnabled ? "可用" : "禁用"}
+                      tone={merchant.inviteCodeEnabled ? "green" : "red"}
                     />
                   </td>
                   <td style={td}>{merchant.province}</td>

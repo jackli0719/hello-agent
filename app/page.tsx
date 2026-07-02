@@ -64,6 +64,14 @@ export default function HomePage() {
             color="#b45309"
             hint="演示版不做真实登录"
           />
+          <EntryCard
+            icon="📨"
+            title="师傅入驻"
+            subtitle="[任务 4] 师傅通过商家邀请码绑定商家"
+            href="/worker/join"
+            color="#7c3aed"
+            hint="输入邀请码自助入驻"
+          />
         </div>
 
         {/* 演示助手 */}

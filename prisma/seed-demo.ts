@@ -215,6 +215,9 @@ const MERCHANTS = [
     contactName: "张三",
     phone: "13900000100",
     status: "active",
+    // [任务 4] 邀请码 — 可入驻
+    inviteCode: "NANSHAN01",
+    inviteCodeEnabled: true,
     province: "广东省",
     city: "深圳市",
     district: "南山区",
@@ -227,6 +230,9 @@ const MERCHANTS = [
     contactName: "李四",
     phone: "13900000200",
     status: "active",
+    // [任务 4] 邀请码 — 禁用（测 inviteCodeEnabled=false 拒）
+    inviteCode: "FUTIAN02",
+    inviteCodeEnabled: false,
     province: "广东省",
     city: "深圳市",
     district: "福田区",
@@ -238,7 +244,10 @@ const MERCHANTS = [
     name: "广州天河服务商 C",
     contactName: "王五",
     phone: "13900000300",
-    status: "active",
+    status: "inactive",
+    // [任务 4] 邀请码 — 商家 inactive 测拒
+    inviteCode: "TIANHE03",
+    inviteCodeEnabled: true,
     province: "广东省",
     city: "广州市",
     district: "天河区",
@@ -304,6 +313,17 @@ const MASTERS = [
     completedJobs: 207,
     serviceArea: "上海, 北京",
     merchantId: "M003", // 广州天河服务商 C
+  },
+  {
+    id: "T005",
+    name: "林师傅",
+    phone: "13900000050",
+    skills: ["保洁", "家电清洗"],
+    rating: 5.0,
+    completedJobs: 0,
+    serviceArea: "深圳",
+    merchantId: "M001", // 通过 NANSHAN01 邀请码入驻
+    joinSource: "invite_code", // [任务 4] 邀请码入驻
   },
 ] as const;
 
@@ -1018,13 +1038,14 @@ async function main() {
   if (
     counts.categories !== 3 ||
     counts.skus !== 8 ||
-    counts.masters !== 4 ||
+    // [任务 4] 4 师傅 + 1 个 T005 林师傅（invite_code 入驻）= 5
+    counts.masters !== 5 ||
     counts.users !== 7 ||
     counts.orders !== 20 ||
     counts.rules !== 8
   ) {
     throw new Error(
-      `seed:demo 后行数对不上（期望 categories=3 / skus=8 / masters=4 / users=7 / orders=20 / rules=8）`,
+      `seed:demo 后行数对不上（期望 categories=3 / skus=8 / masters=5 / users=7 / orders=20 / rules=8）`,
     );
   }
 

@@ -162,6 +162,61 @@ export default async function EditMerchantPage({
               <option value="inactive">inactive</option>
             </select>
           </label>
+
+          {/* [任务 4] 邀请码展示 + 启用开关 */}
+          <div>
+            <label
+              style={{
+                display: "block",
+                fontSize: 13,
+                color: "#374151",
+                fontWeight: 500,
+                marginBottom: 6,
+              }}
+            >
+              邀请码{" "}
+              <span style={{ color: "#6b7280", fontSize: 12, fontWeight: 400 }}>
+                （师傅 /worker/join 入驻用）
+              </span>
+            </label>
+            <input
+              type="text"
+              value={merchant.inviteCode}
+              readOnly
+              style={{
+                ...inputStyle,
+                fontFamily: "monospace",
+                letterSpacing: 1,
+                background: "#f3f4f6",
+                color: "#374151",
+              }}
+            />
+          </div>
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 14,
+            }}
+          >
+            <input
+              type="checkbox"
+              name="inviteCodeEnabled"
+              value="true"
+              defaultChecked={merchant.inviteCodeEnabled}
+              style={{ width: 16, height: 16 }}
+            />
+            <span
+              style={{
+                fontSize: 13,
+                color: "#374151",
+                fontWeight: 500,
+              }}
+            >
+              邀请码启用（禁用后师傅无法通过此码入驻）
+            </span>
+          </label>
           <Field
             label="省"
             name="province"
