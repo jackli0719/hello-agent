@@ -69,7 +69,23 @@ export async function createOrderAction(
   const result = await createOrder({
     customerName: String(formData.get("customerName") ?? ""),
     customerPhone: String(formData.get("customerPhone") ?? ""),
-    address: String(formData.get("address") ?? ""),
+    // [任务 3] 4 级地址 — 拼成 address 展示冗余
+    address:
+      [
+        String(formData.get("province") ?? "").trim(),
+        String(formData.get("city") ?? "").trim(),
+        String(formData.get("district") ?? "").trim(),
+        String(formData.get("street") ?? "").trim(),
+        String(formData.get("addressDetail") ?? "").trim(),
+      ]
+        .filter(Boolean)
+        .join("") || String(formData.get("address") ?? ""),
+    // [任务 3] 4 级地址字段
+    province: String(formData.get("province") ?? ""),
+    city: String(formData.get("city") ?? ""),
+    district: String(formData.get("district") ?? ""),
+    street: String(formData.get("street") ?? ""),
+    addressDetail: String(formData.get("addressDetail") ?? ""),
     skuCode: String(formData.get("skuCode") ?? ""),
     // categoryCode 用于服务端配对校验（前端 select 联动时同步提交）
     categoryCode: String(formData.get("categoryCode") ?? "") || undefined,

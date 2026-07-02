@@ -64,15 +64,32 @@ export async function customerCreateOrderAction(
     return { ok: false, error: "服务 SKU 无效或已下架", field: "skuCode" };
   }
 
+  // [任务 3] 4 级地址 — 派单匹配必用
+  const province = String(formData.get("province") ?? "").trim();
+  const city = String(formData.get("city") ?? "").trim();
+  const district = String(formData.get("district") ?? "").trim();
+  const street = String(formData.get("street") ?? "").trim();
+  const addressDetail = String(formData.get("addressDetail") ?? "").trim();
+  // 旧 address 字段 = 4 级 + 详细拼接（保持展示冗余，不参与匹配）
+  const fullAddress = [province, city, district, street, addressDetail]
+    .filter(Boolean)
+    .join("");
+
   const result = await createOrder({
     customerName: String(formData.get("customerName") ?? ""),
     customerPhone,
-    address: String(formData.get("address") ?? ""),
+    address: fullAddress,
     skuCode,
     categoryCode: String(formData.get("categoryCode") ?? "") || undefined,
     amount: basePrice,
     scheduledAt: defaultScheduledAt(),
     remark: String(formData.get("remark") ?? "") || undefined,
+    // [任务 3] 4 级地址字段
+    province,
+    city,
+    district,
+    street,
+    addressDetail,
   });
 
   if (!result.ok) {

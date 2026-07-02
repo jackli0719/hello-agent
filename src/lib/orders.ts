@@ -17,6 +17,7 @@ import { prisma } from "@/src/lib/db";
 import { normalizeCode } from "@/src/lib/codes";
 import { logInfo, logError } from "@/src/lib/logger";
 import { incrementCounter, METRIC } from "@/src/lib/metrics";
+import { createActivityLog } from "@/src/lib/activity-log";
 import {
   validateAddress,
   validateCancelReason,
@@ -30,6 +31,11 @@ export type OrderField =
   | "customerName"
   | "customerPhone"
   | "address"
+  | "province"
+  | "city"
+  | "district"
+  | "street"
+  | "addressDetail"
   | "skuCode"
   | "categoryCode"
   | "amount"
@@ -40,6 +46,13 @@ export interface CreateOrderInput {
   customerName: string;
   customerPhone: string;
   address: string;
+  // [任务 3] 4 级地址 + 详细 — 派单精确匹配必用
+  // 测试兼容：optional（默认 ""），下单路径（customer + 后台）显式传
+  province?: string;
+  city?: string;
+  district?: string;
+  street?: string;
+  addressDetail?: string;
   skuCode: string;
   // 可选 — 前端表单会传，服务端用来跟 skuCode 做「配对校验」
   // （防止客户端被改包后塞一个 skuCode 不属于 categoryCode 的组合）
@@ -70,9 +83,35 @@ export function validateCreateOrderInput(
     return { ok: false, error: phoneR.error, field: "customerPhone" };
   const customerPhone = input.customerPhone!.trim();
 
-  const addrR = validateAddress(input.address);
+  // [任务 3] 4 级地址校验 — 先于旧 address 校验（address 现在由 4 级 + detail 拼出，不要求调用方传）
+  const province = (input.province ?? "").trim();
+  if (!province) {
+    return { ok: false, error: "请填写省", field: "province" };
+  }
+  const city = (input.city ?? "").trim();
+  if (!city) {
+    return { ok: false, error: "请填写市", field: "city" };
+  }
+  const district = (input.district ?? "").trim();
+  if (!district) {
+    return { ok: false, error: "请填写区县", field: "district" };
+  }
+  const street = (input.street ?? "").trim();
+  if (!street) {
+    return { ok: false, error: "请填写街道 / 乡镇", field: "street" };
+  }
+  const addressDetail = (input.addressDetail ?? "").trim();
+  if (!addressDetail) {
+    return { ok: false, error: "请填写详细地址", field: "addressDetail" };
+  }
+
+  // [P1-2 修] 旧 address 字段 = 4 级 + detail 拼接（service 层统一拼，不要求调用方传）
+  // 旧校验（validateAddress）保留作为兜底：调用方如果传了旧 address 但不合法，仍报错
+  const addrR = validateAddress(input.address ?? "");
   if (!addrR.ok) return { ok: false, error: addrR.error, field: "address" };
-  const address = input.address!.trim();
+  const address =
+    input.address?.trim() ||
+    [province, city, district, street, addressDetail].join("");
 
   const skuCodeRaw = (input.skuCode ?? "").trim();
   if (!skuCodeRaw)
@@ -123,6 +162,11 @@ export function validateCreateOrderInput(
       customerName,
       customerPhone,
       address,
+      province,
+      city,
+      district,
+      street,
+      addressDetail,
       skuCode,
       categoryCode,
       amount: input.amount as number,
@@ -191,6 +235,12 @@ export async function createOrder(
           serviceSkuId: sku.id,
           serviceName: sku.name,
           address: input.address,
+          // [任务 3] 4 级地址
+          province: input.province,
+          city: input.city,
+          district: input.district,
+          street: input.street,
+          addressDetail: input.addressDetail,
           scheduledAt: input.scheduledAt,
           amount: Math.round(input.amount * 100),
           status: "pending",
@@ -431,6 +481,11 @@ async function computeRecommendationForOrder(order: {
   serviceSkuId: string | null;
   status: string;
   address: string;
+  // [任务 3] 4 级地址 — 精确匹配 PlatformArea 必用
+  province: string;
+  city: string;
+  district: string;
+  street: string;
 }) {
   const { recommendMastersForOrder, parseRuleJson } =
     await import("@/lib/dispatch");
@@ -537,13 +592,63 @@ async function computeRecommendationForOrder(order: {
     },
   );
 
-  return recommendMastersForOrder({
-    order: { skuId: order.serviceSkuId, categoryId, address: order.address },
+  const result = recommendMastersForOrder({
+    order: {
+      skuId: order.serviceSkuId,
+      categoryId,
+      // [任务 3] 优先 4 级字段精确匹配；缺 4 级时 dispatch.ts fallback 到 address 模糊
+      province: order.province,
+      city: order.city,
+      district: order.district,
+      street: order.street,
+      address: order.address,
+    },
     rules,
     masters,
     platformAreas: platformAreaRows,
     merchantAreas: merchantAreaRows,
   });
+
+  // [任务 3] 推荐失败时写 activity log — 调用方传 orderId 进来
+  // 注意：computeRecommendationForOrder 不知道 orderId，由调用方（assignOrder / queries）负责写
+  // 这里只在 order 字段有 id 时写（assignOrder 路径）
+  if (result.failureCode && order.id) {
+    const actionMap: Record<string, string> = {
+      area_no_platform_area: "dispatch_area_no_platform_area",
+      area_no_merchant: "dispatch_area_no_merchant",
+      area_no_master: "dispatch_area_no_master",
+      no_rule: "dispatch_no_rule",
+      no_skill_matched: "dispatch_no_skill_matched",
+      merchant_inactive: "dispatch_merchant_inactive",
+    };
+    const action = actionMap[result.failureCode];
+    if (action) {
+      try {
+        await createActivityLog({
+          action,
+          targetType: "order",
+          targetId: order.id,
+          message: `派单推荐失败 [${result.failureCode}]: ${result.reason}`,
+          metadata: {
+            failureCode: result.failureCode,
+            matchedArea: result.matchedArea
+              ? {
+                  id: result.matchedArea.id,
+                  province: result.matchedArea.province,
+                  city: result.matchedArea.city,
+                  district: result.matchedArea.district,
+                  street: result.matchedArea.street,
+                }
+              : null,
+          },
+        });
+      } catch {
+        // 写日志失败不阻塞主流程
+      }
+    }
+  }
+
+  return result;
 }
 
 // ============================================================

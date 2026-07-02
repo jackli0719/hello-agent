@@ -347,7 +347,7 @@ describe("recommendMastersForOrder", () => {
     });
     expect(r.rule).toBeNull();
     expect(r.candidates).toEqual([]);
-    expect(r.reason).toMatch(/不在平台已开放合作区域/);
+    expect(r.reason).toMatch(/当前区域暂未开放平台合作服务/);
   });
 
   // # spec: 区域过滤前置 — 平台区域命中后，必须有 enabled MerchantArea 覆盖该区域

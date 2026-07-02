@@ -14,7 +14,13 @@ export function makeTestOrderInput(
   return {
     customerName: "_test_customer",
     customerPhone: nextPhone(),
-    address: "_test_address",
+    address: "广东省深圳市南山区粤海街道科技园 1 号楼",
+    // [任务 3] 4 级地址
+    province: "广东省",
+    city: "深圳市",
+    district: "南山区",
+    street: "粤海街道",
+    addressDetail: "科技园 1 号楼",
     skuCode: "CLEAN-DAILY-2H",
     categoryCode: "CLEAN",
     amount: 158,

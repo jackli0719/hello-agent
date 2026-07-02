@@ -118,6 +118,14 @@ model Order {
   masterId        String?
   master          Master? @relation(fields: [masterId], references: [id])
   masterName      String?                      // 冗余快照
+  // [任务 3] 4 级地址字段 — 派单匹配必用（精确 4 级 = PlatformArea）
+  // 旧 address 字段保留作为"展示冗余"（拼接 4 级 + detail），不参与匹配
+  province        String   @default("")
+  city            String   @default("")
+  district        String   @default("")
+  street          String   @default("")
+  addressDetail   String   @default("")
+  // 旧 address 字段：保留 = "省/市/区县/街道 addressDetail" 拼接；新订单不写，靠读取时拼
   address         String
   scheduledAt     DateTime
   amount          Int                          // 单位：分

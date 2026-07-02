@@ -187,19 +187,68 @@ export function CustomerOrderForm({ categories, skus }: Props) {
         />
       </FormField>
 
-      <FormField label="服务地址" error={errorField === "address"}>
-        <textarea
-          name="address"
+      {/* [任务 3] 4 级地址 + 详细地址 — 派单匹配必用，精确 4 级 = PlatformArea */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 10,
+          marginBottom: 14,
+        }}
+      >
+        <FormField label="省" error={errorField === "province"}>
+          <input
+            type="text"
+            name="province"
+            required
+            maxLength={50}
+            placeholder="如：广东省"
+            style={inputStyle(errorField === "province")}
+          />
+        </FormField>
+        <FormField label="市" error={errorField === "city"}>
+          <input
+            type="text"
+            name="city"
+            required
+            maxLength={50}
+            placeholder="如：深圳市"
+            style={inputStyle(errorField === "city")}
+          />
+        </FormField>
+        <FormField label="区县" error={errorField === "district"}>
+          <input
+            type="text"
+            name="district"
+            required
+            maxLength={50}
+            placeholder="如：南山区"
+            style={inputStyle(errorField === "district")}
+          />
+        </FormField>
+        <FormField label="街道 / 乡镇" error={errorField === "street"}>
+          <input
+            type="text"
+            name="street"
+            required
+            maxLength={50}
+            placeholder="如：粤海街道"
+            style={inputStyle(errorField === "street")}
+          />
+        </FormField>
+      </div>
+      <FormField label="详细地址" error={errorField === "addressDetail"}>
+        <input
+          type="text"
+          name="addressDetail"
           required
           maxLength={200}
-          rows={2}
-          placeholder="详细地址（街道、门牌号）"
-          style={{
-            ...inputStyle(errorField === "address"),
-            resize: "vertical",
-          }}
+          placeholder="门牌号 / 小区 / 楼栋"
+          style={inputStyle(errorField === "addressDetail")}
         />
       </FormField>
+      {/* 旧 address 字段隐藏（兼容 server action 仍读，server 端拼出） */}
+      <input type="hidden" name="address" value="" />
 
       <FormField label="备注（可选）" error={errorField === "remark"}>
         <textarea

@@ -28,6 +28,17 @@ export interface RecommendationResult {
   rule: DispatchRuleRow | null; // 命中的规则（null = 没有规则覆盖）
   candidates: Technician[]; // 按 rating 降序排好的候选师傅
   reason: string; // 一句话说明（为什么有 / 为什么没有）
+  // [任务 3] 命中的平台合作区域（成功推荐时填，失败时也可能填）
+  matchedArea?: PlatformAreaRow | null;
+  // [任务 3] 推荐失败原因 code — 调用方按 code 写 activity log
+  // 不写 enum 避免 dispatch.ts 引入硬编码，调用方按 code 字符串映射
+  failureCode?:
+    | "area_no_platform_area" // 区域没匹配到 PlatformArea
+    | "area_no_merchant" // 区域有但无 active 商家覆盖
+    | "area_no_master" // 区域有商家覆盖但无师傅
+    | "no_rule" // 无 SKU/类目规则
+    | "no_skill_matched" // 有规则但无技能匹配
+    | "merchant_inactive"; // 商家覆盖区域但全部 inactive（理论上 db 过滤后不会到这里，留作防御）
 }
 
 export interface PlatformAreaRow {
@@ -50,6 +61,13 @@ export interface RecommendArgs {
   order: {
     skuId: string | null;
     categoryId: string | null;
+    // [任务 3] 4 级地址：精确匹配 PlatformArea 必传 4 字段
+    // 旧订单（无 4 字段）只传 address → 走模糊 fallback 路径
+    province?: string | null;
+    city?: string | null;
+    district?: string | null;
+    street?: string | null;
+    addressDetail?: string | null;
     address?: string | null;
   };
   rules: DispatchRuleRow[];
@@ -80,17 +98,25 @@ export function recommendMastersForOrder(
   const { order, rules } = args;
 
   let masters = args.masters;
+  let matchedArea: PlatformAreaRow | null = null;
   if (args.platformAreas && args.merchantAreas) {
     const areaResult = filterMastersByArea({
-      address: order.address ?? "",
+      order,
       masters,
       platformAreas: args.platformAreas,
       merchantAreas: args.merchantAreas,
     });
     if (!areaResult.ok) {
-      return { rule: null, candidates: [], reason: areaResult.reason };
+      return {
+        rule: null,
+        candidates: [],
+        reason: areaResult.reason,
+        failureCode: areaResult.failureCode,
+        matchedArea: null,
+      };
     }
     masters = areaResult.masters;
+    matchedArea = areaResult.matchedArea ?? null;
   }
 
   // 1. 找命中的规则 — SKU 精确优先
@@ -116,6 +142,8 @@ export function recommendMastersForOrder(
       rule: null,
       candidates: [],
       reason: "没有匹配的派单规则，请人工指派",
+      failureCode: "no_rule",
+      matchedArea,
     };
   }
 
@@ -134,6 +162,8 @@ export function recommendMastersForOrder(
         required.length === 0
           ? `规则「${rule.name}」不需要特定技能，但没有空闲师傅`
           : `规则「${rule.name}」需要技能 [${required.join("、")}]，当前没有空闲师傅掌握`,
+      failureCode: "no_skill_matched",
+      matchedArea,
     };
   }
 
@@ -141,6 +171,7 @@ export function recommendMastersForOrder(
     rule,
     candidates,
     reason: `命中规则「${rule.name}」（${rule.id}），推荐 ${candidates[0].name}（评分 ${candidates[0].rating}）`,
+    matchedArea,
   };
 }
 
@@ -160,19 +191,28 @@ function pickTopRule(rules: DispatchRuleRow[]): DispatchRuleRow {
 }
 
 function filterMastersByArea(args: {
-  address: string;
+  order: RecommendArgs["order"];
   masters: Technician[];
   platformAreas: PlatformAreaRow[];
   merchantAreas: MerchantAreaRow[];
-}): { ok: true; masters: Technician[] } | { ok: false; reason: string } {
-  const matchedArea = pickPlatformAreaForAddress(
-    args.address,
-    args.platformAreas,
-  );
+}):
+  | {
+      ok: true;
+      masters: Technician[];
+      matchedArea?: PlatformAreaRow;
+    }
+  | {
+      ok: false;
+      reason: string;
+      failureCode:
+        "area_no_platform_area" | "area_no_merchant" | "area_no_master";
+    } {
+  const matchedArea = pickPlatformAreaForOrder(args.order, args.platformAreas);
   if (!matchedArea) {
     return {
       ok: false,
-      reason: "订单地址不在平台已开放合作区域，请人工处理",
+      reason: "当前区域暂未开放平台合作服务",
+      failureCode: "area_no_platform_area",
     };
   }
 
@@ -184,7 +224,8 @@ function filterMastersByArea(args: {
   if (merchantIds.size === 0) {
     return {
       ok: false,
-      reason: `平台区域「${formatPlatformArea(matchedArea)}」暂无启用商家覆盖，请人工处理`,
+      reason: `平台区域「${formatPlatformArea(matchedArea)}」暂无启用商家覆盖`,
+      failureCode: "area_no_merchant",
     };
   }
 
@@ -194,17 +235,47 @@ function filterMastersByArea(args: {
   if (masters.length === 0) {
     return {
       ok: false,
-      reason: `平台区域「${formatPlatformArea(matchedArea)}」的商家下暂无师傅，请人工处理`,
+      reason: `平台区域「${formatPlatformArea(matchedArea)}」的商家下暂无师傅`,
+      failureCode: "area_no_master",
     };
   }
 
-  return { ok: true, masters };
+  return { ok: true, masters, matchedArea };
+}
+
+/**
+ * [任务 3] 匹配 PlatformArea：
+ * - 优先 4 级字段精确匹配（订单有 province/city/district/street 就走精确）
+ * - 4 级任一为空时退到旧 address 模糊匹配（兼容历史订单）
+ */
+function pickPlatformAreaForOrder(
+  order: RecommendArgs["order"],
+  platformAreas: PlatformAreaRow[],
+): PlatformAreaRow | null {
+  const hasAllFour =
+    !!order.province && !!order.city && !!order.district && !!order.street;
+  if (hasAllFour) {
+    return (
+      platformAreas
+        .filter((area) => area.enabled)
+        .find(
+          (area) =>
+            area.province === order.province &&
+            area.city === order.city &&
+            area.district === order.district &&
+            area.street === order.street,
+        ) ?? null
+    );
+  }
+  // fallback: address 模糊匹配（兼容旧订单）
+  return pickPlatformAreaForAddress(order.address ?? "", platformAreas);
 }
 
 function pickPlatformAreaForAddress(
   address: string,
   platformAreas: PlatformAreaRow[],
 ): PlatformAreaRow | null {
+  if (!address) return null;
   const normalizedAddress = normalizeAreaText(address);
   const matches = platformAreas
     .filter((area) => area.enabled)

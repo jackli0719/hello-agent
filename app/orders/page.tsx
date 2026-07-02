@@ -456,13 +456,13 @@ export default async function OrdersPage({ searchParams }: PageProps) {
                   <th style={th}>订单号</th>
                   <th style={th}>客户 / 手机号</th>
                   <th style={th}>服务品类 / SKU</th>
-                  <th style={th}>地址</th>
+                  <th style={{ ...th, minWidth: 200 }}>4 级地址 / 详细</th>
                   <th style={th}>金额</th>
                   <th style={th}>已分配师傅</th>
                   <th style={th}>状态</th>
                   <th style={th}>创建时间</th>
                   <th style={{ ...th, minWidth: 260 }}>备注 / 内部备注</th>
-                  <th style={{ ...th, minWidth: 260 }}>推荐 / 命中规则</th>
+                  <th style={{ ...th, minWidth: 280 }}>推荐 / 命中规则</th>
                 </tr>
               </thead>
               <tbody>
@@ -481,16 +481,26 @@ export default async function OrdersPage({ searchParams }: PageProps) {
                         {o.categoryName ?? "未分类"}
                       </div>
                     </td>
-                    <td
-                      style={{
-                        ...td,
-                        maxWidth: 200,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {o.address}
+                    <td style={{ ...td, minWidth: 200 }}>
+                      {/* [任务 3] 4 级地址 + 详细 — 派单精确匹配字段 */}
+                      <div style={{ fontSize: 12, color: "#374151" }}>
+                        {[o.province, o.city, o.district, o.street]
+                          .filter(Boolean)
+                          .join(" / ") || (
+                          <span style={{ color: "#9ca3af" }}>未填 4 级</span>
+                        )}
+                      </div>
+                      {o.addressDetail && (
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: "#6b7280",
+                            marginTop: 2,
+                          }}
+                        >
+                          详细：{o.addressDetail}
+                        </div>
+                      )}
                     </td>
                     <td style={td}>¥{o.amountYuan.toFixed(2)}</td>
                     <td style={td}>
@@ -648,6 +658,41 @@ function ActionCell({
 }) {
   const { recommendation } = order;
   const rule = recommendation.rule;
+  const matchedArea = recommendation.matchedArea;
+
+  // [任务 3] 匹配区域展示
+  const areaBlock = matchedArea ? (
+    <div
+      style={{
+        fontSize: 11,
+        color: "#166534",
+        background: "#f0fdf4",
+        padding: "2px 6px",
+        borderRadius: 3,
+        marginBottom: 4,
+        display: "inline-block",
+      }}
+    >
+      区域 {matchedArea.province}/{matchedArea.city}/{matchedArea.district}/
+      {matchedArea.street}
+    </div>
+  ) : null;
+
+  // [任务 3] 候选师傅所属商家
+  const candidateBlock =
+    recommendation.candidates.length > 0 ? (
+      <div style={{ fontSize: 11, marginTop: 4, color: "#374151" }}>
+        <div>候选（{recommendation.candidates.length}）：</div>
+        {recommendation.candidates.slice(0, 3).map((c) => (
+          <div key={c.id} style={{ marginTop: 2 }}>
+            • {c.name}（⭐{c.rating.toFixed(1)}）
+            {c.merchantName && (
+              <span style={{ color: "#6b7280" }}> · {c.merchantName}</span>
+            )}
+          </div>
+        ))}
+      </div>
+    ) : null;
 
   // [v0.7.9] cancelled 状态：展示取消信息 + 不可操作
   if (order.status === "cancelled") {
@@ -708,6 +753,7 @@ function ActionCell({
   if (!rule) {
     return (
       <div style={{ fontSize: 12 }}>
+        {areaBlock}
         <div style={{ color: "#b91c1c" }}>{recommendation.reason}</div>
         <div style={{ color: "#6b7280", marginTop: 2 }}>暂无可派单师傅</div>
       </div>
@@ -718,6 +764,7 @@ function ActionCell({
   if (recommendation.candidates.length === 0) {
     return (
       <div style={{ fontSize: 12 }}>
+        {areaBlock}
         <div style={{ marginBottom: 4 }}>
           <span
             style={{
@@ -749,11 +796,15 @@ function ActionCell({
 
   // pending + 有候选：派单按钮列表 + 取消订单按钮
   return (
-    <OrderActions
-      orderId={order.id}
-      status={order.status}
-      ruleName={rule.name}
-      candidates={recommendation.candidates}
-    />
+    <div>
+      {areaBlock}
+      <OrderActions
+        orderId={order.id}
+        status={order.status}
+        ruleName={rule.name}
+        candidates={recommendation.candidates}
+      />
+      {candidateBlock}
+    </div>
   );
 }
