@@ -18,6 +18,7 @@ type AppPage =
   | "commission-strategies"
   | "settlements"
   | "merchant-settlements"
+  | "payout-records"
   | "dispatch-rules"
   | "metrics"
   | "activity-logs";
@@ -40,6 +41,7 @@ const ITEMS: { key: AppPage; label: string; href: string }[] = [
     label: "商家结算汇总",
     href: "/merchant-settlements",
   }, // [任务 7]
+  { key: "payout-records", label: "打款记录", href: "/payout-records" }, // [任务 12]
   { key: "dispatch-rules", label: "派单规则", href: "/dispatch-rules" },
   { key: "activity-logs", label: "操作日志", href: "/activity-logs" }, // [v0.8.0]
   { key: "metrics", label: "业务指标", href: "/admin/metrics" },

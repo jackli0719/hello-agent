@@ -5,13 +5,18 @@ import { DEFAULT_LANDING, getCurrentUser } from "@/src/lib/auth";
 import { ensureCsrfCookie } from "@/src/lib/csrf";
 import { getMerchantSettlementDetail } from "@/src/lib/merchant-settlement";
 import {
+  listPayoutsBySettlement,
+  sumPayoutsBySettlement,
+} from "@/src/lib/payout";
+import {
   archiveMerchantSettlementAction,
   confirmMerchantSettlementAction,
+  createPayoutAction,
 } from "../actions";
 
 interface PageProps {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; payout?: string }>;
 }
 
 function formatYuan(cents: number) {
@@ -26,14 +31,21 @@ export default async function MerchantSettlementDetailPage({
   if (!user) redirect("/login");
   if (user.role !== "admin") redirect(DEFAULT_LANDING[user.role]);
 
-  const [{ id }, { error }, csrfToken] = await Promise.all([
-    params,
-    searchParams,
-    ensureCsrfCookie(),
-  ]);
+  const [{ id }, { error, payout: payoutFlash }, csrfToken] = await Promise.all(
+    [params, searchParams, ensureCsrfCookie()],
+  );
   const data = await getMerchantSettlementDetail(id);
   if (!data) notFound();
   const { summary, previews } = data;
+
+  // [任务 12] 加载打款记录 + 累计
+  const [payouts, payoutSum] = await Promise.all([
+    listPayoutsBySettlement(summary.id),
+    sumPayoutsBySettlement(summary.id),
+  ]);
+  const payoutRemaining = summary.merchantIncome - payoutSum;
+  const payoutCanRecord =
+    summary.status === "confirmed" || summary.status === "archived";
 
   return (
     <main
@@ -109,6 +121,20 @@ export default async function MerchantSettlementDetailPage({
           }}
         >
           {error}
+        </div>
+      )}
+      {payoutFlash && (
+        <div
+          style={{
+            padding: "10px 14px",
+            background: "#dcfce7",
+            color: "#15803d",
+            borderRadius: 6,
+            fontSize: 13,
+            marginBottom: 16,
+          }}
+        >
+          打款记录录入成功：{payoutFlash}
         </div>
       )}
       <div
@@ -376,6 +402,193 @@ export default async function MerchantSettlementDetailPage({
           </table>
         )}
       </section>
+
+      {/* [任务 12] 4. 线下打款记录 */}
+      <section style={{ ...card, marginTop: 16 }}>
+        <h2 style={{ fontSize: 16, margin: "0 0 12px 0" }}>
+          线下打款记录（{payouts.length} 条）
+        </h2>
+
+        {/* 累计 vs 应收 */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr 1fr",
+            gap: 12,
+            padding: 12,
+            background: "#f9fafb",
+            borderRadius: 6,
+            marginBottom: 16,
+          }}
+        >
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>
+              本期应收（商家收）
+            </div>
+            <div style={{ fontSize: 18, fontWeight: 600, color: "#7c3aed" }}>
+              {formatYuan(summary.merchantIncome)}
+            </div>
+          </div>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>
+              累计已打款
+            </div>
+            <div style={{ fontSize: 18, fontWeight: 600, color: "#15803d" }}>
+              {formatYuan(payoutSum)}
+            </div>
+          </div>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>
+              剩余未打款
+            </div>
+            <div
+              style={{
+                fontSize: 18,
+                fontWeight: 600,
+                color: payoutRemaining > 0 ? "#dc2626" : "#6b7280",
+              }}
+            >
+              {formatYuan(payoutRemaining)}
+            </div>
+          </div>
+        </div>
+
+        {/* 录入表单 — 仅 confirmed / archived */}
+        {payoutCanRecord ? (
+          payoutRemaining > 0 ? (
+            <form
+              action={createPayoutAction}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1.2fr 1.5fr auto",
+                gap: 8,
+                alignItems: "end",
+                marginBottom: 16,
+                padding: 12,
+                border: "1px solid #e5e7eb",
+                borderRadius: 6,
+                background: "#fff",
+              }}
+            >
+              <input type="hidden" name="_csrf" value={csrfToken} />
+              <input type="hidden" name="settlementId" value={summary.id} />
+              <Field
+                label="打款金额（元）"
+                value=""
+                editable
+                name="amount"
+                placeholder="如 100.00"
+              />
+              <Field
+                label="打款时间"
+                value=""
+                editable
+                name="paidAt"
+                type="datetime-local"
+                placeholder=""
+              />
+              <Field
+                label="凭证 URL（可选）"
+                value=""
+                editable
+                name="proofUrl"
+                placeholder="https://..."
+              />
+              <button
+                type="submit"
+                style={{
+                  padding: "8px 18px",
+                  background: "#15803d",
+                  color: "#fff",
+                  borderRadius: 6,
+                  fontSize: 14,
+                  fontWeight: 500,
+                  border: "none",
+                  cursor: "pointer",
+                  height: 36,
+                }}
+              >
+                录入打款
+              </button>
+            </form>
+          ) : (
+            <div
+              style={{
+                padding: "10px 14px",
+                background: "#dcfce7",
+                color: "#15803d",
+                borderRadius: 6,
+                fontSize: 13,
+                marginBottom: 16,
+              }}
+            >
+              已完成全部打款（累计 = 应收）
+            </div>
+          )
+        ) : (
+          <div
+            style={{
+              padding: "10px 14px",
+              background: "#fef3c7",
+              color: "#92400e",
+              borderRadius: 6,
+              fontSize: 13,
+              marginBottom: 16,
+            }}
+          >
+            结算状态为「待确认」，需先确认或归档后才能录打款
+          </div>
+        )}
+
+        {/* 已录入列表 */}
+        {payouts.length === 0 ? (
+          <div style={{ color: "#9ca3af", fontSize: 14, padding: "20px 0" }}>
+            暂无打款记录
+          </div>
+        ) : (
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                <th style={th}>打款时间</th>
+                <th style={th}>金额</th>
+                <th style={th}>凭证</th>
+                <th style={th}>操作人</th>
+                <th style={th}>录入时间</th>
+              </tr>
+            </thead>
+            <tbody>
+              {payouts.map((p) => (
+                <tr key={p.id}>
+                  <td style={td}>{p.paidAt.toLocaleString("zh-CN")}</td>
+                  <td style={{ ...td, color: "#15803d", fontWeight: 500 }}>
+                    {formatYuan(p.amount)}
+                  </td>
+                  <td style={td}>
+                    {p.proofUrl ? (
+                      <a
+                        href={p.proofUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          color: "#2563eb",
+                          fontSize: 12,
+                          textDecoration: "none",
+                        }}
+                      >
+                        查看 ↗
+                      </a>
+                    ) : (
+                      <span style={{ color: "#9ca3af" }}>—</span>
+                    )}
+                  </td>
+                  <td style={td}>{p.operator}</td>
+                  <td style={td}>{p.createdAt.toLocaleString("zh-CN")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
     </main>
   );
 }
@@ -384,11 +597,46 @@ function Field({
   label,
   value,
   mono,
+  editable,
+  name,
+  placeholder,
+  type,
 }: {
   label: string;
   value: string;
   mono?: boolean;
+  editable?: boolean;
+  name?: string;
+  placeholder?: string;
+  type?: string;
 }) {
+  if (editable && name) {
+    return (
+      <div>
+        <div style={{ color: "#6b7280", fontSize: 12, marginBottom: 2 }}>
+          {label}
+        </div>
+        <input
+          name={name}
+          type={type ?? "text"}
+          defaultValue={value}
+          placeholder={placeholder}
+          required
+          style={{
+            width: "100%",
+            padding: "8px 10px",
+            border: "1px solid #d1d5db",
+            borderRadius: 6,
+            fontSize: 13,
+            fontFamily: mono ? "monospace" : "inherit",
+            background: "#fff",
+            outline: "none",
+            boxSizing: "border-box",
+          }}
+        />
+      </div>
+    );
+  }
   return (
     <div>
       <div style={{ color: "#6b7280", fontSize: 12, marginBottom: 2 }}>

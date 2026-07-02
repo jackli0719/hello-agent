@@ -250,6 +250,9 @@ model Merchant {
   // [任务 7] 商家结算汇总（1 对多 — 一个商家跨多个月）
   merchantSettlements MerchantSettlement[]
 
+  // [任务 12] 线下打款记录（1 对多 — 同一商家多次打款）
+  payoutRecords PayoutRecord[]
+
   @@index([status])
   @@index([province, city, district, street])
 }
@@ -381,9 +384,49 @@ model MerchantSettlement {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // [任务 12] 反向关系：线下打款记录（1 对多）
+  payoutRecords PayoutRecord[]
+
   @@unique([merchantId, period])
   @@index([period])
   @@index([status])
+}
+
+// ============================================================
+// [任务 12] 线下打款记录（PayoutRecord）
+//
+// 设计要点：
+// - withdrawRequestId = MerchantSettlement.id (FK, onDelete Cascade)
+//   字面含义"打款请求 ID" — 业务上"线下打款"指对已审核通过的结算汇总结算
+// - amount: 单位 分
+// - paidAt: 必填（线下打款必有时间）
+// - proofUrl: optional；若填则必须 http(s):// 开头
+// - operator: 操作人 User.name 字符串（冗余，删 user 不影响记录）
+// - 同一 settlement 允许多条 PayoutRecord（分批打款）；Σ(amount) ≤ settlement.merchantIncome
+// - 只录入不接支付通道
+// ============================================================
+model PayoutRecord {
+  id        String   @id @default(cuid())
+  // FK MerchantSettlement.id（Cascade）
+  withdrawRequestId String
+  settlement        MerchantSettlement @relation(fields: [withdrawRequestId], references: [id], onDelete: Cascade)
+  // 反范式存 merchantId：方便 /payout-records 列表筛选
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id])
+  // 打款金额（单位：分）
+  amount Int
+  // 打款时间（必填）
+  paidAt DateTime
+  // 打款凭证 URL（optional；填了必须 http(s):// 开头）
+  proofUrl String?
+  // 操作人（admin User.name 冗余）
+  operator String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([withdrawRequestId])
+  @@index([merchantId])
+  @@index([paidAt])
 }
 
 // ============================================================

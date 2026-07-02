@@ -59,6 +59,12 @@ function guardProduction() {
 async function clearAll() {
   await prisma.activityLog.deleteMany();
   try {
+    // [任务 12] PayoutRecord 依赖 MerchantSettlement，先删
+    await prisma.payoutRecord.deleteMany();
+  } catch {
+    // 老 Prisma Client 无 payoutRecord — 跳过
+  }
+  try {
     await prisma.merchantSettlement.deleteMany();
   } catch {
     // 老 Prisma Client 无 merchantSettlement — 跳过
@@ -389,6 +395,34 @@ async function seedSettlementPreviewsAndSummaries() {
 
   for (const group of groups.values()) {
     await prisma.merchantSettlement.create({ data: group });
+  }
+
+  // ============================================================
+  // [任务 12] 演示数据 — 让 1 条 MerchantSettlement 进入 archived，并录入 1 条 PayoutRecord
+  // 选第一条（按 period asc）作为"历史已结算"案例，金额为 merchantIncome 的 50%
+  // 这样 /payout-records 列表页和 /merchant-settlements/[id] 底部都有数据可看
+  // ============================================================
+  const firstArchivedSettlement = await prisma.merchantSettlement.findFirst({
+    orderBy: [{ period: "asc" }, { merchantId: "asc" }],
+  });
+  if (firstArchivedSettlement) {
+    await prisma.merchantSettlement.update({
+      where: { id: firstArchivedSettlement.id },
+      data: { status: "archived" },
+    });
+    const halfAmount = Math.floor(firstArchivedSettlement.merchantIncome / 2);
+    if (halfAmount > 0) {
+      await prisma.payoutRecord.create({
+        data: {
+          withdrawRequestId: firstArchivedSettlement.id,
+          merchantId: firstArchivedSettlement.merchantId,
+          amount: halfAmount,
+          paidAt: new Date("2026-06-15T10:00:00Z"),
+          proofUrl: "https://example.com/proof/demo-payout-001",
+          operator: "system",
+        },
+      });
+    }
   }
 
   return {
