@@ -65,6 +65,12 @@ async function clearAll() {
     // 老 Prisma Client 无 payoutRecord — 跳过
   }
   try {
+    // [任务 13] WithdrawRequest 依赖 Merchant，先删
+    await prisma.withdrawRequest.deleteMany();
+  } catch {
+    // 老 Prisma Client 无 withdrawRequest — 跳过
+  }
+  try {
     await prisma.merchantSettlement.deleteMany();
   } catch {
     // 老 Prisma Client 无 merchantSettlement — 跳过
@@ -423,6 +429,49 @@ async function seedSettlementPreviewsAndSummaries() {
         },
       });
     }
+  }
+
+  // ============================================================
+  // [任务 13] 演示数据 — 3 条 WithdrawRequest (pending / approved / rejected)
+  // 全部挂在第一个 active merchant 上
+  //   - pending:  ¥1000 — 待审核
+  //   - approved: ¥500  — admin 已通过（演示审核人：admin）
+  //   - rejected: ¥300  — admin 已拒绝，原因：金额异常
+  // 这样 /withdraw-requests 列表页三种状态都有数据可看
+  // ============================================================
+  const firstMerchant = await prisma.merchant.findFirst({
+    orderBy: [{ name: "asc" }],
+  });
+  if (firstMerchant) {
+    await prisma.withdrawRequest.create({
+      data: {
+        merchantId: firstMerchant.id,
+        amount: 100000,
+        status: "pending",
+        remark: "本月运营资金（待审核）",
+      },
+    });
+    await prisma.withdrawRequest.create({
+      data: {
+        merchantId: firstMerchant.id,
+        amount: 50000,
+        status: "approved",
+        remark: "5 月已结账款",
+        reviewerName: "admin",
+        reviewedAt: new Date("2026-06-20T10:00:00Z"),
+      },
+    });
+    await prisma.withdrawRequest.create({
+      data: {
+        merchantId: firstMerchant.id,
+        amount: 30000,
+        status: "rejected",
+        remark: "运营垫付",
+        reviewerName: "admin",
+        reviewedAt: new Date("2026-06-25T14:00:00Z"),
+        rejectReason: "金额异常，请提供对应结算期间明细",
+      },
+    });
   }
 
   return {

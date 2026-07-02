@@ -253,6 +253,9 @@ model Merchant {
   // [任务 12] 线下打款记录（1 对多 — 同一商家多次打款）
   payoutRecords PayoutRecord[]
 
+  // [任务 13] 提现申请（1 对多 — 同一商家多次申请）
+  withdrawRequests WithdrawRequest[]
+
   @@index([status])
   @@index([province, city, district, street])
 }
@@ -430,6 +433,46 @@ model PayoutRecord {
 }
 
 // ============================================================
+// [任务 13] 商家提现申请（WithdrawRequest）
+//
+// 设计要点：
+// - merchantId 必填（FK Merchant；状态 active 才允许申请）
+// - amount 单位：分（与 MerchantSettlement 一致）
+// - status：pending / approved / rejected
+//   - pending → approved（admin 通过）— 实际打款仍走 /merchant-settlements 录 PayoutRecord
+//   - pending → rejected（admin 拒绝）— 必填 rejectReason
+// - remark：merchant 端填的用途说明（可选；admin 代填允许）
+// - reviewerName：冗余 User.name（删 user 不影响记录）
+// - 可提现余额算法：Σ(confirmed + archived MerchantSettlement.merchantIncome)
+//                    − Σ(PayoutRecord.amount)
+//                    − Σ(approved + pending WithdrawRequest.amount)
+// - 只做申请和审核；不做真实打款
+// ============================================================
+model WithdrawRequest {
+  id        String   @id @default(cuid())
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  // 申请金额（分）
+  amount Int
+  // 状态机
+  status    String   @default("pending") // pending | approved | rejected
+  // merchant 填的用途说明（optional）
+  remark    String?
+  // 审核人（User.name 字符串冗余）
+  reviewerName String?
+  // 审核时间（status ∈ approved/rejected 时有值）
+  reviewedAt   DateTime?
+  // 拒绝原因（status=rejected 必填）
+  rejectReason String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([merchantId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ============================================================
 // 操作日志（[v0.4.0] 2026-06-29 引入）
 // 用于后台 Dashboard「最近动态」展示 + 业务追溯。
 //
@@ -447,7 +490,7 @@ model ActivityLog {
   actorName  String                   // 冗余：避免 User 删除后日志失名
   actorRole  String                   // admin | worker | customer | system
   action     String                   // 动作类型：order_created / order_assigned / ...
-  targetType String                   // 对象类型：order / master / serviceSku / dispatchRule
+  targetType String                   // 对象类型：order / master / serviceSku / dispatchRule / withdrawRequest / ...
   targetId   String                   // 对象 id
   message    String                   // 人类可读文案
   metadata   String   @default("{}")  // JSON 字符串（可空）

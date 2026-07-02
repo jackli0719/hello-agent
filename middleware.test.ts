@@ -38,4 +38,13 @@ describe("middleware", () => {
     expect(location).toContain("/login");
     expect(location).toContain("next=%2Fpayout-records");
   });
+
+  // # spec: [任务 13] /withdraw-requests 受保护，未登录跳登录页
+  it("未登录访问 /withdraw-requests → /login?next=%2Fwithdraw-requests", () => {
+    const res = middleware(request("/withdraw-requests"));
+    expect(res.status).toBe(307);
+    const location = res.headers.get("location") ?? "";
+    expect(location).toContain("/login");
+    expect(location).toContain("next=%2Fwithdraw-requests");
+  });
 });

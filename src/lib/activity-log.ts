@@ -24,7 +24,8 @@ export type ActivityTargetType =
   | "commissionStrategy" // [任务 5] 分成策略
   | "settlementPreview" // [任务 6] 结算预览
   | "merchantSettlement" // [任务 7] 商家结算汇总
-  | "payoutRecord"; // [任务 12] 线下打款记录
+  | "payoutRecord" // [任务 12] 线下打款记录
+  | "withdrawRequest"; // [任务 13] 提现申请
 
 export interface CreateActivityLogInput {
   action: string;
