@@ -1,5 +1,12 @@
 // assignOrder 端到端测试 — 走真实 SQLite。
 // 测试用真实的订单号 + 师傅 ID 做隔离，每个测试在 afterEach 里 reset 状态。
+//
+// [v0.10.0] 本测试集不直接验"商家过滤"——assignOrder 走真实 DB，
+// 师傅 T001-T004 已经在 demo seed 里绑到商家 M001-M003，
+// 商家 status=active，所以旧 it() 间接走通了"active 商家"路径。
+// 但 "inactive 商家" / "MerchantArea 全部 enabled=false" 的负面路径
+// 覆盖在 lib/dispatch.test.ts 的 [v0.10.0] 新 it() 里（纯函数层）。
+// 详见 docs/TEST-CHANGELOG.md v0.10.0 段。
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { assignOrder } from "./orders";

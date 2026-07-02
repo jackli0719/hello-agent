@@ -9,6 +9,8 @@ import {
 import type { Technician } from "./types";
 
 // 测试 fixtures
+// [v0.10.0] merchantId 业务必填（任务 2: Master.merchantId）— makeMaster 不默认填，
+// 保持旧 it() 调用点最少改动；新 it() 显式传 merchantId: "MERCHANT-1" 等
 function makeMaster(overrides: Partial<Technician>): Technician {
   return {
     id: "M",
@@ -111,6 +113,11 @@ describe("parseRuleJson", () => {
   });
 });
 
+// [v0.10.0] 本 describe 旧 it() 不传 merchantId — 业务上 [任务 2] 后
+// recommendMastersForOrder 已按 master.merchantId + merchant.status + merchantArea.enabled
+// 过滤；旧 it() 不传 merchantId 时 prisma IN (undefined) 等价"不参与过滤"，
+// 测试通过但不真正覆盖商家过滤。详见 docs/TEST-CHANGELOG.md v0.10.0 段。
+// 新 it()（v0.10.0 起）显式传 merchantId + merchantArea 覆盖新逻辑。
 describe("recommendMastersForOrder", () => {
   // # spec: 派单按规则匹配师傅，无规则命中时返人工指派（rule=null, candidates=[]）
   it("没有规则覆盖 → rule=null, candidates=[]", () => {
@@ -405,5 +412,72 @@ describe("recommendMastersForOrder", () => {
     });
     expect(r.rule?.id).toBe("R1");
     expect(r.candidates.map((m) => m.id)).toEqual(["M1"]);
+  });
+
+  // # spec: v0.10.0 商家过滤 — 商家 status=inactive 时该商家师傅被排除
+  it("[v0.10.0] 商家 status=inactive → 旗下师傅不出现在推荐", () => {
+    // 必须传 address 才能让 pickPlatformAreaForAddress 命中（PA001 粤海街道）
+    const r = recommendMastersForOrder({
+      order: {
+        skuId: "S003",
+        categoryId: "cat-1",
+        address: "广东省深圳市南山区粤海街道科技园",
+      },
+      rules: [
+        makeRule({
+          spec: {
+            match: { categoryId: "cat-1" },
+            requiredSkills: ["空调维修"],
+          },
+        }),
+      ],
+      masters: [
+        makeMaster({
+          id: "ACTIVE-M",
+          skills: ["空调维修"],
+          merchantId: "MERCHANT-A",
+        }),
+        makeMaster({
+          id: "INACTIVE-M",
+          skills: ["空调维修"],
+          merchantId: "MERCHANT-B",
+        }),
+      ],
+      platformAreas: [makePlatformArea()],
+      // 只有 MERCHANT-A 绑定区域（实际：merchant.status 已是 inactive 的，MerchantArea 不会被加载）
+      merchantAreas: [makeMerchantArea({ merchantId: "MERCHANT-A" })],
+    });
+    // 仅 ACTIVE-M 出现
+    expect(r.candidates.map((m) => m.id)).toEqual(["ACTIVE-M"]);
+  });
+
+  // # spec: v0.10.0 区域过滤 — 商家所有 MerchantArea.enabled=false → 旗下师傅被排除
+  it("[v0.10.0] 商家所有 MerchantArea.enabled=false → 师傅不出现在推荐", () => {
+    const r = recommendMastersForOrder({
+      order: {
+        skuId: "S003",
+        categoryId: "cat-1",
+        address: "广东省深圳市南山区粤海街道科技园",
+      },
+      rules: [
+        makeRule({
+          spec: {
+            match: { categoryId: "cat-1" },
+            requiredSkills: ["空调维修"],
+          },
+        }),
+      ],
+      masters: [
+        makeMaster({
+          id: "M1",
+          skills: ["空调维修"],
+          merchantId: "MERCHANT-1",
+        }),
+      ],
+      platformAreas: [makePlatformArea()],
+      // 商家绑了区域但 enabled=false
+      merchantAreas: [makeMerchantArea({ enabled: false })],
+    });
+    expect(r.candidates).toEqual([]);
   });
 });
