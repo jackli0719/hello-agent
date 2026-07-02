@@ -83,7 +83,7 @@ export default async function PayoutRecordsPage() {
                   <td style={td}>{p.paidAt.toLocaleString("zh-CN")}</td>
                   <td style={td}>
                     <Link
-                      href={`/merchants/${p.merchant.id}`}
+                      href={`/merchants/${p.merchant.id}/edit`}
                       style={{
                         color: "#2563eb",
                         fontSize: 13,

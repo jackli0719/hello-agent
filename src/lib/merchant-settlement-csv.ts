@@ -27,12 +27,29 @@ export const SETTLEMENT_CSV_HEADERS = [
   "生成时间",
 ] as const;
 
-type PreviewWithSettlement = Awaited<
-  ReturnType<typeof loadAllExportablePreviews>
->[number];
+type PreviewWithSettlement = {
+  id: string;
+  orderId: string;
+  merchantId: string;
+  masterId: string;
+  strategyId: string | null;
+  orderAmount: number;
+  platformAmount: number;
+  merchantAmount: number;
+  workerAmount: number;
+  status: string;
+  createdAt: Date;
+  updatedAt: Date;
+  period: string;
+  settlementStatus: string;
+  _merchantName: string;
+  order: { id: string; customerName: string; serviceName: string };
+  master: { id: string; name: string };
+  strategy: { id: string; name: string; strategyType: string } | null;
+};
 
 /** 加载所有可导出的 SettlementPreview（confirmed/archived 的全部 merchant × period） */
-async function loadAllExportablePreviews() {
+async function loadAllExportablePreviews(): Promise<PreviewWithSettlement[]> {
   // 1. 找所有 confirmed/archived 的 settlement
   const settlements = await prisma.merchantSettlement.findMany({
     where: { status: { in: ["confirmed", "archived"] } },
@@ -61,22 +78,28 @@ async function loadAllExportablePreviews() {
 
   // 3. join preview + settlement — 用 createdAt 月份匹配 period
   //    preview.merchant 字段不存在 — 用 settlements 查的 merchant.name 映射
+  // [F1-1 PR 审计] 严格过滤：只保留 period + merchantId 都匹配 confirmed/archived settlement 的 preview
+  // （之前可能漏掉：merchantId 匹配但 period 是 pending 的 preview 也被加进 list）
   const merchantNameByMerchantId = new Map<string, string>();
   for (const s of settlements) {
     merchantNameByMerchantId.set(s.merchantId, s.merchant.name);
   }
-  return previews.map((p) => {
+  const matched: PreviewWithSettlement[] = [];
+  for (const p of previews) {
     const period = formatPeriod(p.createdAt);
     const settlement = settlements.find(
       (s) => s.merchantId === p.merchantId && s.period === period,
     );
-    return {
+    // [F1-1] 没匹配上 (merchantId, period) 对应的 confirmed/archived settlement → 跳过
+    if (!settlement) continue;
+    matched.push({
       ...p,
       period,
-      settlementStatus: settlement?.status ?? "(无对应 settlement)",
+      settlementStatus: settlement.status,
       _merchantName: merchantNameByMerchantId.get(p.merchantId) ?? "",
-    };
-  });
+    });
+  }
+  return matched;
 }
 
 /** 加载单个 (merchant, period) 已确认/已归档 settlement 的 previews（用于详情页导出本条） */
