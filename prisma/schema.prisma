@@ -81,6 +81,8 @@ model Master {
   orders Order[]
   // 反向关系：worker 角色 User 通过 workerId 绑本表
   user   User?
+  // [任务 6] 结算预览（1 对多）
+  settlementPreviews SettlementPreview[]
 
   @@index([status])
   @@index([merchantId])
@@ -151,6 +153,9 @@ model Order {
   canceledAt     DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  // [任务 6] 结算预览（1 对 1）
+  settlementPreview SettlementPreview?
 
   @@index([status])
   @@index([scheduledAt])
@@ -239,6 +244,9 @@ model Merchant {
   // [任务 5] 商家分成策略（1 对多）
   commissionStrategies CommissionStrategy[]
 
+  // [任务 6] 结算预览（1 对多）
+  settlementPreviews SettlementPreview[]
+
   @@index([status])
   @@index([province, city, district, street])
 }
@@ -297,8 +305,45 @@ model CommissionStrategy {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // [任务 6] 反向关系：结算预览可追溯用的策略
+  settlementPreviews SettlementPreview[]
+
   @@index([merchantId])
   @@index([enabled])
+}
+
+// ============================================================
+// [任务 6] 结算预览（SettlementPreview）
+//
+// - 每张完成订单一条预览
+// - orderId @unique（防重复生成）
+// - 三方分成金额（单位：分）— 由该订单对应商家的 CommissionStrategy 算
+// - 不做提现/打款/真实结算
+// ============================================================
+model SettlementPreview {
+  id        String   @id @default(cuid())
+  orderId   String   @unique
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id])
+  masterId  String
+  master    Master   @relation(fields: [masterId], references: [id])
+  // 策略快照 ID — 用来追溯用的策略（不强制 FK；可空表示无策略 fallback）
+  strategyId String?
+  strategy   CommissionStrategy? @relation(fields: [strategyId], references: [id], onDelete: SetNull)
+  // 订单金额（快照，不变）
+  orderAmount Int
+  // 三方分成（单位：分）
+  platformAmount Int
+  merchantAmount Int
+  workerAmount   Int
+  // 状态：generated / archived / failed
+  status    String   @default("generated")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([merchantId])
+  @@index([status])
 }
 
 // ============================================================
