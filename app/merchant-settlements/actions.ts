@@ -28,7 +28,7 @@ export async function generateMerchantSettlementsAction(formData: FormData) {
       action: "merchant_settlement_generated",
       targetType: "merchant",
       targetId: "batch",
-      message: `生成商家结算汇总：新建 ${result.created} 条 / 更新 ${result.updated} 条（基于 ${result.upserted} 个 (merchant, period) 组合）`,
+      message: `生成商家结算汇总：新建 ${result.created} 条 / 更新 ${result.updated} 条 / 跳过 ${result.skipped} 条（已确认/已归档不覆盖）`,
       metadata: result,
     });
   } catch {
@@ -37,7 +37,7 @@ export async function generateMerchantSettlementsAction(formData: FormData) {
 
   revalidatePath("/merchant-settlements");
   redirect(
-    `/merchant-settlements?created=${result.created}&updated=${result.updated}`,
+    `/merchant-settlements?created=${result.created}&updated=${result.updated}&skipped=${result.skipped}`,
   );
 }
 

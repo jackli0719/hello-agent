@@ -17,10 +17,12 @@ export type MerchantSettlementGenerateResult = {
   upserted: number;
   created: number;
   updated: number;
+  // [F0-2] 已 confirmed/archived 的 settlement 跳过覆盖（保持只读）
+  skipped: number;
   details: Array<{
     merchantId: string;
     period: string;
-    action: "created" | "updated";
+    action: "created" | "updated" | "skipped";
   }>;
 };
 
@@ -91,10 +93,11 @@ export async function generateAllMerchantSettlements(): Promise<MerchantSettleme
   // 2. upsert 到 MerchantSettlement
   let created = 0;
   let updated = 0;
+  let skipped = 0;
   const details: MerchantSettlementGenerateResult["details"] = [];
 
   for (const g of groups.values()) {
-    // 先查现有 — 决定 created / updated
+    // 先查现有 — 决定 created / updated / skipped
     const existing = await prisma.merchantSettlement.findUnique({
       where: {
         merchantId_period: {
@@ -102,7 +105,20 @@ export async function generateAllMerchantSettlements(): Promise<MerchantSettleme
           period: g.period,
         },
       },
+      select: { id: true, status: true },
     });
+
+    // [F0-2 PR 审计] 状态机保护：confirmed/archived 状态不再覆盖
+    // 业务原因：archived 只读；confirmed 通常已被审核；重新覆盖金额会破坏"已确认"语义
+    if (existing && existing.status !== "pending") {
+      skipped++;
+      details.push({
+        merchantId: g.merchantId,
+        period: g.period,
+        action: "skipped",
+      });
+      continue;
+    }
 
     await prisma.merchantSettlement.upsert({
       where: {
@@ -150,6 +166,7 @@ export async function generateAllMerchantSettlements(): Promise<MerchantSettleme
     upserted: created + updated,
     created,
     updated,
+    skipped,
     details,
   };
 }
