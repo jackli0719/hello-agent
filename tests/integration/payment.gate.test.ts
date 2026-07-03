@@ -40,9 +40,23 @@ describe("支付下单闭环 — 端到端验收", () => {
     await prisma.order.deleteMany({
       where: { id: { startsWith: PREFIX } },
     });
-    // 复位 T001（可能之前测试改过）
+    // 复位 T001-T004 到 seed 初值（[任务 4-0] 之前只复位 T001，但 auto-dispatch 选 rating 最高的
+    //     available 师傅，T003(5.0) > T001(4.9)。如果前面 test 把 T002/T003 改 available
+    //     又没回退，auto-dispatch 会选 T003 而不是 T001 → 测试期望失败）
     await prisma.master.update({
-      where: { id: availableMasterId },
+      where: { id: "T001" },
+      data: { status: "available" },
+    });
+    await prisma.master.update({
+      where: { id: "T002" },
+      data: { status: "busy" },
+    });
+    await prisma.master.update({
+      where: { id: "T003" },
+      data: { status: "busy" },
+    });
+    await prisma.master.update({
+      where: { id: "T004" },
       data: { status: "available" },
     });
   });

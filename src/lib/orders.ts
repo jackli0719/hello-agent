@@ -29,6 +29,17 @@ import {
   trimServiceSummary,
 } from "@/src/lib/validation";
 
+// [任务 4-0] 把平台区域 4 级字段拼成 "省/市/区县/街道" 字符串
+// 复用 lib/dispatch.ts:formatPlatformArea（演示期不导出，复制粘贴避免循环依赖）
+function formatMatchedArea(area: {
+  province: string;
+  city: string;
+  district: string;
+  street: string;
+}): string {
+  return `${area.province}/${area.city}/${area.district}/${area.street}`;
+}
+
 export type OrderField =
   | "customerName"
   | "customerPhone"
@@ -475,6 +486,9 @@ export type AssignOrderResult =
       // - "system"：DB 挂了之类，给「重试」按钮
       category: "validation" | "system";
       error: string;
+      // [任务 4-0] 推荐失败时透传 failureCode — admin UI 可看精确原因
+      // （area_no_platform_area / area_no_merchant / area_no_master / no_rule / no_skill_matched / distance_out_of_range）
+      failureCode?: string;
     };
 
 /**
@@ -544,12 +558,33 @@ export async function assignOrder(
   const recommendation = await computeRecommendationForOrder(order);
   const candidate = recommendation.candidates.find((c) => c.id === masterId);
   if (!candidate) {
+    // [任务 4-0] 错误文案按 failureCode 区分 — admin UI 看到精确原因
+    const failureCode = recommendation.failureCode;
+    const matchedAreaText = recommendation.matchedArea
+      ? formatMatchedArea(recommendation.matchedArea)
+      : "";
+    const areaNoMessage: Record<string, string> = {
+      area_no_platform_area: "当前区域暂未开放平台合作服务，请人工指派",
+      area_no_merchant: matchedAreaText
+        ? `平台区域「${matchedAreaText}」暂无启用商家覆盖`
+        : "平台区域暂无启用商家覆盖",
+      area_no_master: matchedAreaText
+        ? `平台区域「${matchedAreaText}」的商家下暂无师傅`
+        : "平台区域下的商家暂无师傅",
+      distance_out_of_range: matchedAreaText
+        ? `平台区域「${matchedAreaText}」内所有师傅距离均超出服务范围`
+        : "订单区域附近所有师傅距离均超出服务范围",
+    };
+    const reasonText =
+      areaNoMessage[failureCode ?? ""] ??
+      (recommendation.rule
+        ? `师傅「${master.name}」不符合规则「${recommendation.rule.name}」的要求`
+        : "订单没有匹配的派单规则");
     return {
       ok: false,
       category: "validation",
-      error: recommendation.rule
-        ? `师傅「${master.name}」不符合规则「${recommendation.rule.name}」的要求`
-        : `订单没有匹配的派单规则`,
+      error: reasonText,
+      failureCode,
     };
   }
 
