@@ -725,6 +725,10 @@ const ORDERS = [
     status: "pending",
     payStatus: "unpaid", // 演示「待支付」 — customer 详情页可点支付
   },
+  // [任务 4-0] 演示 failureCode 注释：
+  // - O20260629003 / O20260630005 → area_no_master（M003 status=inactive，旗下 0 师傅进推荐）
+  // - O20260630002 → area_no_merchant（PA004 宝安西乡无商家覆盖）
+  // - O20260630004 → no_skill_matched（SKU LOCKSMITH 无师傅掌握「开锁」技能）
   {
     id: "O20260629003",
     customerName: "刘建国",
