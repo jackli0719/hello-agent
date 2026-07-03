@@ -134,6 +134,14 @@
 - **决策回报**：见 `components/Sidebar.tsx` 头部注释 — 当前决定不做 mobile drawer / 断点隐藏
 - **下一阶段**：加 CSS `@media (max-width: 1024px)` 自动折叠 + 或者 worker/customer 一样用顶部横排
 
+### 16. ~~T13/T14 verify 脚本未进入 Vitest 主测试链路~~ [已解决 2026-07-03]
+
+- **原状**：`scripts/verify-withdraw-request.ts` 和 `scripts/verify-finance-ledger.ts` 是 tsx 跑的脚本，不在 `npm run test` 链路
+- **解决**：已迁移到 Vitest 集成测试
+  - `tests/integration/finance.withdraw-request.test.ts`（2 cases）— 复合断言 + 列表查询
+  - `tests/integration/finance.ledger.test.ts`（8 cases）— 多维过滤 + 统计卡
+- **遗留**：其他 4 个 verify 脚本（verify-chain / dispatch / invite / payout）仍在 `scripts/` 下，单独跑 — 优先度低，业务规则已被 src/lib/*.test.ts 单测覆盖
+
 ---
 
 ## 试用反馈

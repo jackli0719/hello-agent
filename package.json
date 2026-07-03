@@ -27,8 +27,6 @@
     "db:verify-migration": "tsx prisma/scripts/verify-migration.ts",
     "db:verify-chain": "tsx scripts/verify-chain.ts",
     "verify:payout": "tsx scripts/verify-payout.ts",
-    "verify:withdraw-request": "tsx scripts/verify-withdraw-request.ts",
-    "verify:finance-ledger": "tsx scripts/verify-finance-ledger.ts",
     "db:studio": "prisma studio",
     "db:generate": "prisma generate",
     "db:seed": "tsx prisma/seed.ts",
