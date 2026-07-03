@@ -74,7 +74,7 @@ describe("商家后台 — 提现申请端到端流程", () => {
     const m = await getEffectiveMerchantId(u!);
     const createRes = await createWithdrawRequest({
       merchantId: m,
-      amount: 10000, // ¥100
+      amount: 2000, // ¥20（[v1.0] M001 available = totalIncome 5360 − totalPaid 2680 = 2680；¥50 超额；改 ¥20 留 ¥6.80 给后续 case）
       remark: "flow-test-approved",
     });
     expect(createRes.ok).toBe(true);
@@ -97,7 +97,9 @@ describe("商家后台 — 提现申请端到端流程", () => {
     // Step 3: merchant1 重看状态 — approved
     clearSessionCookie();
     await setSessionCookie(merchant1User.id, "merchant");
-    const found = await prisma.withdrawRequest.findUnique({ where: { id: wrId } });
+    const found = await prisma.withdrawRequest.findUnique({
+      where: { id: wrId },
+    });
     expect(found?.status).toBe("approved");
     expect(found?.reviewerName).toBe("admin");
     expect(found?.reviewedAt).toBeTruthy();
@@ -108,8 +110,8 @@ describe("商家后台 — 提现申请端到端流程", () => {
     });
     expect(ledger).not.toBeNull();
     expect(ledger?.type).toBe("withdraw");
-    // amount 是 Decimal(12,2) 元（不是分）— 10000 分 = 100 元
-    expect(Number(ledger?.amount)).toBe(100);
+    // amount 是 Decimal(12,2) 元（不是分）— 2000 分 = 20 元（[v1.0] M001 available 2680，case 1 申请 2000）
+    expect(Number(ledger?.amount)).toBe(20);
   });
 
   // # spec: 端到端 — 申请 → 拒绝 → 状态变更 + 不写 ledger
@@ -120,7 +122,7 @@ describe("商家后台 — 提现申请端到端流程", () => {
     const m = await getEffectiveMerchantId(u!);
     const createRes = await createWithdrawRequest({
       merchantId: m,
-      amount: 20000, // ¥200
+      amount: 500, // ¥5（[v1.0] case 1 申请 ¥20 + approved → 不再算 pending；case 2 再申请 ¥5 ≤ 2680 OK；模拟「拒绝」分支）
       remark: "flow-test-rejected",
     });
     expect(createRes.ok).toBe(true);
@@ -144,7 +146,9 @@ describe("商家后台 — 提现申请端到端流程", () => {
     // Step 3: merchant1 重看 — rejected
     clearSessionCookie();
     await setSessionCookie(merchant1User.id, "merchant");
-    const found = await prisma.withdrawRequest.findUnique({ where: { id: wrId } });
+    const found = await prisma.withdrawRequest.findUnique({
+      where: { id: wrId },
+    });
     expect(found?.status).toBe("rejected");
     expect(found?.rejectReason).toBe("测试拒绝原因 — 金额异常");
     expect(found?.reviewerName).toBe("admin");
@@ -165,7 +169,7 @@ describe("商家后台 — 提现申请端到端流程", () => {
     const m = await getEffectiveMerchantId(u!);
     const createRes = await createWithdrawRequest({
       merchantId: m,
-      amount: 30000, // ¥300
+      amount: 300, // ¥3（[v1.0] case 1/2 都过了审批/拒绝 → 不算 pending；M001 available 还剩 2680；case 3 申请 ¥3）
       remark: "available-decrement-test",
     });
     expect(createRes.ok).toBe(true);
@@ -174,9 +178,9 @@ describe("商家后台 — 提现申请端到端流程", () => {
 
     const after = await getMerchantAvailable(M001);
     // available = totalIncome - totalPaid - totalPending
-    // pending 增 ¥300 → available 减 ¥300
-    expect(after.totalPending).toBe(before.totalPending + 30000);
-    expect(after.available).toBe(before.available - 30000);
+    // pending 增 ¥3 → available 减 ¥3
+    expect(after.totalPending).toBe(before.totalPending + 300);
+    expect(after.available).toBe(before.available - 300);
   });
 });
 
@@ -203,7 +207,10 @@ describe("商家后台 — 邀请码端到端流程", () => {
     // 还原 M001 状态
     await prisma.merchant.update({
       where: { id: M001 },
-      data: { inviteCode: originalInviteCode, inviteCodeEnabled: originalEnabled },
+      data: {
+        inviteCode: originalInviteCode,
+        inviteCodeEnabled: originalEnabled,
+      },
     });
     clearSessionCookie();
   });
@@ -249,7 +256,8 @@ describe("商家后台 — 邀请码端到端流程", () => {
     const u = await getCurrentUser();
     const m = await getEffectiveMerchantId(u!);
     // 直接调 update 模拟 regenerate action
-    const newCode = "TEST" + Date.now().toString(36).toUpperCase().slice(-4).padStart(4, "0");
+    const newCode =
+      "TEST" + Date.now().toString(36).toUpperCase().slice(-4).padStart(4, "0");
     await prisma.merchant.update({
       where: { id: m },
       data: { inviteCode: newCode },

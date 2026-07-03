@@ -32,10 +32,12 @@ async function resetOrder(
   status: string,
   masterId: string | null,
   masterName: string | null,
+  // [v1.0] 默认 "paid" 与 demo 灌的一致；测试要 unpaid 的传 "unpaid"
+  payStatus: string = "paid",
 ) {
   await prisma.order.update({
     where: { id },
-    data: { status, masterId, masterName },
+    data: { status, masterId, masterName, payStatus },
   });
 }
 
