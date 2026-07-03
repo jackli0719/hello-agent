@@ -283,3 +283,21 @@
 - **`auto_dispatch_succeeded` 也发通知** — 当前只写 ActivityLog，不发收件箱通知（演示期任务 19 已就绪但任务 20 未接）
 - **admin 端派单页面批量重试按钮**（演示期单订单手动即可）
 - **`tryAutoDispatch` 选 master 的规则文档** — 当前内部用 dispatch.ts 同款 `recommendMastersForOrder`；admin 端用同款结果（listOrdersForPage 已经在调）
+
+### 18. 地图 API 距离 hook 预留位（演示期 always-true）[任务 4-0]
+
+- **原状**：4 级地址精确匹配已在任务 3 落到 `lib/dispatch.ts:filterMastersByArea`（PlatformArea → MerchantArea → Master 链），演示期足够。但真实业务需要「订单经纬度 vs 师傅经纬度」距离校验（腾讯/高德地图 API）
+- **预留位**：
+  - `src/lib/area-matcher.ts` 抽 `AreaMatcher` 接口 + `defaultAreaMatcher`（演示期 `distanceCheck` 永远返 `true`，不挡人）
+  - `lib/dispatch.ts:filterMastersByArea` 末尾调 `areaMatcher.distanceCheck()`；演示期全部通过
+  - `RecommendationResult.failureCode` union 加 `"distance_out_of_range"`（演示期永远不触发）
+- **后续接 API 时**：
+  1. Order schema 加 `lat` / `lng` 字段（migration）
+  2. 替换 `defaultAreaMatcher.distanceCheck` 函数体（调腾讯/高德 API 算距离）
+  3. 零调用方改动（接口 + 入参已就位）
+- **关联**：`src/lib/orders.ts:assignOrder` 已透传 `failureCode` 到 `AssignOrderResult`（任务 4-0 顺手做的）；admin UI 看到精确失败原因
+- **不做**（演示期）：
+  - 不接真实地图 API
+  - 不查 `Master.serviceArea` 字段（决策 2：保持 String 自由文本，区域校验走 MerchantArea 链）
+  - 不动 `Merchant.4 级` 字段参与匹配（决策 4：仅展示）
+
