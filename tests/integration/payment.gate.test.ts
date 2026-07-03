@@ -129,10 +129,10 @@ describe("支付下单闭环 — 端到端验收", () => {
   // 验收点 2: 支付后可派单
   // ============================================================
 
-  // # spec: 完整闭环 — payStatus=unpaid → payOrder → payStatus=paid → assignOrder 成功
   // [任务 20] 更新：支付成功后会自动派单（tryAutoDispatch），
   // 派单条件 = 订单必须未派单（status=pending）→ assignOrder 会失败
   // 验证：支付后 status 已 assigned（自动派单成功）
+  // # spec: 完整闭环 — payStatus=unpaid → payOrder → payStatus=paid → assignOrder 成功
   it("验收点 2: 完整闭环 unpaid → payOrder → paid → 自动派单成功", async () => {
     const orderId = `${PREFIX}003_full_flow`;
     await prisma.order.create({
