@@ -38,6 +38,9 @@ describe("isProtectedPath", () => {
     // [任务 18] 商家端后台
     expect(isProtectedPath("/merchant-admin")).toBe(true);
     expect(isProtectedPath("/merchant-admin/orders")).toBe(true);
+    // [任务 21] 售后工单后台
+    expect(isProtectedPath("/admin/after-sales")).toBe(true);
+    expect(isProtectedPath("/admin/after-sales/O20260629001")).toBe(true);
   });
 
   // # spec: 路由保护 — /login 即使满足前缀也排除（公开白名单）
@@ -80,6 +83,8 @@ describe("canAccess", () => {
     ["admin", "/dispatch-rules", true],
     ["admin", "/activity-logs", true],
     ["admin", "/merchant-admin", true], // [任务 18] admin 也能看
+    ["admin", "/admin/after-sales", true], // [任务 21] 售后工单后台
+    ["admin", "/admin/after-sales/O123", true],
     ["admin", "/worker", false], // 越权
     ["admin", "/customer/orders", false],
     // worker
@@ -102,6 +107,7 @@ describe("canAccess", () => {
     ["merchant", "/merchant-admin", true],
     ["merchant", "/merchant-admin/orders", true],
     ["merchant", "/merchant-admin/masters", true],
+    ["merchant", "/admin/after-sales", false], // [任务 21] 商家不能进 admin 后台
     ["merchant", "/dashboard", false], // 越权
     ["merchant", "/orders", false],
     ["merchant", "/masters", false],

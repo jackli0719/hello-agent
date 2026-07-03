@@ -23,10 +23,16 @@ import {
   getLatestDispatchFailure,
   describeFailureCode,
 } from "@/src/lib/auto-dispatch";
-import { customerCancelOrderAction, customerRefundOrderAction } from "@/app/orders/actions";
+import {
+  customerCancelOrderAction,
+  customerCreateAfterSalesAction,
+  customerRefundOrderAction,
+} from "@/app/orders/actions";
 import { CancelForm } from "@/components/CancelForm";
 import { RefundForm } from "@/components/RefundForm";
 import { PayForm } from "./PayForm";
+import { AfterSalesForm } from "./AfterSalesForm";
+import { AfterSalesCard } from "./AfterSalesCard";
 import { StatusBadge, ORDER_TONE } from "@/components/ui";
 import { ORDER_STATUS_LABEL } from "@/lib/mock-data";
 import type { OrderStatus, PayStatus } from "@/src/types";
@@ -236,7 +242,8 @@ export default async function CustomerOrderDetailPage({ params }: PageProps) {
 
         {/* [v0.7.9] 用户取消按钮 — 仅 pending 状态（业务规则 #10）
             [任务 X] 支付按钮 — 仅 payStatus=unpaid 时显示
-            [任务 19] 售后退款 — 仅 completed + payStatus=paid 时显示 */}
+            [任务 19] 售后退款 — 仅 completed + payStatus=paid 且无售后时显示
+            [任务 21] 售后工单 — 仅 completed 且未发起过售后时显示 */}
         {order.status === "pending" && (
           <div style={{ marginTop: 16 }}>
             <SectionTitle title="操作" />
@@ -255,18 +262,46 @@ export default async function CustomerOrderDetailPage({ params }: PageProps) {
             />
           </div>
         )}
-        {order.status === "completed" && order.payStatus === "paid" && (
+        {order.status === "completed" &&
+          order.payStatus !== "refunded" &&
+          !order.afterSalesStatus && (
+            <div style={{ marginTop: 16 }}>
+              <SectionTitle title="售后" />
+              {/* [任务 21] 售后工单（流程型）— 写「问题描述→admin 受理」 */}
+              <AfterSalesForm
+                orderId={order.id}
+                csrfToken={csrfToken}
+                formAction={customerCreateAfterSalesAction}
+              />
+              {/* [任务 19] 售后退款（财务型）— 已支付则可申请 */}
+              {order.payStatus === "paid" ? (
+                <div style={{ marginTop: 12 }}>
+                  <RefundForm
+                    orderId={order.id}
+                    formAction={customerRefundOrderAction}
+                    csrfToken={csrfToken}
+                    amountYuan={order.amountYuan}
+                    buttonLabel="直接申请退款"
+                  />
+                  <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 4 }}>
+                    如已沟通好可直接申请退款；否则请先发起售后工单。
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          )}
+        {/* [任务 21] 售后状态卡片 — 发起后展示 */}
+        {order.afterSalesStatus ? (
           <div style={{ marginTop: 16 }}>
-            <SectionTitle title="售后" />
-            <RefundForm
-              orderId={order.id}
-              formAction={customerRefundOrderAction}
-              csrfToken={csrfToken}
-              amountYuan={order.amountYuan}
-              buttonLabel="申请售后退款"
+            <SectionTitle title="售后进度" />
+            <AfterSalesCard
+              status={order.afterSalesStatus}
+              reason={order.afterSalesReason}
+              rejectReason={order.afterSalesRejectReason}
+              handledAt={order.afterSalesHandledAt}
             />
           </div>
-        )}
+        ) : null}
       </section>
     </div>
   );

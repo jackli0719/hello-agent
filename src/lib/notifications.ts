@@ -21,7 +21,13 @@ export type NotificationType =
   | "order_assigned" // 派单成功
   | "order_completed" // 服务完成
   | "order_canceled" // 订单取消
-  | "order_refunded"; // 售后退款
+  | "order_refunded" // 售后退款
+  // [任务 21] 售后工单 — 4 状态 → 4 通知类型
+  // 文案独立：售后通知带 rejectReason / 处理人 / status，比订单通知更具体
+  | "after_sales_pending" // 客户发起 → admin + customer
+  | "after_sales_processing" // admin 受理 → customer
+  | "after_sales_resolved" // admin 解决 → customer
+  | "after_sales_rejected"; // admin 拒绝 → customer（带拒绝理由）
 
 export type NotificationRole = "admin" | "worker" | "customer" | "merchant";
 
@@ -115,9 +121,10 @@ interface RecipientIds {
   merchant: string | null;
 }
 
-async function resolveRecipients(
-  order: { customerPhone: string; masterId: string | null },
-): Promise<RecipientIds> {
+async function resolveRecipients(order: {
+  customerPhone: string;
+  masterId: string | null;
+}): Promise<RecipientIds> {
   const result: RecipientIds = {
     customer: null,
     worker: null,
@@ -174,40 +181,56 @@ export async function dispatchOrderNotifications(
     // 准备文案
     const orderRef = `订单 ${order.id}`;
     const masterRef = ctx.masterName ? `师傅 ${ctx.masterName}` : "已派师傅";
-    const amountText = ctx.amount ? `（¥${(ctx.amount / 100).toFixed(2)}）` : "";
+    const amountText = ctx.amount
+      ? `（¥${(ctx.amount / 100).toFixed(2)}）`
+      : "";
     const reasonText = ctx.cancelReason ? `：${ctx.cancelReason}` : "";
 
+    // [任务 21] 售后通知不发本通道 — 走 after-sales.ts:createNotification 直写
+    // 这里仍要列 4 个售后 key（保持强类型完整），但实际不会被命中
     const titles: Record<NotificationType, string> = {
       order_paid: "订单已支付",
       order_assigned: "订单已派单",
       order_completed: "服务已完成",
       order_canceled: "订单已取消",
       order_refunded: "订单已退款",
+      after_sales_pending: "新售后工单",
+      after_sales_processing: "售后已被受理",
+      after_sales_resolved: "售后已解决",
+      after_sales_rejected: "售后被拒绝",
     };
 
-    // 客户文案
+    // 客户文案 — 售后 4 类型占位（本通道不调用；after-sales.ts 自己拼）
     const customerContent: Record<NotificationType, string> = {
       order_paid: `您的订单 ${order.id} 已支付成功${amountText}，等待派单`,
       order_assigned: `您的订单 ${order.id} 已派给${masterRef}，请保持电话畅通`,
       order_completed: `您的订单 ${order.id} 服务已完成${ctx.masterName ? `（${ctx.masterName}）` : ""}`,
       order_canceled: `您的订单 ${order.id} 已取消${reasonText}`,
       order_refunded: `您的订单 ${order.id} 已退款${amountText}`,
+      after_sales_pending: `您的售后申请已提交（订单 ${order.id}）`,
+      after_sales_processing: `您的售后（订单 ${order.id}）已被受理`,
+      after_sales_resolved: `您的售后（订单 ${order.id}）已解决`,
+      after_sales_rejected: `您的售后（订单 ${order.id}）被拒绝`,
     };
 
-    // 师傅文案（按 type 分）
+    // 师傅文案（按 type 分）— 售后师傅不收
     const workerContent: Partial<Record<NotificationType, string>> = {
       order_assigned: `您有一个新任务：订单 ${order.id}`,
       order_completed: `您已完成订单 ${order.id}`,
       order_canceled: `订单 ${order.id} 已被取消${reasonText}`,
     };
 
-    // 商家文案（按 type 分）
+    // 商家文案 — 售后商家不收本通道
     const merchantContent: Record<NotificationType, string> = {
       order_paid: `本商家区域订单 ${order.id} 已支付${amountText}，等待派单`,
       order_assigned: `订单 ${order.id} 已派给${masterRef}`,
       order_completed: `${ctx.masterName ?? "本商家师傅"}完成了订单 ${order.id}`,
       order_canceled: `订单 ${order.id} 已被取消${reasonText}`,
       order_refunded: `订单 ${order.id} 已退款${amountText}`,
+      after_sales_pending: `订单 ${order.id} 发起售后`,
+      after_sales_processing: `订单 ${order.id} 售后处理中`,
+      after_sales_resolved: `订单 ${order.id} 售后已解决`,
+      after_sales_rejected: `订单 ${order.id} 售后被拒绝`,
     };
 
     // 写 3 条通知（fire-and-forget，createNotification 内部 try/catch 吞错）
@@ -361,8 +384,7 @@ export async function countUnreadForUser(userId: string): Promise<number> {
 // ============================================================
 
 export type MarkReadResult =
-  | { ok: true; notificationId: string }
-  | { ok: false; error: string };
+  { ok: true; notificationId: string } | { ok: false; error: string };
 
 /**
  * 标记单条已读。

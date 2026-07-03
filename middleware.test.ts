@@ -84,4 +84,23 @@ describe("middleware", () => {
     expect(location).toContain("next=");
     expect(location).toContain("merchant-admin");
   });
+
+  // # spec: [任务 21] /admin/after-sales 受保护，未登录跳登录页
+  it("未登录访问 /admin/after-sales → /login?next=%2Fadmin%2Fafter-sales", () => {
+    const res = middleware(request("/admin/after-sales"));
+    expect(res.status).toBe(307);
+    const location = res.headers.get("location") ?? "";
+    expect(location).toContain("/login");
+    expect(location).toContain("next=%2Fadmin%2Fafter-sales");
+  });
+
+  // # spec: [任务 21] /admin/after-sales/[id] 子路径同样受保护
+  it("未登录访问 /admin/after-sales/O123 → /login?next=...", () => {
+    const res = middleware(request("/admin/after-sales/O123"));
+    expect(res.status).toBe(307);
+    const location = res.headers.get("location") ?? "";
+    expect(location).toContain("/login");
+    expect(location).toContain("next=");
+    expect(location).toContain("admin");
+  });
 });

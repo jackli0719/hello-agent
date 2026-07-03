@@ -13,13 +13,17 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/src/lib/auth";
-import { getEffectiveMerchantId, getMerchantOrderDetail } from "@/src/lib/merchant-admin";
+import {
+  getEffectiveMerchantId,
+  getMerchantOrderDetail,
+} from "@/src/lib/merchant-admin";
 import {
   getLatestDispatchFailure,
   describeFailureCode,
 } from "@/src/lib/auto-dispatch";
 import { ensureCsrfCookie } from "@/src/lib/csrf";
 import { CancelForm } from "@/components/CancelForm";
+import { AfterSalesCard } from "@/app/customer/orders/[id]/AfterSalesCard";
 import { StatusBadge, ORDER_TONE, card } from "@/components/ui";
 import { ORDER_STATUS_LABEL } from "@/lib/mock-data";
 import { merchantCancelOrderAction } from "@/app/merchant-admin/orders/actions";
@@ -109,7 +113,11 @@ export default async function MerchantOrderDetailPage({ params }: PageProps) {
             </div>
           </div>
           <StatusBadge
-            label={ORDER_STATUS_LABEL[order.status as keyof typeof ORDER_STATUS_LABEL] ?? order.status}
+            label={
+              ORDER_STATUS_LABEL[
+                order.status as keyof typeof ORDER_STATUS_LABEL
+              ] ?? order.status
+            }
             tone={ORDER_TONE[order.status] ?? "neutral"}
           />
         </div>
@@ -176,6 +184,29 @@ export default async function MerchantOrderDetailPage({ params }: PageProps) {
               requireReason={requireReason}
               buttonLabel="确认取消订单"
             />
+          </div>
+        ) : null}
+
+        {/* [任务 21] 售后进度（只读）— 商家视图不参与状态变更
+            但商家能看到客户是否发起售后 + 当前进度（可能影响商家决策） */}
+        {order.afterSalesStatus ? (
+          <div style={{ marginTop: 16 }}>
+            <SectionTitle title="售后工单（只读）" />
+            <AfterSalesCard
+              status={order.afterSalesStatus}
+              reason={order.afterSalesReason}
+              rejectReason={order.afterSalesRejectReason}
+              handledAt={order.afterSalesHandledAt}
+            />
+            <div
+              style={{
+                marginTop: 6,
+                fontSize: 11,
+                color: "#9ca3af",
+              }}
+            >
+              售后处理由平台客服操作；如对结果有异议请联系平台运营
+            </div>
           </div>
         ) : null}
       </section>

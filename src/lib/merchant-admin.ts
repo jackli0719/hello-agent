@@ -79,6 +79,11 @@ export interface MerchantOrderItem {
   createdAt: string;
   /** 本商家师傅接了 OR 落在本商家可见区域内 */
   source: "byMaster" | "byArea";
+  // [任务 21] 售后工单字段（商家只读）
+  afterSalesStatus: "pending" | "processing" | "resolved" | "rejected" | null;
+  afterSalesReason: string | null;
+  afterSalesRejectReason: string | null;
+  afterSalesHandledAt: string | null;
 }
 
 /**
@@ -111,6 +116,11 @@ export async function listOrdersByMaster(merchantId: string) {
       amount: true,
       scheduledAt: true,
       createdAt: true,
+      // [任务 21] 售后字段
+      afterSalesStatus: true,
+      afterSalesReason: true,
+      afterSalesRejectReason: true,
+      afterSalesHandledAt: true,
     },
   });
   return orders.map((o) => ({
@@ -125,6 +135,14 @@ export async function listOrdersByMaster(merchantId: string) {
     scheduledAt: o.scheduledAt.toISOString(),
     createdAt: o.createdAt.toISOString(),
     source: "byMaster" as const,
+    // [任务 21]
+    afterSalesStatus:
+      o.afterSalesStatus as MerchantOrderItem["afterSalesStatus"],
+    afterSalesReason: o.afterSalesReason,
+    afterSalesRejectReason: o.afterSalesRejectReason,
+    afterSalesHandledAt: o.afterSalesHandledAt
+      ? o.afterSalesHandledAt.toISOString()
+      : null,
   }));
 }
 
@@ -132,7 +150,9 @@ export async function listOrdersByMaster(merchantId: string) {
  * B：本商家 enabled 服务区域内可见的订单（复用 getOrdersVisibleToMerchant）
  * 返回：标准化为 MerchantOrderItem[]
  */
-export async function listOrdersByArea(merchantId: string): Promise<MerchantOrderItem[]> {
+export async function listOrdersByArea(
+  merchantId: string,
+): Promise<MerchantOrderItem[]> {
   if (!merchantId) return [];
   const { orders } = await getOrdersVisibleToMerchant(merchantId);
   return orders.map((o) => ({
@@ -147,6 +167,11 @@ export async function listOrdersByArea(merchantId: string): Promise<MerchantOrde
     scheduledAt: o.scheduledAt,
     createdAt: o.createdAt,
     source: "byArea" as const,
+    // [任务 21] 售后字段 — getOrdersVisibleToMerchant 还没返；先空
+    afterSalesStatus: null,
+    afterSalesReason: null,
+    afterSalesRejectReason: null,
+    afterSalesHandledAt: null,
   }));
 }
 
@@ -190,7 +215,9 @@ export interface MerchantMasterItem {
   joinSource: string;
 }
 
-export async function listMerchantMasters(merchantId: string): Promise<MerchantMasterItem[]> {
+export async function listMerchantMasters(
+  merchantId: string,
+): Promise<MerchantMasterItem[]> {
   if (!merchantId) return [];
   const masters = await prisma.master.findMany({
     where: { merchantId },
@@ -252,6 +279,11 @@ export async function getMerchantOrderDetail(
       amount: true,
       scheduledAt: true,
       createdAt: true,
+      // [任务 21]
+      afterSalesStatus: true,
+      afterSalesReason: true,
+      afterSalesRejectReason: true,
+      afterSalesHandledAt: true,
     },
   });
   if (!o) return null;
@@ -267,6 +299,13 @@ export async function getMerchantOrderDetail(
     scheduledAt: o.scheduledAt.toISOString(),
     createdAt: o.createdAt.toISOString(),
     source: "byMaster" as const, // 已派单所以是 byMaster
+    afterSalesStatus:
+      o.afterSalesStatus as MerchantOrderItem["afterSalesStatus"],
+    afterSalesReason: o.afterSalesReason,
+    afterSalesRejectReason: o.afterSalesRejectReason,
+    afterSalesHandledAt: o.afterSalesHandledAt
+      ? o.afterSalesHandledAt.toISOString()
+      : null,
   };
 }
 
@@ -301,7 +340,9 @@ export interface MerchantDashboardSummary {
   pendingWithdrawCount: number;
 }
 
-export async function getMerchantDashboard(merchantId: string): Promise<MerchantDashboardSummary> {
+export async function getMerchantDashboard(
+  merchantId: string,
+): Promise<MerchantDashboardSummary> {
   if (!merchantId) {
     return {
       merchantId: "",
@@ -312,18 +353,20 @@ export async function getMerchantDashboard(merchantId: string): Promise<Merchant
       pendingWithdrawCount: 0,
     };
   }
-  const [masterCount, byMaster, byArea, allSettlements, withdraws] = await Promise.all([
-    prisma.master.count({ where: { merchantId } }),
-    listOrdersByMaster(merchantId),
-    listOrdersByArea(merchantId),
-    listMerchantSettlementsByMerchant(merchantId),
-    listWithdrawRequestsByMerchant(merchantId),
-  ]);
+  const [masterCount, byMaster, byArea, allSettlements, withdraws] =
+    await Promise.all([
+      prisma.master.count({ where: { merchantId } }),
+      listOrdersByMaster(merchantId),
+      listOrdersByArea(merchantId),
+      listMerchantSettlementsByMerchant(merchantId),
+      listWithdrawRequestsByMerchant(merchantId),
+    ]);
 
   // [任务 18 P0-bug 修复] totalIncomeYuan 只计 confirmed/archived
   // 口径与 admin 端 getMerchantAvailable 一致（避免商家被 pending 金额误导）
   const confirmedSettlements = allSettlements.filter(
-    (s: { status: string }) => s.status === "confirmed" || s.status === "archived",
+    (s: { status: string }) =>
+      s.status === "confirmed" || s.status === "archived",
   );
   const totalIncomeCents = confirmedSettlements.reduce(
     (sum: number, s: { merchantIncome?: number }) =>

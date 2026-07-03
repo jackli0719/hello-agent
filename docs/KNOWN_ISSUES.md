@@ -234,6 +234,7 @@
 **原状**（任务 20 之前）：paid 订单必须 admin 手动选师傅派单；演示期常被吐槽"还要手动选？"
 
 **解决**：
+
 - 新建 `src/lib/auto-dispatch.ts`：`tryAutoDispatch(orderId)` 主入口
 - 触发器**双入口**：
   1. **支付后自动触发** — `payOrder` 成功后 fire-and-forget 调 `tryAutoDispatch`（事务外，失败不阻塞）
@@ -244,6 +245,7 @@
   - `order_not_pending` / `order_not_paid` / `system_error`（auto-dispatch 自身加的）
 
 **关键修复**（任务 20 期间发现）：
+
 - `repos/orders.ts:assignOrder(orderId)`（无 masterId 版本）缺 `payStatus` 守门 — 补上保持与 `src/lib/orders.ts:assignOrder(orderId, masterId)` 一致
 - `repos/orders.ts:assignOrder` 没传 4 级地址给 `recommendMastersForOrder` — 补上让精确 PlatformArea 匹配生效
 - `repos/orders.ts:AssignOrderError` 加 `failureCode` 可选字段 — 让 `tryAutoDispatch` 精确分类失败原因（避免 message 字符串解析歧义）
@@ -251,11 +253,13 @@
 **中间态**：`refunding` 任务 19 已加；任务 20 自动派单失败不会进入任何中间态，订单保持 `pending` + `payStatus=paid`，**管理员**可手动重试或联系商家修复
 
 **二次防御**：
+
 - `payOrder` 集成 `tryAutoDispatch` 用 try/catch 吞掉所有异常（auto-dispatch 失败不阻塞支付）
 - `tryAutoDispatch` 失败时内部 `try/catch` 写 ActivityLog 也吞掉（不阻塞主流程）
 - `tryAutoDispatch` 复用 `repos/orders.ts:assignOrder` 已有的乐观锁防并发抢单
 
 **测试**（`src/lib/auto-dispatch.test.ts`，11 it 全过）：
+
 - 成功路径（pending+paid+有可用师傅 → 订单 assigned）
 - 拒绝 payStatus=unpaid → `order_not_paid`
 - 拒绝 status=assigned → `order_not_pending`
@@ -268,16 +272,19 @@
 - 未知 code → fallback "派单失败"
 
 **回归测试更新**（任务 20 行为变化导致）：
+
 - `tests/integration/payment.gate.test.ts:164` 验收点 2：原"支付 → status=pending → 手动派单"改为"支付 → 自动派单 → status=assigned"
 - `tests/integration/notifications.test.ts` beforeEach：增加 `master.updateMany` 重置 T001-T004 状态（自动派单跨 it 占用 master）
 
 **决策回报**：
+
 - 选了"**支付后自动 + admin 手动**双入口"：覆盖演示期"全自动"和"运营排障"两种场景
 - 选了"**复用 `repos/orders.ts:assignOrder`**"：不动已有事务/乐观锁实现，只加薄包装层（CLAUDE.md P3 不重复造轮子）
 - 选了"**失败原因不写新表**"：用 ActivityLog free string 字段（schema 不必迁，符合 CLAUDE.md P0-1）
 - 选了"**tiebreak 复用 dispatch.ts 现有 rating desc**"：CLAUDE.md P0-0 决策 #3 的 4 层稳定排序要求，dispatch.ts 已实现 rating desc + id 字典序兜底；本次未做 completedJobs/createdAt tiebreak 增强（演示数据量小没必要，路线图 P3 标记）
 
 **遗留 / 不做**（路线图 P2/P3）：
+
 - **失败重试 1 次 + 30s 后升级 admin**（v0.10+ 再做，演示期手动即可）
 - **距离优先 tiebreak**（任务 P2-3 独立任务，需地图 API）
 - **`auto_dispatch_succeeded` 也发通知** — 当前只写 ActivityLog，不发收件箱通知（演示期任务 19 已就绪但任务 20 未接）
@@ -301,3 +308,83 @@
   - 不查 `Master.serviceArea` 字段（决策 2：保持 String 自由文本，区域校验走 MerchantArea 链）
   - 不动 `Merchant.4 级` 字段参与匹配（决策 4：仅展示）
 
+## #20 [任务 21] 售后工单
+
+**原状**（任务 21 之前）：completed 订单如果出问题，**没有售后工单流程**，客户只能直接调"申请退款"（任务 19）。但客服/商家侧没有"先售后沟通 → 再决定退款"的中间环节 — 演示期常被吐槽"客户来电话，客服无法在后台记录问题"。
+
+**解决**：
+
+- 状态机 4 状态（无回退）：`pending → processing → resolved | rejected`；终态不可变
+- 复用 Order 表加 5 字段（**不加新表**，CLAUDE.md P0-1 防御）：
+  - `afterSalesStatus` / `afterSalesReason` / `afterSalesRejectReason` / `afterSalesHandledBy` / `afterSalesHandledAt`
+  - `@@index([afterSalesStatus])` 让列表查询走索引
+- **仅 admin 处理**（决策 #1）：商家只读，不参与状态变更
+- **`resolved` 不联动退款**（决策 #2）：仅标记完成；退款走独立 `refundOrder` 入口（演示期清晰，与 cancel-退款边界不混）
+- **`reject` 必填 reason**（决策 #4）：UI 强校验 + server action 复验 + 业务函数复验 3 层
+
+**触发 4 类型通知**（扩展 `NotificationType` enum + 9 keys）：
+
+- `after_sales_pending` — 客户发起 → admin + customer 都收
+- `after_sales_processing` — admin 受理 → customer
+- `after_sales_resolved` — admin 解决 → customer（含文案"如需退款请联系客服"）
+- `after_sales_rejected` — admin 拒绝 → customer（含拒绝理由）
+
+**ActivityLog 4 action**：
+
+- `after_sales_pending` / `after_sales_processing` / `after_sales_resolved` / `after_sales_rejected`
+- `reject` 额外存 metadata.fromStatus（pending / processing）
+
+**3 端 UI**（CLAUDE.md P0-6 权限矩阵同步）：
+
+- **客户 `/customer/orders/[id]`**：
+  - completed 订单：表单 `AfterSalesForm` + 状态卡片 `AfterSalesCard`（与 [任务 19] `RefundForm` 并存）
+- **商家 `/merchant-admin/orders/[id]`**：只读 `AfterSalesCard`（商家不参与）
+- **admin `/admin/after-sales`**（新路径）：
+  - 列表：`/admin/after-sales?status={pending|processing|resolved|rejected|all}` + 分页
+  - 详情：`/admin/after-sales/[id]` + 3 操作按钮（开始处理 / 已解决 / 拒绝）
+  - Dashboard 多一张统计卡"售后工单（待处理）"
+- **`PROTECTED_PATHS` + `ROLE_ALLOWED.admin`** 同步加 `/admin/after-sales`
+
+**关键修复**（任务 21 期间发现 + 修）：
+
+- after-sales.ts 通知 helper 写时自我审计发现 2 个 bug：
+  1. customer 通知用 `phone.contains(orderId)` — 永远查不到（phone ≠ orderId）→ 改 `phone === order.customerPhone`
+  2. 通知 type 用 `order_paid` 占位 — 污染客户的通知中心 → 扩 `NotificationType` enum 加 4 售后 type + Record 4 表补全
+
+**中间态 / 二次防御**：
+
+- 状态机无中间态（pending/processing/resolved/rejected 即终态）
+- 4 操作都走 `updateMany + status 条件` 乐观锁防并发（双击/争抢）
+- `reject` 业务函数复验 reason 非空（不让 service action 错误地绕过 UI 校验）
+- admin server actions：`requireAdmin()` + CSRF（FormData → token / 直接 → Origin）
+
+**测试**（`src/lib/after-sales.test.ts`，**30 it 全过**）：
+
+- createTicket 8 it（completed-only / 幂等 / refunded 拒 / ActivityLog / admin 通知 / 空 reason / 超长）
+- startProcessing 3 it（pending→processing / 非 pending 拒 / ActivityLog）
+- resolve 4 it（带/不带 note / pending 不能直接 resolve / 终态拒）
+- reject 9 it（pending→reject / processing→reject / 4 种 reason 校验 / 3 种状态拒 / ActivityLog fromStatus）
+- listAfterSalesTickets / getAfterSalesByOrderId 5 it
+- countAfterSalesByStatus 1 it（dashboard 统计卡数据源）
+
+**决策回报**：
+
+- 选了"**不加 AfterSalesTicket 新表，复用 Order 5 字段**"：演示期 1 笔订单至多 1 笔售后（CLAUDE.md P0-1 防御，能不加表就不加表）
+- 选了"**复用 ActivityLog free string action 字段**"：4 个动作+metadata 不必新表，跟任务 20 一致
+- 选了"**扩 NotificationType enum + 显式列举 4 售后 type**"：避免用占位 type 污染客户通知中心（修 bug #2）
+- 选了"**customerCreateAfterSalesAction 放 app/orders/actions.ts**（与其他客户 action 同处）"，admin 3 actions 放 **app/admin/after-sales/actions.ts**（按 user-facing 入口划分）
+- 选了"**adminResolveForm action wrapper 返 Promise<void>**" 吃下结构化错误：HTML form action 强制 void；失败用 Next 自动 alert 演示期 OK
+- **未写集成测试**（只单元）：`payment.gate.test.ts` / `notifications.test.ts` 那种端到端集成测试本任务跳过 — 已识别为风险，列入 P3
+
+**遗留 / 不做**（路线图 P2/P3）：
+
+- **集成测试覆盖 end-to-end**（CLAUDE.md P0-5 强烈建议）：与任务 19 同模式 `tests/integration/after-sales.test.ts` — 未做
+- **admin 列表 pending 数量顶到 bell 红点**：演示期 Dashboard 统计卡 + 列表 tab 已覆盖
+- **SLA（X 小时未处理升级）+ 客服内部备注**：业务深度，演示期不做
+- **多笔售后（同一订单 N 次 history）**：当前 schema 1 笔 = 1 工单；N 笔需独立 AfterSalesTicket 表
+- **客户 webhook / 短信通知**：任务 19 限制（仅站内）
+- **商家/师傅反向同意（multi-party approval）**：业务深度，演示期 admin 单方决定
+
+**baseline 失败**（与本任务无关）：
+
+- `tests/integration/merchant-admin.auth.test.ts:291` "商家提现二次申请被拒" 失败 — 任务 13 时代 + 任务 18 跑出来的 pre-existing issue；不在任务 21 验收范围

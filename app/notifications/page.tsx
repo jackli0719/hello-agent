@@ -14,19 +14,27 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { getCurrentUser } from "@/src/lib/auth";
-import { listNotificationsForUser, type NotificationType } from "@/src/lib/notifications";
+import {
+  listNotificationsForUser,
+  type NotificationType,
+} from "@/src/lib/notifications";
 import { CSRF_COOKIE } from "@/src/lib/csrf-constants";
 import { markReadAction, markAllReadAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
 // 通知类型 → 中文标签 + 配色
+// [任务 21] 售后 4 状态标签 — customer / admin 收件箱需要区分售后通知
 const TYPE_LABEL: Record<NotificationType, { label: string; color: string }> = {
   order_paid: { label: "支付", color: "#0ea5e9" },
   order_assigned: { label: "派单", color: "#2563eb" },
   order_completed: { label: "完成", color: "#16a34a" },
   order_canceled: { label: "取消", color: "#dc2626" },
   order_refunded: { label: "退款", color: "#f59e0b" },
+  after_sales_pending: { label: "售后-待处理", color: "#a855f7" },
+  after_sales_processing: { label: "售后-处理中", color: "#6366f1" },
+  after_sales_resolved: { label: "售后-已解决", color: "#10b981" },
+  after_sales_rejected: { label: "售后-被拒", color: "#ef4444" },
 };
 
 export default async function NotificationsPage({
@@ -47,10 +55,8 @@ export default async function NotificationsPage({
 
   const page = Number(sp.page ?? "1") || 1;
   const unreadOnly = sp.unread === "1";
-  const { notifications, totalCount, unreadCount } = await listNotificationsForUser(
-    user.id,
-    { page, pageSize: 20, unreadOnly },
-  );
+  const { notifications, totalCount, unreadCount } =
+    await listNotificationsForUser(user.id, { page, pageSize: 20, unreadOnly });
   // [v0.7.3] 修 CSRF：markRead 表单需要 _csrf hidden input（值 = cookie token）
   const csrfToken = (await cookies()).get(CSRF_COOKIE)?.value ?? "";
 
@@ -275,16 +281,8 @@ export default async function NotificationsPage({
                 </div>
                 {isUnread && (
                   <form action={markReadAction}>
-                    <input
-                      type="hidden"
-                      name="notificationId"
-                      value={n.id}
-                    />
-                    <input
-                      type="hidden"
-                      name="_csrf"
-                      value={csrfToken}
-                    />
+                    <input type="hidden" name="notificationId" value={n.id} />
+                    <input type="hidden" name="_csrf" value={csrfToken} />
                     <button
                       type="submit"
                       data-testid="mark-read"

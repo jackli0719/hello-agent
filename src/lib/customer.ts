@@ -125,6 +125,11 @@ export interface CustomerOrderLookupItem {
   // [v0.7.9] 取消原因 + 取消时间
   cancelReason: string | null;
   canceledAt: string | null;
+  // [任务 21] 售后工单字段 — 客户 + 商家 + admin 详情页共用
+  afterSalesStatus: "pending" | "processing" | "resolved" | "rejected" | null;
+  afterSalesReason: string | null;
+  afterSalesRejectReason: string | null;
+  afterSalesHandledAt: string | null;
   createdAt: string;
 }
 
@@ -163,6 +168,11 @@ export async function listOrdersForCustomerPhone(
       serviceSummary: true, // [v0.7.6] 师傅完成说明
       cancelReason: true, // [v0.7.9]
       canceledAt: true, // [v0.7.9]
+      // [任务 21] 售后工单
+      afterSalesStatus: true,
+      afterSalesReason: true,
+      afterSalesRejectReason: true,
+      afterSalesHandledAt: true,
       // [v0.7.5] 列表也 join master 表（拿手机号）
       master: { select: { phone: true } },
       serviceSku: { select: { category: { select: { name: true } } } },
@@ -189,6 +199,14 @@ export async function listOrdersForCustomerPhone(
     // [v0.7.9] 取消字段（用户端可见 — 业务规则）
     cancelReason: r.cancelReason,
     canceledAt: r.canceledAt ? r.canceledAt.toISOString() : null,
+    // [任务 21] 售后字段
+    afterSalesStatus:
+      r.afterSalesStatus as CustomerOrderLookupItem["afterSalesStatus"],
+    afterSalesReason: r.afterSalesReason,
+    afterSalesRejectReason: r.afterSalesRejectReason,
+    afterSalesHandledAt: r.afterSalesHandledAt
+      ? r.afterSalesHandledAt.toISOString()
+      : null,
     createdAt: r.createdAt.toISOString(),
   }));
 }
@@ -231,6 +249,11 @@ export async function getOrderForCustomer(
       serviceSummary: true, // [v0.7.6] 师傅完成说明
       cancelReason: true, // [v0.7.9]
       canceledAt: true, // [v0.7.9]
+      // [任务 21] 售后字段
+      afterSalesStatus: true,
+      afterSalesReason: true,
+      afterSalesRejectReason: true,
+      afterSalesHandledAt: true,
       master: { select: { phone: true } },
       serviceSku: { select: { category: { select: { name: true } } } },
     },
@@ -256,6 +279,14 @@ export async function getOrderForCustomer(
     // [v0.7.9] 取消字段（用户端可见 — 业务规则）
     cancelReason: row.cancelReason,
     canceledAt: row.canceledAt ? row.canceledAt.toISOString() : null,
+    // [任务 21] 售后字段
+    afterSalesStatus:
+      row.afterSalesStatus as CustomerOrderLookupItem["afterSalesStatus"],
+    afterSalesReason: row.afterSalesReason,
+    afterSalesRejectReason: row.afterSalesRejectReason,
+    afterSalesHandledAt: row.afterSalesHandledAt
+      ? row.afterSalesHandledAt.toISOString()
+      : null,
     createdAt: row.createdAt.toISOString(),
   };
 }

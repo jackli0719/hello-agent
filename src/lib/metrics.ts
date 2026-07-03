@@ -99,4 +99,9 @@ export const METRIC = {
   // [任务 20] 自动派单
   AUTO_DISPATCH_SUCCESS: "auto_dispatch.success",
   AUTO_DISPATCH_FAILED: "auto_dispatch.failed",
+  // [任务 21] 售后工单
+  AFTER_SALES_CREATED: "after_sales.created",
+  AFTER_SALES_PROCESSING: "after_sales.processing",
+  AFTER_SALES_RESOLVED: "after_sales.resolved",
+  AFTER_SALES_REJECTED: "after_sales.rejected",
 } as const;

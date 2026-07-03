@@ -798,7 +798,11 @@ export async function adminAutoDispatchAction(
     select: { status: true, payStatus: true },
   });
   if (!order) {
-    return { ok: false, category: "validation", error: `订单 ${orderId} 不存在` };
+    return {
+      ok: false,
+      category: "validation",
+      error: `订单 ${orderId} 不存在`,
+    };
   }
   if (order.status !== "pending" || order.payStatus !== "paid") {
     return {
@@ -823,4 +827,89 @@ export async function adminAutoDispatchAction(
     category: "validation",
     error: result.reason,
   };
+}
+
+// ============================================================
+// [任务 21] 售后工单 — 客户发起
+// ============================================================
+
+/**
+ * [任务 21] 客户发起售后 — 仅 completed 订单可发起；只能操作自己的订单。
+ *
+ * 业务边界（与 [任务 19] customerRefundOrderAction 区分）：
+ * - refundOrder: 直接退钱（已支付 → 已退款）
+ * - createAfterSales: 发起问题单（admin 受理后处理，可能 resolved 也可能 rejected）
+ * 演示期：两者并存 — 客户可二选一（实际场景一般先售后沟通，处理人同意后才退款）
+ *
+ * 鉴权：customer 专属 + 越权防护（user.phone === order.customerPhone）
+ * CSRF：FormData → verifyCsrfToken
+ */
+export async function customerCreateAfterSalesAction(
+  formData: FormData,
+): Promise<
+  | { ok: true; orderId: string; afterSalesStatus: "pending" }
+  | { ok: false; category: "validation" | "system"; error: string }
+> {
+  // 鉴权
+  const auth = await requireRole(["customer"]);
+  if (!auth.ok) {
+    return { ok: false, category: "validation", error: auth.error };
+  }
+  // CSRF
+  const csrfToken = String(formData.get(CSRF_FORM_FIELD) ?? "");
+  if (!(await verifyCsrfToken(csrfToken))) {
+    return {
+      ok: false,
+      category: "validation",
+      error: "会话已过期，请刷新页面后重试",
+    };
+  }
+
+  const orderId = String(formData.get("orderId") ?? "").trim();
+  if (!orderId) {
+    return { ok: false, category: "validation", error: "缺少 orderId" };
+  }
+
+  // 越权防护：customer 只能对自己的订单发起售后
+  const { prisma } = await import("@/src/lib/db");
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: { customerPhone: true, status: true },
+  });
+  if (!order) {
+    return {
+      ok: false,
+      category: "validation",
+      error: `订单 ${orderId} 不存在`,
+    };
+  }
+  if (!auth.user.phone || order.customerPhone !== auth.user.phone) {
+    return { ok: false, category: "validation", error: "该订单不属于您" };
+  }
+  if (order.status !== "completed") {
+    return {
+      ok: false,
+      category: "validation",
+      error: `订单当前状态（status=${order.status}）不能发起售后`,
+    };
+  }
+
+  const reason = String(formData.get("reason") ?? "").trim();
+
+  // 调 after-sales 业务函数
+  const { createTicket } = await import("@/src/lib/after-sales");
+  const result = await createTicket(orderId, reason, {
+    id: auth.user.id,
+    name: auth.user.name,
+  });
+  if (!result.ok) {
+    return { ok: false, category: result.category, error: result.error };
+  }
+  try {
+    revalidatePath(`/customer/orders/${orderId}`);
+    revalidatePath("/customer/orders");
+  } catch {
+    /* 单测无 Next runtime */
+  }
+  return { ok: true, orderId, afterSalesStatus: "pending" };
 }
