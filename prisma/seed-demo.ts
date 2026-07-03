@@ -71,6 +71,18 @@ async function clearAll() {
     // 老 Prisma Client 无 withdrawRequest — 跳过
   }
   try {
+    // [任务 T2-1] WorkerWithdrawRequest 依赖 Master，先删
+    await prisma.workerWithdrawRequest.deleteMany();
+  } catch {
+    // 老 Prisma Client 无 workerWithdrawRequest — 跳过
+  }
+  try {
+    // WorkerSettlement 依赖 Master
+    await prisma.workerSettlement.deleteMany();
+  } catch {
+    // 老 Prisma Client 无 workerSettlement — 跳过
+  }
+  try {
     // [任务 14] FinanceLedger 依赖 Merchant，先删
     await prisma.financeLedger.deleteMany();
   } catch {
@@ -480,6 +492,59 @@ async function seedSettlementPreviewsAndSummaries() {
     });
   }
 
+  // ============================================================
+  // [任务 T2-1] 演示数据 — 师傅 WorkerSettlement + 3 条 WorkerWithdrawRequest
+  // 挂在 T001（李师傅）上：
+  //   - WorkerSettlement：6 月汇总 workerIncome=¥500（50000 分）— 演示可提现余额基数
+  //   - pending:  ¥100 — 待审核
+  //   - approved: ¥50  — admin 已通过
+  //   - rejected: ¥80  — admin 已拒绝，原因：金额异常
+  // 这样 /master-withdraw-requests 列表页三种状态都有数据可看
+  //   worker1（T001）登录后看到自己的 3 条
+  //   admin 登录后看到所有 worker 的全部申请
+  // ============================================================
+  const worker1 = await prisma.master.findUnique({ where: { id: "T001" } });
+  if (worker1) {
+    await prisma.workerSettlement.create({
+      data: {
+        workerId: worker1.id,
+        period: "2026-06",
+        orderCount: 5,
+        totalAmount: 100000, // 订单总金额（分）
+        workerIncome: 50000, // 师傅实收（分）= ¥500
+      },
+    });
+    await prisma.workerWithdrawRequest.create({
+      data: {
+        workerId: worker1.id,
+        amount: 10000, // ¥100
+        status: "pending",
+        remark: "本月生活费（待审核）",
+      },
+    });
+    await prisma.workerWithdrawRequest.create({
+      data: {
+        workerId: worker1.id,
+        amount: 5000, // ¥50
+        status: "approved",
+        remark: "6 月已结",
+        reviewerName: "admin",
+        reviewedAt: new Date("2026-06-22T10:00:00Z"),
+      },
+    });
+    await prisma.workerWithdrawRequest.create({
+      data: {
+        workerId: worker1.id,
+        amount: 8000, // ¥80
+        status: "rejected",
+        remark: "应急垫付",
+        reviewerName: "admin",
+        reviewedAt: new Date("2026-06-25T14:00:00Z"),
+        rejectReason: "金额异常，请提供对应订单明细",
+      },
+    });
+  }
+
   return {
     settlementPreviews: completedOrders.length,
     merchantSettlements: groups.size,
@@ -556,6 +621,7 @@ const USERS = [
     password: "admin123",
     role: "admin",
     workerId: null,
+    merchantId: null as string | null,
   },
   // 2 customer — 演示查询用 customer1 / customer2
   {
@@ -564,6 +630,7 @@ const USERS = [
     password: "customer123",
     role: "customer",
     workerId: null,
+    merchantId: null as string | null,
   },
   {
     name: "customer2",
@@ -571,6 +638,7 @@ const USERS = [
     password: "customer123",
     role: "customer",
     workerId: null,
+    merchantId: null as string | null,
   },
   // 4 worker — 各自绑到一个 master
   {
@@ -579,6 +647,7 @@ const USERS = [
     password: "worker123",
     role: "worker",
     workerId: "T001",
+    merchantId: null as string | null,
   },
   {
     name: "worker2",
@@ -586,6 +655,7 @@ const USERS = [
     password: "worker123",
     role: "worker",
     workerId: "T002",
+    merchantId: null as string | null,
   },
   {
     name: "worker3",
@@ -593,6 +663,7 @@ const USERS = [
     password: "worker123",
     role: "worker",
     workerId: "T003",
+    merchantId: null as string | null,
   },
   {
     name: "worker4",
@@ -600,6 +671,26 @@ const USERS = [
     password: "worker123",
     role: "worker",
     workerId: "T004",
+    merchantId: null as string | null,
+  },
+  // [任务 18] 2 merchant — 各自绑到一个 merchant（M001 / M002）
+  // - 演示登录：merchant1 / merchant123（绑 M001）merchant2 / merchant123（绑 M002）
+  // - 注意：M003 (广州天河) 故意不建账号 — 用来演示"未被任何账号绑定的商家"
+  {
+    name: "merchant1",
+    phone: "13800000010",
+    password: "merchant123",
+    role: "merchant",
+    workerId: null,
+    merchantId: "M001" as string | null,
+  },
+  {
+    name: "merchant2",
+    phone: "13800000020",
+    password: "merchant123",
+    role: "merchant",
+    workerId: null,
+    merchantId: "M002" as string | null,
   },
 ] as const;
 
@@ -962,11 +1053,12 @@ async function main() {
         password: await bcrypt.hash(u.password, BCRYPT_ROUNDS),
         role: u.role,
         workerId: u.workerId,
+        merchantId: u.merchantId,
       },
     });
   }
   console.log(
-    `  ✓ User × ${USERS.length}（admin × 1 / customer × 2 / worker × 4，密码已 bcrypt 哈希）`,
+    `  ✓ User × ${USERS.length}（admin × 1 / customer × 2 / worker × 4 / merchant × 2，密码已 bcrypt 哈希）`,
   );
 
   // ============================================================
@@ -1357,7 +1449,9 @@ async function main() {
     counts.skus !== 8 ||
     // [任务 4] 4 师傅 + 1 个 T005 林师傅（invite_code 入驻）= 5
     counts.masters !== 5 ||
-    counts.users !== 7 ||
+    // [任务 18] 7 = 1 admin + 2 customer + 4 worker（merchant 角色单独 demo，不进"基础 7"）
+    // merchant1/merchant2 是商家账号（在 USERS 里但不在基础 7 的白名单分类）
+    counts.users !== 9 ||
     counts.orders !== 20 ||
     counts.rules !== 8 ||
     // [任务 5] 3 个分成策略（每个商家 1 条）
@@ -1366,7 +1460,8 @@ async function main() {
     counts.merchantSettlements !== settlementCounts.merchantSettlements
   ) {
     throw new Error(
-      "seed:demo 后行数对不上（期望 categories=3 / skus=8 / masters=5 / users=7 / orders=20 / rules=8 / commissionStrategies=3 / settlementPreviews=3 / merchantSettlements=3）",
+      // [任务 18] users 7 → 9（+ 2 merchant）。其他数字不动。
+      "seed:demo 后行数对不上（期望 categories=3 / skus=8 / masters=5 / users=9 / orders=20 / rules=8 / commissionStrategies=3 / settlementPreviews=3 / merchantSettlements=3）",
     );
   }
 

@@ -86,6 +86,28 @@ export async function requireRole(
   return { ok: true, user };
 }
 
+/**
+ * [任务 18] 要求当前用户是 merchant 角色 + 绑定了非空 merchantId
+ *
+ * 商家端 action 强制守卫（提现申请 / 邀请码启停 / 重新生成）。
+ * - 不接受 form 入参 — merchantId 永远从 session 读（CLAUDE.md P0-6 越权防控）
+ * - admin 角色不允许走商家端 action（演示期 admin 看 /merchant-admin 只读，写操作只商家）
+ * - merchant 角色但 merchantId=null：挡（orphan 账号）
+ */
+export async function requireMerchant(): Promise<
+  GuardResult<AuthenticatedUser & { merchantId: string }>
+> {
+  const user = await getCurrentUser();
+  if (!user) return guardFail("请重新登录后再操作");
+  if (user.role !== "merchant") {
+    return guardFail("仅商家账号可执行此操作");
+  }
+  if (!user.merchantId) {
+    return guardFail("当前商家账号未绑定 merchantId");
+  }
+  return { ok: true, user: user as AuthenticatedUser & { merchantId: string } };
+}
+
 // ============================================================
 // CSRF 守卫
 // ============================================================

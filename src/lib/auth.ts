@@ -21,7 +21,7 @@ import { prisma } from "./db";
 
 export const SESSION_COOKIE = "o2o_session";
 
-export type Role = "admin" | "worker" | "customer";
+export type Role = "admin" | "worker" | "customer" | "merchant"; // [任务 18] 商家角色
 
 export const COOKIE_OPTIONS = {
   httpOnly: true,
@@ -54,6 +54,7 @@ export const PROTECTED_PATHS = [
   "/activity-logs",
   "/admin",
   "/worker",
+  "/merchant-admin", // [任务 18] 商家端后台
   "/customer/orders",
 ];
 
@@ -69,6 +70,7 @@ export const DEFAULT_LANDING: Record<Role, string> = {
   admin: "/dashboard",
   worker: "/worker",
   customer: "/customer/orders",
+  merchant: "/merchant-admin", // [任务 18] 商家登录后落商家后台
 };
 
 /** 角色可访问的路径前缀 */
@@ -91,9 +93,12 @@ export const ROLE_ALLOWED: Record<Role, string[]> = {
     "/dispatch-rules",
     "/activity-logs",
     "/admin",
+    "/merchant-admin", // [任务 18] admin 也能看商家后台（演示/排障）
   ],
   worker: ["/worker", "/master-withdraw-requests"],
   customer: ["/customer", "/customer/orders"],
+  // [任务 18] merchant 角色只能进商家后台，不能看 admin 后台
+  merchant: ["/merchant-admin"],
 };
 
 // ============================================================
@@ -106,6 +111,8 @@ export interface AuthenticatedUser {
   role: Role;
   phone: string | null;
   workerId: string | null;
+  // [任务 18] 商家账号绑定 — merchant 角色必填；其他角色 null
+  merchantId: string | null;
 }
 
 /** iron-session 内容 schema */
@@ -163,6 +170,8 @@ export async function authenticate(
     role: user.role as Role,
     phone: user.phone,
     workerId: user.workerId,
+    // [任务 18] 商家账号 merchantId 从 User 表读
+    merchantId: user.merchantId,
   };
 }
 
@@ -190,6 +199,8 @@ export async function getCurrentUser(): Promise<AuthenticatedUser | null> {
     role: user.role as Role,
     phone: user.phone,
     workerId: user.workerId,
+    // [任务 18] 商家账号 merchantId 从 User 表读
+    merchantId: user.merchantId,
   };
 }
 
@@ -229,4 +240,43 @@ export function canAccess(role: Role | null, pathname: string): boolean {
   if (!role) return false;
   const allowed = ROLE_ALLOWED[role];
   return allowed.some((p) => pathname === p || pathname.startsWith(p + "/"));
+}
+
+// ============================================================
+// [任务 18] 商家端 helper — merchantId 强制从 session 读，禁止 form 入参
+// ============================================================
+
+/**
+ * RSC / Server Action 入口守卫：必须是登录用户 + role=merchant + merchantId 非空。
+ *
+ * 不接受任何 form 参数。merchantId 只从 session.userId 反查的 User.merchantId 来。
+ *
+ * 返回结构：{ user, merchantId }
+ * - user : 当前账号（用于审计日志 / 模板展示）
+ * - merchantId : 强绑的商家业务编码（M001/M002/M003），所有查询 SQL 都强制带这个
+ */
+export interface RequireMerchantResult {
+  user: AuthenticatedUser;
+  merchantId: string;
+}
+
+/**
+ * 检查当前用户是 merchant 角色且绑定了非空 merchantId。
+ * 失败 throw — 调用方在 page.tsx 用 try/catch redirect。
+ *
+ * 关键：merchantId 形参**不存在** — 永远从 session 读。CLAUDE.md P0-6 越权防控。
+ */
+export async function requireMerchant(): Promise<RequireMerchantResult> {
+  const user = await getCurrentUser();
+  if (!user) {
+    throw new Error("UNAUTHENTICATED");
+  }
+  if (user.role !== "merchant") {
+    throw new Error("FORBIDDEN_NOT_MERCHANT");
+  }
+  if (!user.merchantId) {
+    // merchant 角色必须有 merchantId（防 orphan 账号）
+    throw new Error("MERCHANT_NOT_BOUND_TO_MERCHANT_ID");
+  }
+  return { user, merchantId: user.merchantId };
 }

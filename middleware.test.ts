@@ -65,4 +65,23 @@ describe("middleware", () => {
     expect(location).toContain("/login");
     expect(location).toContain("next=%2Fmaster-withdraw-requests");
   });
+
+  // # spec: [任务 18] /merchant-admin 受保护，未登录跳登录页
+  it("未登录访问 /merchant-admin → /login?next=%2Fmerchant-admin", () => {
+    const res = middleware(request("/merchant-admin"));
+    expect(res.status).toBe(307);
+    const location = res.headers.get("location") ?? "";
+    expect(location).toContain("/login");
+    expect(location).toContain("next=%2Fmerchant-admin");
+  });
+
+  // # spec: [任务 18] /merchant-admin 子路径同样受保护
+  it("未登录访问 /merchant-admin/orders → /login?next=%2Fmerchant-admin%2Forders", () => {
+    const res = middleware(request("/merchant-admin/orders"));
+    expect(res.status).toBe(307);
+    const location = res.headers.get("location") ?? "";
+    expect(location).toContain("/login");
+    expect(location).toContain("next=");
+    expect(location).toContain("merchant-admin");
+  });
 });

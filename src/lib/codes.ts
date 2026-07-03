@@ -11,6 +11,33 @@
 // - 必须以字母开头
 const CODE_PATTERN = /^[A-Z][A-Z0-9-]{1,31}$/;
 
+// [任务 18] 邀请码规则（与 codes 不同）：
+// - 8 字符，大写字母 + 数字（不强制以字母开头，避免生成时 I/O 拒）
+// - 演示期商家重新生成邀请码用 — 不走 CODE_PATTERN
+// # MVP: Math.random 碰撞概率 = 36^8 = 2.8 万亿分之一，演示期安全
+export const INVITE_CODE_LENGTH = 8;
+const INVITE_CODE_PATTERN = /^[A-Z0-9]{8}$/;
+
+/**
+ * 生成 8 字符大写字母数字邀请码
+ *
+ * 与 isValidInviteCode 配套使用：
+ *   const code = generateInviteCode();
+ *   if (!isValidInviteCode(code)) throw new Error("生成异常，重试");
+ */
+export function generateInviteCode(): string {
+  // 36 字符 base36 = 0-9 + A-Z；toUpperCase 已是 uppercase
+  // slice(2) 跳过 "0." 前缀
+  let s = Math.random().toString(36).slice(2).toUpperCase();
+  // 不足 8 位补 0（边界；极罕见但兜底）
+  while (s.length < INVITE_CODE_LENGTH) s += "0";
+  return s.slice(0, INVITE_CODE_LENGTH);
+}
+
+export function isValidInviteCode(code: string): boolean {
+  return INVITE_CODE_PATTERN.test(code);
+}
+
 export function isValidCode(code: string): boolean {
   return CODE_PATTERN.test(code);
 }

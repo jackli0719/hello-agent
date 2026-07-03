@@ -145,6 +145,17 @@
   - `tests/integration/finance.ledger.test.ts`（8 cases）— 多维过滤 + 统计卡
 - **遗留**：其他 4 个 verify 脚本（verify-chain / dispatch / invite / payout）仍在 `scripts/` 下，单独跑 — 优先度低，业务规则已被 src/lib/*.test.ts 单测覆盖
 
+### 17. 商家后台 admin 越权入口已收口（fallback 第一个 active 商家）[任务 18]
+
+- **原状**：admin 角色登录 `/merchant-admin/*` 时，半成品 layout 放行 admin，但 5 子页 guard 校验 `user.merchantId`（admin 为 null），全显「未绑定 merchantId」红字
+- **解决**：
+  - `src/lib/merchant-admin.ts` 新增 `getEffectiveMerchantId(user)` helper
+  - 规则：merchant 角色 → 用 session.merchantId；admin 角色 → 动态取 `prisma.merchant.findFirst({ where: { status: "active" }, orderBy: { id: "asc" }})`；worker/customer → 抛错
+  - 5 子页 + 总览页 guard 改用 helper，admin 进 `/merchant-admin` 不再红字
+  - `React.cache()` 包裹：同 request 内 5 子页调用只跑 1 次 DB query
+- **风险**：admin 排障默认看 M001；上线后应撤掉 admin 放行（layout admin 也跳 `/dashboard`），不在 MVP 范围
+- **决策回报**：见 plan 文件 `merchant-admin` 任务第 3 决策
+
 ---
 
 ## 试用反馈

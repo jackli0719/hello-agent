@@ -1,7 +1,13 @@
 // 业务编码校验 / 生成 — 纯函数测试。
 
 import { describe, expect, it } from "vitest";
-import { isValidCode, suggestCode, assertValidCode } from "./codes";
+import {
+  isValidCode,
+  suggestCode,
+  assertValidCode,
+  generateInviteCode,
+  isValidInviteCode,
+} from "./codes";
 
 // # spec: 业务编码格式 = 必须大写字母开头 + 字母数字连字符 + 2-32 字符（应用层唯一防线，SQLite 不支持 @db.Collate）
 describe("isValidCode", () => {
@@ -95,5 +101,33 @@ describe("assertValidCode", () => {
     expect(() => assertValidCode("bad code", "skuCode")).toThrow(/skuCode/);
     expect(() => assertValidCode("clean")).toThrow(/格式不合法/);
     expect(() => assertValidCode("")).toThrow();
+  });
+});
+
+// [任务 18] 邀请码生成 / 校验
+describe("generateInviteCode / isValidInviteCode", () => {
+  // # spec: generateInviteCode 输出 8 字符大写字母数字
+  it("generateInviteCode → 8 字符大写字母数字", () => {
+    for (let i = 0; i < 50; i++) {
+      const c = generateInviteCode();
+      expect(c).toHaveLength(8);
+      expect(c).toMatch(/^[A-Z0-9]{8}$/);
+    }
+  });
+
+  // # spec: isValidInviteCode 接受 8 字符大写字母数字
+  it("isValidInviteCode 接受 8 字符大写字母数字", () => {
+    expect(isValidInviteCode("ABC12345")).toBe(true);
+    expect(isValidInviteCode("00000000")).toBe(true);
+    expect(isValidInviteCode("ZZZZZZZZ")).toBe(true);
+  });
+
+  // # spec: isValidInviteCode 拒长度不符 / 含小写 / 含连字符（与业务编码规则不同）
+  it("isValidInviteCode 拒绝长度不符 / 小写 / 连字符", () => {
+    expect(isValidInviteCode("ABC1234")).toBe(false); // 7 字符
+    expect(isValidInviteCode("ABC123456")).toBe(false); // 9 字符
+    expect(isValidInviteCode("abc12345")).toBe(false); // 小写
+    expect(isValidInviteCode("ABC-1234")).toBe(false); // 连字符
+    expect(isValidInviteCode("")).toBe(false);
   });
 });

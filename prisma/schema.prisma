@@ -86,33 +86,44 @@ model Master {
   // [任务 17] 师傅维度结算汇总（1 对多）
   workerSettlements  WorkerSettlement[]
 
+  // [任务 T2-1] 师傅提现申请（1 对多 — 同一师傅多次申请）
+  workerWithdrawRequests WorkerWithdrawRequest[]
+
   @@index([status])
   @@index([merchantId])
 }
 
 // ============================================================
 // 账号体系（[账号阶段] 2026-06-29 引入）
-// 三个角色：admin / worker / customer
-// - admin  : 后台管理员（workerId null）
-// - worker : 师傅账号（workerId 绑 Master.id）
+// 四种角色：admin / worker / customer / merchant
+// - admin    : 后台管理员（workerId/merchantId 都 null）
+// - worker   : 师傅账号（workerId 绑 Master.id）
 // - customer : 用户（按 phone 查订单）
+// - merchant : 商家账号（merchantId 绑 Merchant.id）— [任务 18] 商家端后台
 // # [v0.3.0] 密码 bcrypt 哈希（修 ADR-013 A1 P0 风险）— rounds=10
 // # 旧版注释「MVP 明文」是 v0.2.x 历史遗留，已不再准确
 // ============================================================
 model User {
   id        String   @id @default(cuid())
-  name      String   @unique               // 登录账号（admin / worker1 / customer1）
-  phone     String?                       // customer/worker 绑手机号；admin 可空
+  name      String   @unique               // 登录账号（admin / worker1 / customer1 / merchant1）
+  phone     String?                       // customer/worker 绑手机号；admin/merchant 可空
   password  String                        // bcrypt(rounds=10) 哈希，验证用 bcrypt.compare
-  role      String                        // admin | worker | customer
+  role      String                        // admin | worker | customer | merchant
   workerId  String?   @unique             // role=worker 时绑 Master.id
+  // [任务 18] 商家账号绑定 — merchant 角色必填
+  // merchantId 来源：seed 创建时直接写（演示期）；上线后由 admin 后台生成
+  // # MVP: 数据库层不强制 role+merchantId 一致（演示期灵活）；requireMerchant() 在业务层校验
+  merchantId String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   worker    Master?  @relation(fields: [workerId], references: [id])
+  // [任务 18] merchant 角色反向关系
+  merchant  Merchant? @relation(fields: [merchantId], references: [id], onDelete: SetNull)
 
   @@index([role])
   @@index([phone])
+  @@index([merchantId])
 }
 
 // ============================================================
@@ -260,6 +271,9 @@ model Merchant {
 
   // [任务 14] 财务流水（1 对多 — 商家维度账）
   financeLedgers FinanceLedger[]
+
+  // [任务 18] 商家后台账号（1 对多 — 一个商家可有多个 merchant 账号登入）
+  users User[]
 
   @@index([status])
   @@index([province, city, district, street])
@@ -474,7 +488,46 @@ model PayoutRecord {
 }
 
 // ============================================================
-// [任务 13] 商家提现申请（WithdrawRequest）
+// [任务 T2-1] 师傅提现申请（WorkerWithdrawRequest）
+//
+// 设计要点（与 WithdrawRequest 镜像）：
+// - workerId 必填（FK Master；Cascade）
+// - amount 单位：分（与 WorkerSettlement 一致）
+// - status：pending / approved / rejected
+//   - pending → approved（admin 通过）
+//   - pending → rejected（admin 拒绝）— 必填 rejectReason
+// - remark：师傅自己填的用途说明（可选）
+// - reviewerName：冗余 User.name（删 user 不影响记录）
+// - 可提现余额算法：Σ(WorkerSettlement.workerIncome)
+//                    − Σ(approved + pending WorkerWithdrawRequest.amount)
+// - DB partial unique: (workerId) WHERE status='pending'
+//   — 防同师傅并发创建 2 条 pending（与 WithdrawRequest 同样的 P0 风险）
+// - 师傅自己申请；admin 审核；不写 FinanceLedger（无 payout 流程）
+// - 只做申请和审核；不做真实打款
+// ============================================================
+model WorkerWithdrawRequest {
+  id        String   @id @default(cuid())
+  workerId  String
+  worker    Master   @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  // 申请金额（分）
+  amount    Int
+  // 状态机
+  status    String   @default("pending") // pending | approved | rejected
+  // 师傅填的用途说明（optional）
+  remark    String?
+  // 审核人（User.name 字符串冗余）
+  reviewerName String?
+  // 审核时间（status ∈ approved/rejected 时有值）
+  reviewedAt   DateTime?
+  // 拒绝原因（status=rejected 必填）
+  rejectReason String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([workerId])
+  @@index([status])
+  @@index([createdAt])
+}
 //
 // 设计要点：
 // - merchantId 必填（FK Merchant；状态 active 才允许申请）
