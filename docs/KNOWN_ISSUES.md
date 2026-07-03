@@ -126,6 +126,14 @@
 - **实际**：应该按业务优先级排序
 - **影响**：首页数字可能跟 /orders 页不一致
 
+### 15. Sidebar 1024px 以下未做断点隐藏 [v1.x]
+
+- **现状**：`AdminShell` 对所有 admin 路径总是渲染 sidebar（230px 宽）
+- **影响**：1024px 以下页面会出现横向滚动条，sidebar 内容需要滚动才能看完
+- **当前保护**：Sidebar 内部可折叠成 56px 图标条，但仍未解决横向溢出
+- **决策回报**：见 `components/Sidebar.tsx` 头部注释 — 当前决定不做 mobile drawer / 断点隐藏
+- **下一阶段**：加 CSS `@media (max-width: 1024px)` 自动折叠 + 或者 worker/customer 一样用顶部横排
+
 ---
 
 ## 试用反馈
