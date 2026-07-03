@@ -14,6 +14,10 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/src/lib/auth";
 import { getEffectiveMerchantId, getMerchantOrderDetail } from "@/src/lib/merchant-admin";
+import {
+  getLatestDispatchFailure,
+  describeFailureCode,
+} from "@/src/lib/auto-dispatch";
 import { ensureCsrfCookie } from "@/src/lib/csrf";
 import { CancelForm } from "@/components/CancelForm";
 import { StatusBadge, ORDER_TONE, card } from "@/components/ui";
@@ -56,6 +60,10 @@ export default async function MerchantOrderDetailPage({ params }: PageProps) {
     // 不告诉调用方"订单存在 / 不存在"（与 customer 端一致）
     redirect("/merchant-admin/orders?error=not_found");
   }
+
+  // [任务 20] 派单失败原因（仅 pending 状态有意义 — 已派单就看不到）
+  const dispatchFailure =
+    order.status === "pending" ? await getLatestDispatchFailure(id) : null;
 
   // 4. 是否可取消：assigned / in_service
   const canCancel =
@@ -117,6 +125,36 @@ export default async function MerchantOrderDetailPage({ params }: PageProps) {
 
         <SectionTitle title="已分配师傅" />
         <Field label="师傅" value={order.masterName ?? "—"} />
+
+        {/* [任务 20] 派单失败原因 — pending 状态且有失败日志时显示 */}
+        {dispatchFailure ? (
+          <div
+            style={{
+              padding: "10px 14px",
+              background: "#fef2f2",
+              border: "1px solid #fecaca",
+              borderRadius: 6,
+              color: "#7f1d1d",
+              fontSize: 13,
+              marginTop: 14,
+            }}
+          >
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>
+              ⚠ 暂时无法自动派单
+            </div>
+            <div>{describeFailureCode(dispatchFailure.failureCode)}</div>
+            <div
+              style={{
+                color: "#9ca3af",
+                fontSize: 11,
+                marginTop: 4,
+              }}
+            >
+              {formatDateTime(dispatchFailure.createdAt.toISOString())} ·
+              请联系平台开通区域或新增师傅
+            </div>
+          </div>
+        ) : null}
 
         <SectionTitle title="时间信息" />
         <Field label="下单时间" value={formatDateTime(order.createdAt)} />

@@ -19,6 +19,10 @@ import { redirect } from "next/navigation";
 import { getOrderForCustomer } from "@/src/lib/customer";
 import { getCurrentUser } from "@/src/lib/auth";
 import { ensureCsrfCookie } from "@/src/lib/csrf";
+import {
+  getLatestDispatchFailure,
+  describeFailureCode,
+} from "@/src/lib/auto-dispatch";
 import { customerCancelOrderAction, customerRefundOrderAction } from "@/app/orders/actions";
 import { CancelForm } from "@/components/CancelForm";
 import { RefundForm } from "@/components/RefundForm";
@@ -89,6 +93,13 @@ export default async function CustomerOrderDetailPage({ params }: PageProps) {
     redirect("/customer/orders?error=not_found");
   }
 
+  // [任务 20] 派单失败原因查询（仅 pending+paid 状态有意义）
+  // 与订单查并行做（独立查询，无依赖）
+  const dispatchFailure =
+    order.status === "pending" && order.payStatus === "paid"
+      ? await getLatestDispatchFailure(id)
+      : null;
+
   return (
     <div style={pageStyle}>
       {/* 顶部 — 返回列表 + 登录信息 + 退出（与列表页一致） */}
@@ -148,6 +159,36 @@ export default async function CustomerOrderDetailPage({ params }: PageProps) {
         >
           {statusHint(order.status, order.payStatus)}
         </div>
+
+        {/* [任务 20] 派单失败原因 — pending+paid 状态且有失败日志时显示 */}
+        {dispatchFailure ? (
+          <div
+            style={{
+              padding: "10px 14px",
+              background: "#fef2f2",
+              border: "1px solid #fecaca",
+              borderRadius: 6,
+              color: "#7f1d1d",
+              fontSize: 13,
+              marginBottom: 16,
+            }}
+          >
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>
+              ⚠ 暂时无法自动派单
+            </div>
+            <div>{describeFailureCode(dispatchFailure.failureCode)}</div>
+            <div
+              style={{
+                color: "#9ca3af",
+                fontSize: 11,
+                marginTop: 4,
+              }}
+            >
+              {formatDateTime(dispatchFailure.createdAt.toISOString())} ·
+              工作人员会尽快处理
+            </div>
+          </div>
+        ) : null}
 
         {/* 客户信息 */}
         <SectionTitle title="客户信息" />

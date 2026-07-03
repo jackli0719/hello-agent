@@ -19,6 +19,7 @@ import { logInfo, logError } from "@/src/lib/logger";
 import { incrementCounter, METRIC } from "@/src/lib/metrics";
 import { createActivityLog } from "@/src/lib/activity-log";
 import { dispatchOrderNotifications } from "@/src/lib/notifications";
+import { tryAutoDispatch } from "@/src/lib/auto-dispatch";
 import {
   validateAddress,
   validateCancelReason,
@@ -430,6 +431,22 @@ export async function payOrder(orderId: string): Promise<PayOrderResult> {
     "order_paid",
     { amount: order.amount },
   );
+
+  // [任务 20] 自动派单触发器：支付成功后 fire-and-forget 调 tryAutoDispatch
+  // 设计：
+  // - 不阻塞 payOrder 返回（try/catch 吞掉所有异常）
+  // - 失败时 tryAutoDispatch 自己写 ActivityLog（auto_dispatch_failed）
+  // - 成功时也写 ActivityLog（auto_dispatch_succeeded）+ assignOrder 内已有 order_assigned log
+  // - 关键：订单仍是 pending + paid 状态，admin 可手动重试（CLAUDE.md P0-0 决策 #1 双入口）
+  try {
+    await tryAutoDispatch(orderId);
+  } catch (e) {
+    // 兜底：tryAutoDispatch 自身已 try/catch，这里再兜一层（防御性）
+    logInfo("auto dispatch trigger swallowed error", {
+      orderId,
+      error: e instanceof Error ? e.message : String(e),
+    });
+  }
 
   return { ok: true, orderId, paidAt };
 }

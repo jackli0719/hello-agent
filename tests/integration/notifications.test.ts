@@ -65,6 +65,12 @@ describe("notifications — 5 触发点集成", () => {
     await prisma.order.deleteMany({
       where: { id: { startsWith: PREFIX } },
     });
+    // [任务 20] payOrder 后会触发 tryAutoDispatch → T001 变 busy
+    // 跨 it 之间重置 T001 状态 — 否则后续 assignOrder 测试因师傅 busy 失败
+    await prisma.master.updateMany({
+      where: { id: { in: ["T001", "T002", "T003", "T004"] } },
+      data: { status: "available" },
+    });
   });
 
   afterAll(async () => {

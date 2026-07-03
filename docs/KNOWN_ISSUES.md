@@ -226,3 +226,60 @@
   - 商家端 cancel 自动通过 admin 审核（演示期直接生效，真实业务可加 24h 审核窗口）
   - 部分退款 / 自动退款到原支付渠道
   - `FinanceLedger` 退款冲正（任务 14 财务流水按 settlement 走；售后退款是 order 级，独立维度）
+
+---
+
+## #19 [任务 20] 自动派单
+
+**原状**（任务 20 之前）：paid 订单必须 admin 手动选师傅派单；演示期常被吐槽"还要手动选？"
+
+**解决**：
+- 新建 `src/lib/auto-dispatch.ts`：`tryAutoDispatch(orderId)` 主入口
+- 触发器**双入口**：
+  1. **支付后自动触发** — `payOrder` 成功后 fire-and-forget 调 `tryAutoDispatch`（事务外，失败不阻塞）
+  2. **admin 手动重试** — `adminAutoDispatchAction(orderId)` server action，admin 在 /orders 看到"派单失败"时可点"自动派单"按钮重试
+- 失败保留 `pending` + 写 `ActivityLog`（`action=auto_dispatch_failed`），3 端 UI（admin / customer / merchant）从 ActivityLog 读最近失败原因展示
+- 失败原因 8 种枚举 + 中文描述（`describeFailureCode`）：
+  - `area_no_platform_area` / `area_no_merchant` / `area_no_master` / `no_rule` / `no_skill_matched`（来自 dispatch.ts）
+  - `order_not_pending` / `order_not_paid` / `system_error`（auto-dispatch 自身加的）
+
+**关键修复**（任务 20 期间发现）：
+- `repos/orders.ts:assignOrder(orderId)`（无 masterId 版本）缺 `payStatus` 守门 — 补上保持与 `src/lib/orders.ts:assignOrder(orderId, masterId)` 一致
+- `repos/orders.ts:assignOrder` 没传 4 级地址给 `recommendMastersForOrder` — 补上让精确 PlatformArea 匹配生效
+- `repos/orders.ts:AssignOrderError` 加 `failureCode` 可选字段 — 让 `tryAutoDispatch` 精确分类失败原因（避免 message 字符串解析歧义）
+
+**中间态**：`refunding` 任务 19 已加；任务 20 自动派单失败不会进入任何中间态，订单保持 `pending` + `payStatus=paid`，**管理员**可手动重试或联系商家修复
+
+**二次防御**：
+- `payOrder` 集成 `tryAutoDispatch` 用 try/catch 吞掉所有异常（auto-dispatch 失败不阻塞支付）
+- `tryAutoDispatch` 失败时内部 `try/catch` 写 ActivityLog 也吞掉（不阻塞主流程）
+- `tryAutoDispatch` 复用 `repos/orders.ts:assignOrder` 已有的乐观锁防并发抢单
+
+**测试**（`src/lib/auto-dispatch.test.ts`，11 it 全过）：
+- 成功路径（pending+paid+有可用师傅 → 订单 assigned）
+- 拒绝 payStatus=unpaid → `order_not_paid`
+- 拒绝 status=assigned → `order_not_pending`
+- 拒绝 SKU 无匹配规则 → `no_rule`
+- 拒绝 requiredSkills 无师傅掌握 → `no_skill_matched`
+- 失败时写 ActivityLog + getLatestDispatchFailure 可查
+- 不存在订单 → 不抛错 + `order_not_pending`
+- 多次失败 → 取最近一条
+- `describeFailureCode` 8 个 code 全部翻译为非空中文
+- 未知 code → fallback "派单失败"
+
+**回归测试更新**（任务 20 行为变化导致）：
+- `tests/integration/payment.gate.test.ts:164` 验收点 2：原"支付 → status=pending → 手动派单"改为"支付 → 自动派单 → status=assigned"
+- `tests/integration/notifications.test.ts` beforeEach：增加 `master.updateMany` 重置 T001-T004 状态（自动派单跨 it 占用 master）
+
+**决策回报**：
+- 选了"**支付后自动 + admin 手动**双入口"：覆盖演示期"全自动"和"运营排障"两种场景
+- 选了"**复用 `repos/orders.ts:assignOrder`**"：不动已有事务/乐观锁实现，只加薄包装层（CLAUDE.md P3 不重复造轮子）
+- 选了"**失败原因不写新表**"：用 ActivityLog free string 字段（schema 不必迁，符合 CLAUDE.md P0-1）
+- 选了"**tiebreak 复用 dispatch.ts 现有 rating desc**"：CLAUDE.md P0-0 决策 #3 的 4 层稳定排序要求，dispatch.ts 已实现 rating desc + id 字典序兜底；本次未做 completedJobs/createdAt tiebreak 增强（演示数据量小没必要，路线图 P3 标记）
+
+**遗留 / 不做**（路线图 P2/P3）：
+- **失败重试 1 次 + 30s 后升级 admin**（v0.10+ 再做，演示期手动即可）
+- **距离优先 tiebreak**（任务 P2-3 独立任务，需地图 API）
+- **`auto_dispatch_succeeded` 也发通知** — 当前只写 ActivityLog，不发收件箱通知（演示期任务 19 已就绪但任务 20 未接）
+- **admin 端派单页面批量重试按钮**（演示期单订单手动即可）
+- **`tryAutoDispatch` 选 master 的规则文档** — 当前内部用 dispatch.ts 同款 `recommendMastersForOrder`；admin 端用同款结果（listOrdersForPage 已经在调）

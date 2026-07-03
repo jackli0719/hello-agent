@@ -1,11 +1,13 @@
 import { OrderActions } from "@/components/OrderActions";
 import { InternalRemarkForm } from "@/components/InternalRemarkForm";
 import { AdminCancelButton } from "@/components/AdminCancelButton";
+import { AutoDispatchButton } from "@/components/AutoDispatchButton";
 import { StatusBadge, th, td, card, ORDER_TONE } from "@/components/ui";
 import { ORDER_STATUS_LABEL } from "@/lib/mock-data";
 import { listOrdersForPage, type OrderListItem } from "@/src/lib/queries";
 import { listEnabledServices } from "@/src/lib/repos/services";
 import { ensureCsrfCookie } from "@/src/lib/csrf";
+import { describeFailureCode } from "@/src/lib/auto-dispatch";
 import type { OrderStatus } from "@/src/types";
 import Link from "next/link";
 
@@ -842,8 +844,24 @@ function ActionCell({
     return (
       <div style={{ fontSize: 12 }}>
         {areaBlock}
-        <div style={{ color: "#b91c1c" }}>{recommendation.reason}</div>
+        <div style={{ color: "#b91c1c" }}>
+          {/* [任务 20] failureCode → 中文描述 */}
+          {recommendation.failureCode
+            ? describeFailureCode(
+                // dispatch.ts 的 failureCode 与 auto-dispatch.ts 的 AutoDispatchFailureCode 同名
+                recommendation.failureCode as Parameters<
+                  typeof describeFailureCode
+                >[0],
+              )
+            : "没有匹配的派单规则"}
+        </div>
         <div style={{ color: "#6b7280", marginTop: 2 }}>暂无可派单师傅</div>
+        {/* [任务 20] 手动重试入口（仅 paid 状态可触发，pending+paid） */}
+        {order.payStatus === "paid" ? (
+          <div style={{ marginTop: 8 }}>
+            <AutoDispatchButton orderId={order.id} />
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -868,7 +886,16 @@ function ActionCell({
             命中规则：{rule.name}
           </span>
         </div>
-        <div style={{ color: "#b91c1c" }}>{recommendation.reason}</div>
+        <div style={{ color: "#b91c1c" }}>
+          {/* [任务 20] failureCode → 中文描述 */}
+          {recommendation.failureCode
+            ? describeFailureCode(
+                recommendation.failureCode as Parameters<
+                  typeof describeFailureCode
+                >[0],
+              )
+            : "暂无可用师傅"}
+        </div>
         <div style={{ color: "#6b7280", marginTop: 2 }}>暂无可派单师傅</div>
         <div style={{ marginTop: 8 }}>
           <OrderActions
@@ -879,6 +906,12 @@ function ActionCell({
             payStatus={order.payStatus}
           />
         </div>
+        {/* [任务 20] 手动重试入口（仅 paid 状态） */}
+        {order.payStatus === "paid" ? (
+          <div style={{ marginTop: 6 }}>
+            <AutoDispatchButton orderId={order.id} />
+          </div>
+        ) : null}
       </div>
     );
   }

@@ -14,6 +14,11 @@ import {
 } from "@/src/lib/orders";
 import { releaseMaster, ReleaseOrderError } from "@/src/lib/repos/orders";
 import { createActivityLog } from "@/src/lib/activity-log";
+import { prisma } from "@/src/lib/db";
+import {
+  tryAutoDispatch,
+  type AutoDispatchResult,
+} from "@/src/lib/auto-dispatch";
 import {
   CSRF_FORM_FIELD,
   verifyCsrfOrigin,
@@ -744,4 +749,78 @@ export async function adminRefundOrderAction(
     }
   }
   return result;
+}
+
+// ============================================================
+// [任务 20] 手动重试自动派单 — admin 专属
+// ============================================================
+
+/**
+ * [任务 20] admin 手动触发自动派单。
+ *
+ * 业务场景（CLAUDE.md P0-0 决策 #1 — 双入口之一）：
+ * 1. 支付后 tryAutoDispatch 失败（如 area_no_merchant）→ 订单保持 pending + payStatus=paid
+ * 2. admin 在 /orders/[id] 看到"派单失败：当前区域暂无商家覆盖"
+ * 3. admin 联系商家开通区域 / 新增师傅 / 加规则 → 修复问题
+ * 4. admin 点"重新派单"按钮 → 调本 action → 再跑 tryAutoDispatch
+ *
+ * 规则：
+ * - 订单必须存在
+ * - 订单 status 必须 === "pending" + payStatus === "paid"（与 assignOrder 一致）
+ * - 调 src/lib/auto-dispatch.ts:tryAutoDispatch
+ * - CSRF：非 FormData action → verifyCsrfOrigin
+ */
+export type AutoDispatchActionResult =
+  | { ok: true; orderId: string; masterName: string }
+  | { ok: false; category: "validation" | "system"; error: string };
+
+export async function adminAutoDispatchAction(
+  orderId: string,
+): Promise<AutoDispatchActionResult> {
+  // 鉴权：admin 专属
+  const auth = await requireAdmin();
+  if (!auth.ok) {
+    return { ok: false, category: "validation", error: auth.error };
+  }
+  // CSRF：非 FormData action → Origin 头校验
+  const csrf = await verifyCsrfOrigin();
+  if (!csrf.ok) {
+    return { ok: false, category: "validation", error: csrf.error };
+  }
+
+  if (!orderId) {
+    return { ok: false, category: "validation", error: "缺少 orderId" };
+  }
+
+  // 前置校验：订单必须是 pending + paid
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: { status: true, payStatus: true },
+  });
+  if (!order) {
+    return { ok: false, category: "validation", error: `订单 ${orderId} 不存在` };
+  }
+  if (order.status !== "pending" || order.payStatus !== "paid") {
+    return {
+      ok: false,
+      category: "validation",
+      error: `订单当前状态（status=${order.status}, payStatus=${order.payStatus}）不可自动派单`,
+    };
+  }
+
+  const result = await tryAutoDispatch(orderId);
+  if (result.ok) {
+    try {
+      revalidatePath("/orders");
+      revalidatePath(`/orders/${orderId}`);
+    } catch {
+      // 单测无 Next runtime
+    }
+    return { ok: true, orderId, masterName: result.masterName };
+  }
+  return {
+    ok: false,
+    category: "validation",
+    error: result.reason,
+  };
 }

@@ -96,4 +96,7 @@ export const METRIC = {
   // [任务 19] 售后退款（completed 订单专属）
   ORDER_REFUND_SUCCESS: "order.refund.success",
   ORDER_REFUND_FAILED: "order.refund.failed",
+  // [任务 20] 自动派单
+  AUTO_DISPATCH_SUCCESS: "auto_dispatch.success",
+  AUTO_DISPATCH_FAILED: "auto_dispatch.failed",
 } as const;
