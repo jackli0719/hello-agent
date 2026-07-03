@@ -1,5 +1,9 @@
 import type { Technician } from "./types";
 import { z } from "zod";
+import {
+  defaultAreaMatcher,
+  type AreaMatcher,
+} from "@/src/lib/area-matcher";
 
 // 派单匹配 — 纯函数，方便单测和复用。
 // 不在这里做 I/O、不在这里改状态，只回答一个问题：
@@ -38,7 +42,8 @@ export interface RecommendationResult {
     | "area_no_master" // 区域有商家覆盖但无师傅
     | "no_rule" // 无 SKU/类目规则
     | "no_skill_matched" // 有规则但无技能匹配
-    | "merchant_inactive"; // 商家覆盖区域但全部 inactive（理论上 db 过滤后不会到这里，留作防御）
+    | "merchant_inactive" // 商家覆盖区域但全部 inactive（理论上 db 过滤后不会到这里，留作防御）
+    | "distance_out_of_range"; // [任务 4-0] 距离/经纬度超出师傅服务范围（演示期永远不触发）
 }
 
 export interface PlatformAreaRow {
@@ -74,6 +79,8 @@ export interface RecommendArgs {
   masters: Technician[];
   platformAreas?: PlatformAreaRow[];
   merchantAreas?: MerchantAreaRow[];
+  // [任务 4-0] 区域匹配器（地图 API 预留位）；默认 defaultAreaMatcher 永远返 true
+  areaMatcher?: AreaMatcher;
 }
 
 /**
@@ -105,6 +112,7 @@ export function recommendMastersForOrder(
       masters,
       platformAreas: args.platformAreas,
       merchantAreas: args.merchantAreas,
+      areaMatcher: args.areaMatcher,
     });
     if (!areaResult.ok) {
       return {
@@ -195,6 +203,8 @@ function filterMastersByArea(args: {
   masters: Technician[];
   platformAreas: PlatformAreaRow[];
   merchantAreas: MerchantAreaRow[];
+  // [任务 4-0] 距离匹配器 — 默认 defaultAreaMatcher
+  areaMatcher?: AreaMatcher;
 }):
   | {
       ok: true;
@@ -205,7 +215,10 @@ function filterMastersByArea(args: {
       ok: false;
       reason: string;
       failureCode:
-        "area_no_platform_area" | "area_no_merchant" | "area_no_master";
+        | "area_no_platform_area"
+        | "area_no_merchant"
+        | "area_no_master"
+        | "distance_out_of_range";
     } {
   const matchedArea = pickPlatformAreaForOrder(args.order, args.platformAreas);
   if (!matchedArea) {
@@ -237,6 +250,32 @@ function filterMastersByArea(args: {
       ok: false,
       reason: `平台区域「${formatPlatformArea(matchedArea)}」的商家下暂无师傅`,
       failureCode: "area_no_master",
+    };
+  }
+
+  // [任务 4-0] 距离/经纬度校验 — 演示期 always true（接口位预留）
+  // 后续接腾讯/高德 API 时：替换 args.areaMatcher?.distanceCheck 实现即可
+  const matcher = args.areaMatcher ?? defaultAreaMatcher;
+  const orderArea = {
+    province: args.order.province ?? "",
+    city: args.order.city ?? "",
+    district: args.order.district ?? "",
+    street: args.order.street ?? "",
+  };
+  const outOfRange = masters.filter(
+    (m) =>
+      !matcher.distanceCheck(orderArea, {
+        masterId: m.id,
+        // [任务 4-0] 上方已过滤掉 merchantId === undefined 的师傅（line 246）
+        merchantId: m.merchantId!,
+      }),
+  );
+  if (outOfRange.length === masters.length) {
+    // 全部师傅都不在距离范围内（演示期永远不触发）
+    return {
+      ok: false,
+      reason: `平台区域「${formatPlatformArea(matchedArea)}」内所有师傅距离均超出服务范围`,
+      failureCode: "distance_out_of_range",
     };
   }
 
