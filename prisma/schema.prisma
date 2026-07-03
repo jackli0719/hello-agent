@@ -219,6 +219,18 @@ model Order {
   // - canceledAt = 取消时间（status=cancelled 时有值）
   cancelReason   String?
   canceledAt     DateTime?
+  // [任务 21] 售后工单字段
+  // - 售后是订单的"问题单"，复用 Order 表存储（演示期 1 笔订单至多 1 笔售后）
+  // - null = 未发起售后；afterSalesStatus ∈ (pending|processing|resolved|rejected)
+  // - 取消退款不走售后（走 transitionOrder(cancelled)）；只有"完成订单之后"的客诉才走这里
+  // - 状态机：null → pending → processing → resolved/rejected（终态，无回退）
+  // - resolved 不联动 refundOrder（演示期）：admin 标 resolved 后由独立"售后退款"按钮触发
+  // # MVP: 应用层校验状态机（after-sales.ts 的 ALLOWED_AFTER_SALES_TRANSITIONS）；DB 不加 enum 约束
+  afterSalesStatus       String?
+  afterSalesReason       String?
+  afterSalesRejectReason String? // rejected 时必填（演示规则，audit 用）
+  afterSalesHandledBy    String? // 处理人 user.id（仅 admin）
+  afterSalesHandledAt    DateTime?
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
 
@@ -227,6 +239,8 @@ model Order {
 
   @@index([status])
   @@index([scheduledAt])
+  // [任务 21] 售后工单查询索引 — admin 列表 / 商家只读过滤 by afterSalesStatus
+  @@index([afterSalesStatus])
 }
 
 // ============================================================
