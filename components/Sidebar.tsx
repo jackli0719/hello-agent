@@ -8,7 +8,7 @@
 // - 折叠态：230px ↔ 56px（图标条）
 // - 状态持久化：localStorage `sidebar-collapsed`（SSR 不读，避免 hydration mismatch）
 // - 当前页匹配：使用 usePathname startsWith，子项前缀 ✓
-// - 小屏（< 1024px）：自动隐藏，回退到顶部横排由 AppNav 处理
+// - 1024px 以下：未做断点隐藏；AdminShell 对所有 admin 路径总是渲染 sidebar（已知遗留）
 //
 // 视觉层级：
 // - 父级（组标题）：左侧 3px 蓝条 + 文字 13px 600，hover #f1f3f5，active 浅蓝填充
@@ -18,8 +18,13 @@
 // - 圆角：父级 0 / 子项 6px / 折叠按钮 6px
 //
 // 决策回报（P2-3）：
-// - 我决定不做什么：不做权限分组（admin 全可见）/ 不做暗黑模式 / 不做 mobile sidebar drawer
-// - 风险：1024px 以下未优化；视觉抽查未跑（dev server 未起），逻辑靠 Sidebar.test 覆盖
+// - 我决定不做什么：
+//   - 不做权限分组（admin 全可见）
+//   - 不做暗黑模式
+//   - 不做 mobile sidebar drawer
+//   - 不做 1024px 以下断点隐藏 / 折叠：当前 AdminShell 对所有 admin 路径总是渲染 sidebar，
+//     1024px 以下页面会出现横向滚动条（已知遗留，记入 docs/KNOWN_ISSUES.md）
+// - 风险：1024px 以下未优化（与上一条对齐）；视觉抽查未跑（dev server 未起），逻辑靠 Sidebar.test 覆盖
 // - 路径匹配改用 `pathname === href || pathname.startsWith(href + "/")`：修复老 startsWith 把
 //   /merchant-settlements 误命中 /merchants 的潜在 bug
 

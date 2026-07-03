@@ -17,17 +17,46 @@ type SettlementSnap = { id: string };
 
 async function cleanupSettlements(ids: string[]) {
   if (ids.length === 0) return;
+  const settlements = await prisma.merchantSettlement.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, merchantId: true },
+  });
+  const merchantIds = [...new Set(settlements.map((s) => s.merchantId))];
+  const payoutRecords = await prisma.payoutRecord.findMany({
+    where: { withdrawRequestId: { in: ids } },
+    select: { id: true },
+  });
+  const payoutRecordIds = payoutRecords.map((p) => p.id);
   // payout 会随 settlement cascade 删除
   await prisma.merchantSettlement.deleteMany({ where: { id: { in: ids } } });
+  await prisma.financeLedger.deleteMany({
+    where: {
+      type: "payout",
+      sourceId: { in: payoutRecordIds },
+      merchantId: { in: merchantIds },
+    },
+  });
+  await prisma.merchant.deleteMany({ where: { id: { in: merchantIds } } });
 }
 
 async function createTestSettlement(
   status: "pending" | "confirmed" | "archived",
 ): Promise<SettlementSnap> {
-  const merchant = await prisma.merchant.findFirst({
-    where: { status: "active" },
+  const suffix = `${Date.now()}${Math.floor(Math.random() * 10000)}`.slice(-10);
+  const merchant = await prisma.merchant.create({
+    data: {
+      name: `payout test ${suffix}`,
+      contactName: "测试",
+      phone: `138${suffix.slice(-8)}`,
+      inviteCode: `PT${suffix}`.slice(0, 8),
+      province: "广东",
+      city: "深圳",
+      district: "南山",
+      street: "测试街",
+      addressDetail: "1号",
+      status: "active",
+    },
   });
-  if (!merchant) throw new Error("seed 没建 active merchant");
   // 找一个远期 period 避免和 seed 撞
   const period = `${TEST_PERIOD}-${Math.floor(Math.random() * 10000)}`;
   const s = await prisma.merchantSettlement.create({

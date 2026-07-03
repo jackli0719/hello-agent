@@ -13,6 +13,7 @@
 // 金额单位：分（与 MerchantSettlement 一致）
 
 import { prisma } from "@/src/lib/db";
+import { recordPayoutInTx } from "@/src/lib/finance-ledger";
 
 export type PayoutCreateInput = {
   withdrawRequestId: string;
@@ -78,141 +79,98 @@ export async function createPayoutRecord(
     return { ok: false, error: "操作人为必填" };
   }
 
-  // 5-8. 事务：查 settlement → 状态闸门 → 累计校验 → 写入
+  // 5-9. 事务：查 settlement → 状态闸门 → 累计校验 → 写入 payout → 写 ledger
   // [F0-3 PR 审计] Serializable 隔离级别防并发超付
-  // 并发场景：2 个请求同时录打款，ReadCommitted 下两个都看到 existing=A，都通过校验，都 insert → 累计 > merchantIncome
-  // Serializable 下 PG 检测到"幻读"，其中一个会被串行失败回滚
-  try {
-    const result = await prisma.$transaction(
-      async (tx) => {
-        const settlement = await tx.merchantSettlement.findUnique({
-          where: { id: input.withdrawRequestId },
-          select: {
-            id: true,
-            merchantId: true,
-            merchantIncome: true,
-            status: true,
-          },
-        });
-        if (!settlement) return { ok: false as const, error: "结算记录不存在" };
+  // [P0-3 必修 2026-07-03] payout 创建 + recordPayoutInTx 写 ledger 同事务
+  const result = await runCreatePayoutTx(input, proofUrl);
+  return result;
+}
 
-        if (
-          settlement.status !== "confirmed" &&
-          settlement.status !== "archived"
-        ) {
-          return {
-            ok: false as const,
-            error: "仅已确认 / 已归档的结算可录打款",
-          };
-        }
+/**
+ * createPayoutRecord 的事务体（Serializable + 重试；P0-3 ledger 同事务）
+ * 拆出来便于内部重试（PG 串行失败 → 重试 1 次）
+ */
+async function runCreatePayoutTx(
+  input: PayoutCreateInput,
+  proofUrl: string,
+): Promise<PayoutCreateResult> {
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const r = await prisma.$transaction(
+        async (tx) => {
+          const settlement = await tx.merchantSettlement.findUnique({
+            where: { id: input.withdrawRequestId },
+            select: {
+              id: true,
+              merchantId: true,
+              merchantIncome: true,
+              status: true,
+            },
+          });
+          if (!settlement)
+            return { ok: false as const, error: "结算记录不存在" };
 
-        const agg = await tx.payoutRecord.aggregate({
-          where: { withdrawRequestId: settlement.id },
-          _sum: { amount: true },
-        });
-        const existing = agg._sum.amount ?? 0;
-        const cumulative = existing + input.amount;
-        if (cumulative > settlement.merchantIncome) {
-          return {
-            ok: false as const,
-            error: `累计打款(${cumulative / 100}元)超过应收金额(${settlement.merchantIncome / 100}元)`,
-          };
-        }
-
-        const created = await tx.payoutRecord.create({
-          data: {
-            withdrawRequestId: settlement.id,
-            merchantId: settlement.merchantId,
-            amount: input.amount,
-            paidAt: input.paidAt,
-            proofUrl: proofUrl || null,
-            operator: input.operator.trim(),
-          },
-          select: { id: true },
-        });
-        return {
-          ok: true as const,
-          id: created.id,
-          merchantId: settlement.merchantId,
-          cumulative,
-          remaining: settlement.merchantIncome - cumulative,
-        };
-      },
-      { isolationLevel: "Serializable" },
-    );
-    return result;
-  } catch (e) {
-    // [F0-3 PR 审计] Serializable 串行失败（40001）→ 重试一次
-    // PG 文档：https://www.postgresql.org/docs/current/transaction-iso.html#XACT-SERIALIZABLE
-    const msg = (e as Error).message;
-    if (msg.includes("could not serialize")) {
-      // 重试一次
-      try {
-        const result = await prisma.$transaction(
-          async (tx) => {
-            const settlement = await tx.merchantSettlement.findUnique({
-              where: { id: input.withdrawRequestId },
-              select: {
-                id: true,
-                merchantId: true,
-                merchantIncome: true,
-                status: true,
-              },
-            });
-            if (!settlement)
-              return { ok: false as const, error: "结算记录不存在" };
-            if (
-              settlement.status !== "confirmed" &&
-              settlement.status !== "archived"
-            ) {
-              return {
-                ok: false as const,
-                error: "仅已确认 / 已归档的结算可录打款",
-              };
-            }
-            const agg = await tx.payoutRecord.aggregate({
-              where: { withdrawRequestId: settlement.id },
-              _sum: { amount: true },
-            });
-            const existing = agg._sum.amount ?? 0;
-            const cumulative = existing + input.amount;
-            if (cumulative > settlement.merchantIncome) {
-              return {
-                ok: false as const,
-                error: `累计打款(${cumulative / 100}元)超过应收金额(${settlement.merchantIncome / 100}元)`,
-              };
-            }
-            const created = await tx.payoutRecord.create({
-              data: {
-                withdrawRequestId: settlement.id,
-                merchantId: settlement.merchantId,
-                amount: input.amount,
-                paidAt: input.paidAt,
-                proofUrl: proofUrl || null,
-                operator: input.operator.trim(),
-              },
-              select: { id: true },
-            });
+          if (
+            settlement.status !== "confirmed" &&
+            settlement.status !== "archived"
+          ) {
             return {
-              ok: true as const,
-              id: created.id,
-              merchantId: settlement.merchantId,
-              cumulative,
-              remaining: settlement.merchantIncome - cumulative,
+              ok: false as const,
+              error: "仅已确认 / 已归档的结算可录打款",
             };
-          },
-          { isolationLevel: "Serializable" },
-        );
-        return result;
-      } catch (e2) {
-        return {
-          ok: false,
-          error: `并发冲突：${(e2 as Error).message}`,
-        };
-      }
+          }
+
+          const agg = await tx.payoutRecord.aggregate({
+            where: { withdrawRequestId: settlement.id },
+            _sum: { amount: true },
+          });
+          const existing = agg._sum.amount ?? 0;
+          const cumulative = existing + input.amount;
+          if (cumulative > settlement.merchantIncome) {
+            return {
+              ok: false as const,
+              error: `累计打款(${cumulative / 100}元)超过应收金额(${settlement.merchantIncome / 100}元)`,
+            };
+          }
+
+          const created = await tx.payoutRecord.create({
+            data: {
+              withdrawRequestId: settlement.id,
+              merchantId: settlement.merchantId,
+              amount: input.amount,
+              paidAt: input.paidAt,
+              proofUrl: proofUrl || null,
+              operator: input.operator.trim(),
+            },
+            select: { id: true },
+          });
+
+          // [P0-3] 同事务写 ledger — 失败触发整体回滚
+          await recordPayoutInTx(tx, {
+            payoutRecordId: created.id,
+            merchantId: settlement.merchantId,
+            amountCents: input.amount,
+            remark: `线下打款 ${created.id.slice(0, 12)}`,
+          });
+
+          return {
+            ok: true as const,
+            id: created.id,
+            merchantId: settlement.merchantId,
+            cumulative,
+            remaining: settlement.merchantIncome - cumulative,
+          };
+        },
+        { isolationLevel: "Serializable" },
+      );
+      return r;
+    } catch (e) {
+      const msg = (e as Error).message ?? "";
+      if (msg.includes("could not serialize") && attempt === 1) continue;
+      return { ok: false, error: `事务失败：${msg}` };
     }
-    return { ok: false, error: `事务失败：${msg}` };
   }
+  return { ok: false, error: "事务失败：超过重试次数" };
 }
 
 /**

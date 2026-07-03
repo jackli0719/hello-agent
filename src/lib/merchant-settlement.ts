@@ -10,6 +10,7 @@
 // 金额单位：分（与 SettlementPreview 一致）
 
 import { prisma } from "@/src/lib/db";
+import { recordOrderCommissionInTx } from "@/src/lib/finance-ledger";
 
 export type MerchantSettlementPeriod = string; // "YYYY-MM"
 
@@ -212,47 +213,108 @@ export type ConfirmResult =
 
 /**
  * 确认结算（pending → confirmed，单向不可逆）
+ *
+ * [P0-2 必修 2026-07-03] updateMany({status:'pending'}) 原子状态机
+ * [P0-3 必修 2026-07-03] settlement 状态变更 + recordOrderCommissionInTx 同事务；
+ *   ledger 写失败 → 整个 confirm 回滚
  */
 export async function confirmMerchantSettlement(
   id: string,
 ): Promise<ConfirmResult> {
-  const s = await prisma.merchantSettlement.findUnique({
-    where: { id },
-    select: { id: true, status: true },
-  });
-  if (!s) return { ok: false, error: "结算记录不存在" };
-  if (s.status === "confirmed") {
-    return { ok: true, status: "confirmed" }; // 幂等 — 已确认
+  try {
+    const r = await prisma.$transaction(
+      async (tx) => {
+        const { count } = await tx.merchantSettlement.updateMany({
+          where: { id, status: "pending" },
+          data: { status: "confirmed" },
+        });
+        if (count === 0) {
+          const s = await tx.merchantSettlement.findUnique({
+            where: { id },
+            select: { id: true, status: true },
+          });
+          if (!s) return { ok: false as const, error: "结算记录不存在" };
+          if (s.status === "confirmed") {
+            return { ok: true as const, status: "confirmed" as const }; // 幂等
+          }
+          if (s.status === "archived") {
+            return { ok: false as const, error: "已归档的周期不可再确认" };
+          }
+          return {
+            ok: false as const,
+            error: `仅 pending 状态可确认（当前：${s.status}）`,
+          };
+        }
+
+        // [P0-3] 同事务写 ledger
+        const settlement = await tx.merchantSettlement.findUnique({
+          where: { id },
+          select: { id: true, merchantId: true, merchantIncome: true },
+        });
+        if (settlement && settlement.merchantIncome > 0) {
+          await recordOrderCommissionInTx(tx, {
+            settlementId: settlement.id,
+            merchantId: settlement.merchantId,
+            merchantIncomeCents: settlement.merchantIncome,
+            remark: `结算汇总结算 ${settlement.id.slice(0, 12)}`,
+          });
+        }
+
+        return { ok: true as const, status: "confirmed" as const };
+      },
+      { isolationLevel: "Serializable" },
+    );
+    return r;
+  } catch (e) {
+    const msg = (e as Error).message ?? "";
+    if (msg.includes("could not serialize")) {
+      return { ok: false, error: `并发冲突，请重试（${msg.slice(0, 80)}）` };
+    }
+    return { ok: false, error: `事务失败：${msg}` };
   }
-  if (s.status === "archived") {
-    return { ok: false, error: "已归档的周期不可再确认" };
-  }
-  await prisma.merchantSettlement.update({
-    where: { id },
-    data: { status: "confirmed" },
-  });
-  return { ok: true, status: "confirmed" };
 }
 
 /**
  * 关闭周期（pending/confirmed → archived，只读不可再改）
+ *
+ * [P0-2 必修 2026-07-03] updateMany({status:{not:'archived'}}) 原子状态机
  */
 export async function archiveMerchantSettlement(
   id: string,
 ): Promise<ConfirmResult> {
-  const s = await prisma.merchantSettlement.findUnique({
-    where: { id },
-    select: { id: true, status: true },
-  });
-  if (!s) return { ok: false, error: "结算记录不存在" };
-  if (s.status === "archived") {
-    return { ok: true, status: "archived" }; // 幂等
+  try {
+    const r = await prisma.$transaction(
+      async (tx) => {
+        const { count } = await tx.merchantSettlement.updateMany({
+          where: { id, status: { not: "archived" } },
+          data: { status: "archived" },
+        });
+        if (count === 0) {
+          const s = await tx.merchantSettlement.findUnique({
+            where: { id },
+            select: { id: true, status: true },
+          });
+          if (!s) return { ok: false as const, error: "结算记录不存在" };
+          if (s.status === "archived") {
+            return { ok: true as const, status: "archived" as const }; // 幂等
+          }
+          return {
+            ok: false as const,
+            error: `仅非 archived 状态可关闭（当前：${s.status}）`,
+          };
+        }
+        return { ok: true as const, status: "archived" as const };
+      },
+      { isolationLevel: "Serializable" },
+    );
+    return r;
+  } catch (e) {
+    const msg = (e as Error).message ?? "";
+    if (msg.includes("could not serialize")) {
+      return { ok: false, error: `并发冲突，请重试（${msg.slice(0, 80)}）` };
+    }
+    return { ok: false, error: `事务失败：${msg}` };
   }
-  await prisma.merchantSettlement.update({
-    where: { id },
-    data: { status: "archived" },
-  });
-  return { ok: true, status: "archived" };
 }
 
 /**

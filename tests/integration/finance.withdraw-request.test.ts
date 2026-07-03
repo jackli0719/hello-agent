@@ -77,7 +77,7 @@ describe("T13 withdraw-request — integration smoke", () => {
   });
 
   // # spec: 复合断言 — approved 计入 pending, rejected 不计, available 正确
-  it("场景 8: approved(1500+1000=2500) 计入 totalPending, rejected(2000) 不计, available=7500", async () => {
+  it("场景 8: approved(1000) 计入 totalPending, rejected(2000) 不计, available=9000", async () => {
     // 步骤 1: a1 approved (1000)
     const c1 = await createWithdrawRequest({
       merchantId: testMerchantId,
@@ -105,8 +105,7 @@ describe("T13 withdraw-request — integration smoke", () => {
     });
     expect(a2.ok).toBe(true);
 
-    // 复合断言：totalPending = a1 approved 1000（场景 6 之前的 approveId 已被 cleanup）
-    // 重新跑：清掉之前所有 withdraw，只留本测试产生的
+    // 复合断言：totalPending = a1 approved 1000；a2 rejected 2000 不计入
     const av = await getMerchantAvailable(testMerchantId);
     expect(av.totalPending).toBe(1000); // a1 approved
     expect(av.available).toBe(10000 - 1000 - 0); // income - pending - paid = 9000

@@ -14,8 +14,18 @@
 // - 同一 merchant 不能同时有 2 条 pending 申请
 //
 // 金额单位：分（与 MerchantSettlement / PayoutRecord 一致）
+//
+// [P0 必修 2026-07-03] 并发 + 状态机硬化：
+// - createWithdrawRequest: 事务 Serializable + 重试；DB partial unique index
+//   (merchantId) WHERE status='pending' 兜底（migration 20260705000000）
+// - approveWithdrawRequest / rejectWithdrawRequest: updateMany({status:'pending'})
+//   条件原子更新；影响行数 0 → 返"已审核或不存在"
+// - approveWithdrawRequest 业务状态 + recordWithdrawInTx 写 ledger 同事务；
+//   ledger 写失败 → approve 回滚，财务/业务强一致
 
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/src/lib/db";
+import { recordWithdrawInTx } from "@/src/lib/finance-ledger";
 
 export type WithdrawRequestStatus = "pending" | "approved" | "rejected";
 
@@ -108,6 +118,12 @@ export async function getMerchantAvailable(
  * 3. 同一 merchant 不允许同时有 2 条 pending 申请（pending 不可重入）
  * 4. amount ≤ available（可提现余额）
  * 5. remark 可空；>= 500 字符截断
+ *
+ * [P0-1 必修 2026-07-03] 事务 + Serializable + DB partial unique：
+ * - 事务内重算 available + count pending，再 create
+ * - DB 层 partial unique (merchantId) WHERE status='pending' 兜底：
+ *   即使 Serializable 隔离失效（read skew），第二个 create 也会因 unique 冲突抛 P2002
+ * - Serializable 串行失败（40001）→ 重试一次
  */
 export async function createWithdrawRequest(
   input: CreateWithdrawRequestInput,
@@ -117,7 +133,7 @@ export async function createWithdrawRequest(
     return { ok: false, error: "申请金额必须为正整数（分）" };
   }
 
-  // 2. merchant 必存在且 active
+  // 2. merchant 必存在且 active（非事务前置校验 — 快速失败）
   const merchant = await prisma.merchant.findUnique({
     where: { id: input.merchantId },
     select: { id: true, status: true },
@@ -127,47 +143,123 @@ export async function createWithdrawRequest(
     return { ok: false, error: "商家未激活，不能申请提现" };
   }
 
-  // 3. 同一 merchant 不允许 2 条 pending
-  const existingPending = await prisma.withdrawRequest.count({
-    where: { merchantId: input.merchantId, status: "pending" },
-  });
-  if (existingPending > 0) {
-    return { ok: false, error: "同一商家已有未审核的申请，请先处理后再发起" };
-  }
-
-  // 4. 上限校验
-  const available = await getMerchantAvailable(input.merchantId);
-  if (input.amount > available.available) {
-    return {
-      ok: false,
-      error: `申请金额(${input.amount / 100}元)超过可提现余额(${available.available / 100}元)`,
-    };
-  }
-
   // 5. remark ≤ 500
   const remark = input.remark?.trim().slice(0, 500) || null;
 
-  // 6. 写入
-  const created = await prisma.withdrawRequest.create({
-    data: {
-      merchantId: input.merchantId,
-      amount: input.amount,
-      status: "pending",
-      remark,
-    },
-    select: { id: true },
-  });
+  // 3 + 4. 事务：重算 available + create（双保险）
+  // [P0-1] DB partial unique 兜底；应用层事务内重算兜底
+  const result = await runCreateTx(input.merchantId, input.amount, remark);
+  return result;
+}
 
-  return { ok: true, id: created.id, available };
+/**
+ * createWithdrawRequest 的事务体（Serializable + 重试）
+ * 拆出来便于内部重试（PG 串行失败 → 重试 1 次）
+ */
+async function runCreateTx(
+  merchantId: string,
+  amount: number,
+  remark: string | null,
+): Promise<CreateWithdrawRequestResult> {
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const r = await prisma.$transaction(
+        async (tx) => {
+          // 3. 同一 merchant pending 计数
+          const existingPending = await tx.withdrawRequest.count({
+            where: { merchantId, status: "pending" },
+          });
+          if (existingPending > 0) {
+            return {
+              ok: false as const,
+              error: "已有未审核的申请，请先处理后再发起",
+            };
+          }
+
+          // 4. 重算 available（事务内）
+          const [incomeAgg, paidAgg, pendingAgg] = await Promise.all([
+            tx.merchantSettlement.aggregate({
+              where: {
+                merchantId,
+                status: { in: ["confirmed", "archived"] },
+              },
+              _sum: { merchantIncome: true },
+            }),
+            tx.payoutRecord.aggregate({
+              where: { merchantId },
+              _sum: { amount: true },
+            }),
+            tx.withdrawRequest.aggregate({
+              where: {
+                merchantId,
+                status: { in: ["pending", "approved"] },
+              },
+              _sum: { amount: true },
+            }),
+          ]);
+          const totalIncome = incomeAgg._sum.merchantIncome ?? 0;
+          const totalPaid = paidAgg._sum.amount ?? 0;
+          const totalPending = pendingAgg._sum.amount ?? 0;
+          const available = totalIncome - totalPaid - totalPending;
+
+          if (amount > available) {
+            return {
+              ok: false as const,
+              error: `申请金额(${amount / 100}元)超过可提现余额(${available / 100}元)`,
+            };
+          }
+
+          // 6. 写入（DB partial unique 兜底 → 第二个并发会抛 P2002）
+          const created = await tx.withdrawRequest.create({
+            data: {
+              merchantId,
+              amount,
+              status: "pending",
+              remark,
+            },
+            select: { id: true },
+          });
+
+          return {
+            ok: true as const,
+            id: created.id,
+            available: { totalIncome, totalPaid, totalPending, available },
+          };
+        },
+        { isolationLevel: "Serializable" },
+      );
+      return r;
+    } catch (e) {
+      // DB 唯一约束冲突（partial unique）→ 翻译为业务错误
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === "P2002"
+      ) {
+        return { ok: false, error: "已有未审核的申请，请先处理后再发起" };
+      }
+      // Serializable 串行失败 / write conflict → 重试 1 次
+      const msg = (e as Error).message ?? "";
+      const isConflict =
+        msg.includes("could not serialize") ||
+        msg.includes("write conflict") ||
+        msg.includes("deadlock");
+      if (isConflict && attempt === 1) continue;
+      // 重试用尽 — 翻译为"已有未审核"语义（同商家并发时另一方通常已写入 pending）
+      if (isConflict) {
+        return { ok: false, error: "已有未审核的申请，请先处理后再发起" };
+      }
+      return { ok: false, error: `事务失败：${msg}` };
+    }
+  }
+  return { ok: false, error: "事务失败：超过重试次数" };
 }
 
 /**
  * 审核通过（pending → approved）
  *
- * 规则：
- * 1. 申请必须存在
- * 2. status 必须是 pending（终态不可改）
- * 3. reviewerName 必填
+ * [P0-2 必修 2026-07-03] 改用 updateMany({where:{id,status:'pending'}})，影响 0 行 → 已审核
+ * [P0-3 必修 2026-07-03] WR status 变更 + recordWithdrawInTx 写 ledger 同事务；
+ *   ledger 写失败 → approve 回滚
  *
  * 注：approved 不联动 PayoutRecord；admin 继续在 /merchant-settlements 录打款
  */
@@ -178,37 +270,70 @@ export async function approveWithdrawRequest(
     return { ok: false, error: "审核人为必填" };
   }
 
-  // 拿当前状态
-  const wr = await prisma.withdrawRequest.findUnique({
-    where: { id: input.id },
-    select: { id: true, status: true, merchantId: true },
-  });
-  if (!wr) return { ok: false, error: "提现申请不存在" };
+  try {
+    const r = await prisma.$transaction(
+      async (tx) => {
+        // 原子状态机：updateMany 带 status:'pending' 条件 → 防并发覆盖
+        const { count } = await tx.withdrawRequest.updateMany({
+          where: { id: input.id, status: "pending" },
+          data: {
+            status: "approved",
+            reviewerName: input.reviewerName.trim(),
+            reviewedAt: new Date(),
+            rejectReason: null,
+          },
+        });
+        if (count === 0) {
+          // id 不存在 OR 已审核 — 查出来给用户明确错误
+          const wr = await tx.withdrawRequest.findUnique({
+            where: { id: input.id },
+            select: { id: true, status: true, merchantId: true },
+          });
+          if (!wr) return { ok: false as const, error: "提现申请不存在" };
+          return {
+            ok: false as const,
+            error: `仅 pending 状态可审核（当前：${wr.status}）`,
+          };
+        }
 
-  if (wr.status !== "pending") {
-    return { ok: false, error: "仅 pending 状态可审核" };
+        // [P0-3] 同事务写 ledger — 失败触发整体回滚
+        const wr = await tx.withdrawRequest.findUnique({
+          where: { id: input.id },
+          select: { id: true, merchantId: true, amount: true },
+        });
+        if (wr && wr.amount > 0) {
+          await recordWithdrawInTx(tx, {
+            withdrawRequestId: wr.id,
+            merchantId: wr.merchantId,
+            amountCents: wr.amount,
+            remark: `提现申请 ${wr.id.slice(0, 12)}`,
+          });
+        }
+
+        return {
+          ok: true as const,
+          status: "approved" as const,
+          id: input.id,
+          merchantId: wr?.merchantId ?? "",
+        };
+      },
+      { isolationLevel: "Serializable" },
+    );
+    return r;
+  } catch (e) {
+    const msg = (e as Error).message ?? "";
+    if (msg.includes("could not serialize")) {
+      return { ok: false, error: `并发冲突，请重试（${msg.slice(0, 80)}）` };
+    }
+    return { ok: false, error: `事务失败：${msg}` };
   }
-
-  await prisma.withdrawRequest.update({
-    where: { id: input.id },
-    data: {
-      status: "approved",
-      reviewerName: input.reviewerName.trim(),
-      reviewedAt: new Date(),
-      rejectReason: null, // approved 时清掉旧的 rejectReason
-    },
-  });
-
-  return {
-    ok: true,
-    status: "approved",
-    id: wr.id,
-    merchantId: wr.merchantId,
-  };
 }
 
 /**
  * 审核拒绝（pending → rejected）
+ *
+ * [P0-2 必修 2026-07-03] updateMany({status:'pending'})，影响 0 行 → 已审核
+ * 拒绝不写 ledger（业务不进账）
  */
 export async function rejectWithdrawRequest(
   input: ReviewWithdrawRequestInput,
@@ -220,32 +345,52 @@ export async function rejectWithdrawRequest(
     return { ok: false, error: "拒绝原因为必填" };
   }
 
-  const wr = await prisma.withdrawRequest.findUnique({
-    where: { id: input.id },
-    select: { id: true, status: true, merchantId: true },
-  });
-  if (!wr) return { ok: false, error: "提现申请不存在" };
+  try {
+    const r = await prisma.$transaction(
+      async (tx) => {
+        const { count } = await tx.withdrawRequest.updateMany({
+          where: { id: input.id, status: "pending" },
+          data: {
+            status: "rejected",
+            reviewerName: input.reviewerName.trim(),
+            reviewedAt: new Date(),
+            rejectReason: input.rejectReason!.trim().slice(0, 500),
+          },
+        });
+        if (count === 0) {
+          const wr = await tx.withdrawRequest.findUnique({
+            where: { id: input.id },
+            select: { id: true, status: true, merchantId: true },
+          });
+          if (!wr) return { ok: false as const, error: "提现申请不存在" };
+          return {
+            ok: false as const,
+            error: `仅 pending 状态可审核（当前：${wr.status}）`,
+          };
+        }
 
-  if (wr.status !== "pending") {
-    return { ok: false, error: "仅 pending 状态可审核" };
+        const wr = await tx.withdrawRequest.findUnique({
+          where: { id: input.id },
+          select: { merchantId: true },
+        });
+
+        return {
+          ok: true as const,
+          status: "rejected" as const,
+          id: input.id,
+          merchantId: wr?.merchantId ?? "",
+        };
+      },
+      { isolationLevel: "Serializable" },
+    );
+    return r;
+  } catch (e) {
+    const msg = (e as Error).message ?? "";
+    if (msg.includes("could not serialize")) {
+      return { ok: false, error: `并发冲突，请重试（${msg.slice(0, 80)}）` };
+    }
+    return { ok: false, error: `事务失败：${msg}` };
   }
-
-  await prisma.withdrawRequest.update({
-    where: { id: input.id },
-    data: {
-      status: "rejected",
-      reviewerName: input.reviewerName.trim(),
-      reviewedAt: new Date(),
-      rejectReason: input.rejectReason.trim().slice(0, 500),
-    },
-  });
-
-  return {
-    ok: true,
-    status: "rejected",
-    id: wr.id,
-    merchantId: wr.merchantId,
-  };
 }
 
 // ============================================================

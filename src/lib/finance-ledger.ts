@@ -15,6 +15,9 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/src/lib/db";
 
+// 事务客户端类型（Prisma 5.x）— 让 record*InTx 接受事务或非事务客户端
+type TxOrDb = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+
 export type FinanceLedgerType = "order_commission" | "withdraw" | "payout";
 
 export type FinanceLedgerDirection = "out";
@@ -76,6 +79,40 @@ async function record(
   }
 }
 
+/**
+ * 事务版 record — 在 prisma.$transaction 回调里调用
+ *
+ * 与 record() 的区别：
+ * - 不 try/catch — 让 P2002（重复记账）和其他错误**冒泡**到外层事务触发回滚
+ * - 业务语义：ledger 写入失败 → 整个业务回滚（财务/业务强一致）
+ * - P0-3 必修：业务状态变更 + ledger 写入必须同事务
+ *
+ * @param tx prisma 事务客户端（来自 $transaction 回调参数）
+ */
+async function recordInTx(
+  tx: TxOrDb,
+  type: FinanceLedgerType,
+  merchantId: string,
+  sourceId: string,
+  amountYuan: string,
+  remark?: string | null,
+  orderId?: string | null,
+): Promise<{ id: string }> {
+  const created = await tx.financeLedger.create({
+    data: {
+      merchantId,
+      type,
+      direction: "out",
+      sourceId,
+      orderId: orderId ?? null,
+      amount: new Prisma.Decimal(amountYuan),
+      remark: remark ?? null,
+    },
+    select: { id: true },
+  });
+  return { id: created.id };
+}
+
 // ============================================================
 // 3 个事件 record 函数
 // ============================================================
@@ -104,6 +141,29 @@ export async function recordOrderCommission(input: {
 }
 
 /**
+ * 事务版 order_commission — settlement.confirmed 在事务内调用
+ * ledger 写入失败 → 整个 confirm 事务回滚（P0-3 必修）
+ */
+export async function recordOrderCommissionInTx(
+  tx: TxOrDb,
+  input: {
+    settlementId: string;
+    merchantId: string;
+    merchantIncomeCents: number;
+    remark?: string | null;
+  },
+): Promise<{ id: string }> {
+  return recordInTx(
+    tx,
+    "order_commission",
+    input.merchantId,
+    input.settlementId,
+    centsToYuanString(input.merchantIncomeCents),
+    input.remark ?? `结算汇总结算 ${input.settlementId.slice(0, 8)}`,
+  );
+}
+
+/**
  * [事件 2] withdraw.approved → 记一笔 withdraw
  */
 export async function recordWithdraw(input: {
@@ -122,6 +182,28 @@ export async function recordWithdraw(input: {
 }
 
 /**
+ * 事务版 withdraw — withdraw.approved 在事务内调用
+ */
+export async function recordWithdrawInTx(
+  tx: TxOrDb,
+  input: {
+    withdrawRequestId: string;
+    merchantId: string;
+    amountCents: number;
+    remark?: string | null;
+  },
+): Promise<{ id: string }> {
+  return recordInTx(
+    tx,
+    "withdraw",
+    input.merchantId,
+    input.withdrawRequestId,
+    centsToYuanString(input.amountCents),
+    input.remark ?? `提现申请 ${input.withdrawRequestId.slice(0, 8)}`,
+  );
+}
+
+/**
  * [事件 3] payout.created → 记一笔 payout
  */
 export async function recordPayout(input: {
@@ -131,6 +213,28 @@ export async function recordPayout(input: {
   remark?: string | null;
 }): Promise<RecordResult> {
   return record(
+    "payout",
+    input.merchantId,
+    input.payoutRecordId,
+    centsToYuanString(input.amountCents),
+    input.remark ?? `线下打款 ${input.payoutRecordId.slice(0, 8)}`,
+  );
+}
+
+/**
+ * 事务版 payout — payout.created 在事务内调用
+ */
+export async function recordPayoutInTx(
+  tx: TxOrDb,
+  input: {
+    payoutRecordId: string;
+    merchantId: string;
+    amountCents: number;
+    remark?: string | null;
+  },
+): Promise<{ id: string }> {
+  return recordInTx(
+    tx,
     "payout",
     input.merchantId,
     input.payoutRecordId,

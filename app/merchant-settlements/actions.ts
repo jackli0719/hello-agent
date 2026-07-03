@@ -1,11 +1,12 @@
 "use server";
 
+// [P0 必修 2026-07-03] ledger 写入已并入业务事务（merchant-settlement.ts / payout.ts），
+// actions 层不再单独调 record*，避免"业务成功但 ledger 失败被吞"。
+
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createActivityLog } from "@/src/lib/activity-log";
 import { requireAdmin, requireCsrf } from "@/src/lib/auth-helpers";
-import { prisma } from "@/src/lib/db";
-import { recordOrderCommission, recordPayout } from "@/src/lib/finance-ledger";
 import {
   archiveMerchantSettlement,
   confirmMerchantSettlement,
@@ -78,6 +79,9 @@ export async function archiveMerchantSettlementAction(formData: FormData) {
 }
 
 // [任务 9] 确认结算
+//
+// [P0-3 必修] settlement 状态变更 + recordOrderCommissionInTx 写 ledger 在
+// merchant-settlement.ts 同事务；ledger 失败 → 业务回滚
 export async function confirmMerchantSettlementAction(formData: FormData) {
   const id = String(formData.get("id") ?? "").trim();
   const back = id ? `/merchant-settlements/${id}` : "/merchant-settlements";
@@ -95,25 +99,6 @@ export async function confirmMerchantSettlementAction(formData: FormData) {
   const r = await confirmMerchantSettlement(id);
   if (!r.ok) {
     redirect(`${back}?error=${encodeURIComponent(r.error)}`);
-  }
-
-  // [任务 14] 事件触发：settlement.confirmed → 记 order_commission 流水
-  // 只在「状态变更时」记账（幂等 — 已 confirmed 不会再 confirm，所以 ok 即可）
-  try {
-    const settlement = await prisma.merchantSettlement.findUnique({
-      where: { id },
-      select: { id: true, merchantId: true, merchantIncome: true },
-    });
-    if (settlement && settlement.merchantIncome > 0) {
-      await recordOrderCommission({
-        settlementId: settlement.id,
-        merchantId: settlement.merchantId,
-        merchantIncomeCents: settlement.merchantIncome,
-        remark: `结算汇总结算 ${settlement.id.slice(0, 12)}`,
-      });
-    }
-  } catch {
-    // 写 ledger 失败不阻塞主流程（但会在 /admin/metrics 显示 ledger 数量偏少）
   }
 
   try {
@@ -135,6 +120,9 @@ export async function confirmMerchantSettlementAction(formData: FormData) {
 }
 
 // [任务 12] 录入线下打款
+//
+// [P0-3 必修] payout 创建 + recordPayoutInTx 写 ledger 在 payout.ts 同事务；
+// ledger 失败 → 业务回滚（payout 记录 + ledger 都不写）
 export async function createPayoutAction(formData: FormData) {
   const settlementId = String(formData.get("settlementId") ?? "").trim();
   const back = settlementId
@@ -179,18 +167,6 @@ export async function createPayoutAction(formData: FormData) {
 
   if (!r.ok) {
     redirect(`${back}?error=${encodeURIComponent(r.error)}`);
-  }
-
-  // [任务 14] 事件触发：payout.created → 记 payout 流水
-  try {
-    await recordPayout({
-      payoutRecordId: r.id,
-      merchantId: r.merchantId,
-      amountCents: amountCents,
-      remark: `线下打款 ${r.id.slice(0, 12)}`,
-    });
-  } catch {
-    // 写 ledger 失败不阻塞
   }
 
   try {
