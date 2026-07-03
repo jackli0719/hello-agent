@@ -3,21 +3,25 @@
 // 统一导航：[任务 15] 顶部 header（Logo + Dashboard 总览 + 退出）
 //
 // 视觉层级：
-// - 顶部 56px：Logo + Dashboard 总览 + 退出
+// - 顶部 56px：Logo + Dashboard 总览 + 通知铃铛 + 退出
 // - 左侧 sidebar：在 AdminShell 里渲染（与本组件解耦，layout 决定布局）
 // - 已登录时显示「退出」按钮（form action 调 logoutAction）
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { logoutAction } from "@/app/login/actions";
+import { NotificationBell } from "@/components/NotificationBell";
 
 export function AppNav({
   isLoggedIn,
   csrfToken,
+  unreadCount,
 }: {
   isLoggedIn: boolean;
   /** RSC 阶段通过 ensureCsrfCookie 写入 cookie 的 token — [v0.7.3] 修 logout CSRF */
   csrfToken: string;
+  /** [任务 19] 未读通知数（admin = 0 看 ActivityLog；未登录 = 0）*/
+  unreadCount: number;
 }) {
   const pathname = usePathname() ?? "";
 
@@ -85,6 +89,11 @@ export function AppNav({
       >
         总览
       </Link>
+
+      {/* [任务 19] 通知铃铛 + 红点 — 已登录 + 非 admin 显示（admin 看 ActivityLog） */}
+      {isLoggedIn && unreadCount >= 0 && (
+        <NotificationBell unreadCount={unreadCount} />
+      )}
 
       {/* 退出按钮 — 已登录时显示 */}
       {isLoggedIn && (

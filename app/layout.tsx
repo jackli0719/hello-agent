@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import { AppNav } from "@/components/AppNav";
 import { AdminShell } from "@/components/AdminShell";
-import { isAuthenticated } from "@/src/lib/auth";
+import { isAuthenticated, getCurrentUser } from "@/src/lib/auth";
 import { ensureCsrfCookie } from "@/src/lib/csrf";
+import { countUnreadForUser } from "@/src/lib/notifications";
 
 export const metadata: Metadata = {
   title: "O2O 管理后台 MVP",
@@ -14,10 +15,16 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const [loggedIn, csrfToken] = await Promise.all([
+  const [loggedIn, csrfToken, currentUser] = await Promise.all([
     isAuthenticated(),
     ensureCsrfCookie(),
+    getCurrentUser(),
   ]);
+  // [任务 19] 通知未读数（仅登录用户查；未登录=0；admin 看 ActivityLog 不发通知 → 也是 0）
+  // 演示期：admin 通知按用户决策不在站内发（看 ActivityLog），所以 admin 始终 0
+  const unreadCount = currentUser && currentUser.role !== "admin"
+    ? await countUnreadForUser(currentUser.id)
+    : 0;
   return (
     <html lang="zh-CN">
       <body
@@ -31,8 +38,13 @@ export default async function RootLayout({
       >
         {/* AppNav 放 layout 里 — 所有页面自动有顶部导航。
             传 isLoggedIn 让导航栏决定是否显示「退出」按钮；
-            传 csrfToken 让 logout 表单能通过 CSRF 校验（[v0.7.3]）。 */}
-        <AppNav isLoggedIn={loggedIn} csrfToken={csrfToken} />
+            传 csrfToken 让 logout 表单能通过 CSRF 校验（[v0.7.3]）；
+            传 unreadCount 让 NotificationBell 显示红点 + 未读数（[任务 19]）。 */}
+        <AppNav
+          isLoggedIn={loggedIn}
+          csrfToken={csrfToken}
+          unreadCount={unreadCount}
+        />
         {/* AdminShell：根据 pathname 自动加 sidebar（仅 admin 路径） */}
         <AdminShell>{children}</AdminShell>
         {/* 全站演示版标识 — 演示者 / 观众一眼看到这是 demo 不是生产 */}

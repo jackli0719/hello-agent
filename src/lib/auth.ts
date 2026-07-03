@@ -56,6 +56,7 @@ export const PROTECTED_PATHS = [
   "/worker",
   "/merchant-admin", // [任务 18] 商家端后台
   "/customer/orders",
+  "/notifications", // [任务 19] 通知中心（仅登录用户；admin 看 ActivityLog）
 ];
 
 /**
@@ -95,10 +96,10 @@ export const ROLE_ALLOWED: Record<Role, string[]> = {
     "/admin",
     "/merchant-admin", // [任务 18] admin 也能看商家后台（演示/排障）
   ],
-  worker: ["/worker", "/master-withdraw-requests"],
-  customer: ["/customer", "/customer/orders"],
+  worker: ["/worker", "/master-withdraw-requests", "/notifications"], // [任务 19]
+  customer: ["/customer", "/customer/orders", "/notifications"], // [任务 19]
   // [任务 18] merchant 角色只能进商家后台，不能看 admin 后台
-  merchant: ["/merchant-admin"],
+  merchant: ["/merchant-admin", "/notifications"], // [任务 19]
 };
 
 // ============================================================
