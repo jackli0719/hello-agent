@@ -99,6 +99,10 @@ describe("Sidebar — detectActiveGroup", () => {
   it("/finance-ledgers → 财务", () => {
     expect(detectActiveGroup("/finance-ledgers")).toBe("finance");
   });
+  // # spec: /worker-settlements 归属「财务」组
+  it("/worker-settlements → 财务", () => {
+    expect(detectActiveGroup("/worker-settlements")).toBe("finance");
+  });
 
   // 系统
   // # spec: /admin/metrics 归属「系统」组（特殊前缀，因为 metrics 在 admin 路径下）
@@ -125,6 +129,12 @@ describe("Sidebar — isItemActive", () => {
   // # spec: 完全匹配（pathname === href）
   it("完全匹配", () => {
     expect(isItemActive("/orders", "/orders")).toBe(true);
+  });
+  // # spec: worker-settlements 完全匹配
+  it("worker-settlements 完全匹配", () => {
+    expect(isItemActive("/worker-settlements", "/worker-settlements")).toBe(
+      true,
+    );
   });
   // # spec: 深链 startsWith 命中（pathname startsWith href + "/"）
   it("深链 startsWith", () => {
@@ -167,9 +177,9 @@ describe("Sidebar — isItemActive", () => {
 describe("Sidebar — SIDEBAR_GROUPS 完整性", () => {
   const allHrefs = SIDEBAR_GROUPS.flatMap((g) => g.items.map((it) => it.href));
 
-  // # spec: 共 14 个 sidebar 入口（dashboard 不在 group 内）
-  it("覆盖所有 sidebar 入口（共 14 个；dashboard 在顶部独立入口）", () => {
-    expect(allHrefs.length).toBe(14);
+  // # spec: 共 15 个 sidebar 入口（dashboard 不在 group 内）
+  it("覆盖所有 sidebar 入口（共 15 个；dashboard 在顶部独立入口）", () => {
+    expect(allHrefs.length).toBe(15);
   });
   // # spec: group key 唯一性（防配置错误导致 React key 冲突）
   it("每个 group key 唯一", () => {
@@ -196,10 +206,16 @@ describe("Sidebar — SIDEBAR_GROUPS 完整性", () => {
     const m = SIDEBAR_GROUPS.find((g) => g.key === "merchant");
     expect(m?.items.length).toBe(2);
   });
-  // # spec: 财务组 5 项固定（结算预览 / 商家结算汇总 / 打款记录 / 提现申请 / 财务流水）
-  it("财务组包含 5 项", () => {
+  // # spec: 财务组 6 项固定（结算预览 / 商家结算汇总 / 师傅结算汇总 / 打款记录 / 提现申请 / 财务流水）
+  it("财务组包含 6 项", () => {
     const f = SIDEBAR_GROUPS.find((g) => g.key === "finance");
-    expect(f?.items.length).toBe(5);
+    expect(f?.items.length).toBe(6);
+  });
+  // # spec: 财务组含 worker-settlements
+  it("财务组含 worker-settlements", () => {
+    const f = SIDEBAR_GROUPS.find((g) => g.key === "finance");
+    const has = f?.items.some((it) => it.href === "/worker-settlements");
+    expect(has).toBe(true);
   });
   // # spec: 系统组 2 项固定（业务指标 / 操作日志）
   it("系统组包含 2 项", () => {

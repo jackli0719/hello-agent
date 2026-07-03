@@ -100,6 +100,12 @@ export const SIDEBAR_GROUPS: SidebarGroup[] = [
         icon: "📊",
       },
       {
+        key: "worker-settlements",
+        label: "师傅结算汇总",
+        href: "/worker-settlements",
+        icon: "👨‍🔧",
+      },
+      {
         key: "payout-records",
         label: "打款记录",
         href: "/payout-records",
