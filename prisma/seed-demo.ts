@@ -962,7 +962,11 @@ const ORDERS = [
   },
 ] as const;
 
-async function main() {
+/**
+ * [v1.0] seed.ts 调此函数复用演示数据灌库 — 主流程。
+ * 末尾自执行块（main().catch()）移到 seed-demo.ts 末尾。
+ */
+export async function demoMain() {
   console.log("🌱 开始 seed:demo — 一键重置完整演示数据");
 
   // [v0.9.9] 生产保护（演示期项目必加）
@@ -1502,11 +1506,15 @@ async function main() {
   console.log("         worker4 / worker123 → 孙师傅（T004）");
 }
 
-main()
-  .catch((e) => {
-    console.error("❌ seed:demo 失败：", e);
-    process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+// [v1.0] 仅当作为 CLI 跑时自执行（被 seed.ts import 时不执行）
+import { fileURLToPath } from "node:url";
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  demoMain()
+    .catch((e) => {
+      console.error("❌ seed:demo 失败：", e);
+      process.exit(1);
+    })
+    .finally(async () => {
+      await prisma.$disconnect();
+    });
+}
