@@ -17,14 +17,14 @@ datasource db {
 // 服务类目（如：家政、家电清洗、维修、母婴、应急）
 // ============================================================
 model ServiceCategory {
-  id          String   @id @default(cuid())
-  name        String   @unique
+  id           String   @id @default(cuid())
+  name         String   @unique
   // 业务编码（如 "CLEAN"、"REPAIR"）— 比 cuid 更稳定，便于 API / 表单传输
   // 大小写策略：应用层强制大写（src/lib/codes.ts 的 normalizeCode）；
   // SQLite 不支持 @db.Collate，应用层是唯一防线。
-  categoryCode String  @unique
-  enabled     Boolean  @default(true)
-  createdAt   DateTime @default(now())
+  categoryCode String   @unique
+  enabled      Boolean  @default(true)
+  createdAt    DateTime @default(now())
 
   skus ServiceSku[]
 }
@@ -33,19 +33,19 @@ model ServiceCategory {
 // 服务 SKU（具体的服务项目）
 // ============================================================
 model ServiceSku {
-  id              String   @id @default(cuid())
+  id              String          @id @default(cuid())
   // 业务编码（如 "CLEAN-DAILY-2H"）— 用户友好，比 cuid 短
   // 大小写策略：应用层强制大写（src/lib/codes.ts 的 normalizeCode）；
   // SQLite 不支持 @db.Collate，应用层是唯一防线。
-  skuCode         String   @unique
+  skuCode         String          @unique
   name            String
   categoryId      String
   category        ServiceCategory @relation(fields: [categoryId], references: [id])
-  basePrice       Int                       // 单位：分
+  basePrice       Int // 单位：分
   durationMinutes Int
-  requiredSkills  String   @default("[]")
-  enabled         Boolean  @default(true)
-  createdAt       DateTime @default(now())
+  requiredSkills  String          @default("[]")
+  enabled         Boolean         @default(true)
+  createdAt       DateTime        @default(now())
 
   orders Order[]
 
@@ -63,7 +63,7 @@ model Master {
   // findFirst({where:{phone}}) 改为 findUnique — 简化 + 强制约束
   // 注意：MOCK 演示用 "138****1234" 占位不满足 11 位 1 开头，但 unique 约束只要求值唯一（不同 phone 字符串不冲突）
   phone         String   @unique
-  skills        String                       // JSON 字符串
+  skills        String // JSON 字符串
   rating        Float    @default(5.0)
   completedJobs Int      @default(0)
   status        String   @default("available") // available | busy | offline
@@ -78,9 +78,9 @@ model Master {
   joinSource    String   @default("admin_created") // admin_created | invite_code
   createdAt     DateTime @default(now())
 
-  orders Order[]
+  orders             Order[]
   // 反向关系：worker 角色 User 通过 workerId 绑本表
-  user   User?
+  user               User?
   // [任务 6] 结算预览（1 对多）
   settlementPreviews SettlementPreview[]
   // [任务 17] 师傅维度结算汇总（1 对多）
@@ -104,22 +104,24 @@ model Master {
 // # 旧版注释「MVP 明文」是 v0.2.x 历史遗留，已不再准确
 // ============================================================
 model User {
-  id        String   @id @default(cuid())
-  name      String   @unique               // 登录账号（admin / worker1 / customer1 / merchant1）
-  phone     String?                       // customer/worker 绑手机号；admin/merchant 可空
-  password  String                        // bcrypt(rounds=10) 哈希，验证用 bcrypt.compare
-  role      String                        // admin | worker | customer | merchant
-  workerId  String?   @unique             // role=worker 时绑 Master.id
+  id         String   @id @default(cuid())
+  name       String   @unique // 登录账号（admin / worker1 / customer1 / merchant1）
+  phone      String? // customer/worker 绑手机号；admin/merchant 可空
+  password   String // bcrypt(rounds=10) 哈希，验证用 bcrypt.compare
+  role       String // admin | worker | customer | merchant
+  workerId   String?  @unique // role=worker 时绑 Master.id
   // [任务 18] 商家账号绑定 — merchant 角色必填
   // merchantId 来源：seed 创建时直接写（演示期）；上线后由 admin 后台生成
   // # MVP: 数据库层不强制 role+merchantId 一致（演示期灵活）；requireMerchant() 在业务层校验
   merchantId String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  worker    Master?  @relation(fields: [workerId], references: [id])
+  worker        Master?        @relation(fields: [workerId], references: [id])
   // [任务 18] merchant 角色反向关系
-  merchant  Merchant? @relation(fields: [merchantId], references: [id], onDelete: SetNull)
+  merchant      Merchant?      @relation(fields: [merchantId], references: [id], onDelete: SetNull)
+  // [任务 19] 站内通知（1 对多 — 一个用户可收多条通知）
+  notifications Notification[]
 
   @@index([role])
   @@index([phone])
@@ -127,30 +129,73 @@ model User {
 }
 
 // ============================================================
+// 站内通知（[任务 19] 2026-07-03 引入）
+// 订单支付/派单/取消/退款/完成 5 关键节点生成通知记录。
+//
+// 设计要点：
+// - userId: 收信人 User.id（强 FK Cascade — 用户删了通知也清）
+// - role: 冗余存收信人角色（admin/worker/customer/merchant）— 避免 join User 才知角色
+// - type: 通知类型 — order_paid/order_assigned/order_completed/order_canceled/order_refunded
+// - title: 短标题（页面列表第 1 行）
+// - content: 详细文案（含订单号/师傅名/金额等）
+// - orderId: 关联订单（可空 — 预留非订单类通知；不强制 FK 避免删订单连带删通知）
+// - readAt: 已读时间（null = 未读；红点 + 未读列表用此过滤）
+// - metadata: JSON 字符串（amount/masterName/cancelReason 等结构化字段）
+// - 写入失败不抛错（工具函数 try/catch）— 不能影响主业务
+// - 与 ActivityLog 并行：ActivityLog 是审计（admin 视角，append-only），Notification 是收件箱（用户视角，可标记已读）
+//
+// # MVP: 不做推送/邮件/短信；只做站内通知；不删已读；不做推送订阅
+// ============================================================
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // 冗余收信人角色 — 列表页/分类聚合常用，避免 join User
+  role      String // admin | worker | customer | merchant
+  // 通知类型 — 业务动作枚举
+  type      String // order_paid | order_assigned | order_completed | order_canceled | order_refunded
+  // 标题 + 内容（人类可读；title 给列表第 1 行，content 给详情/弹窗）
+  title     String
+  content   String
+  // 关联订单 id（冗余字符串 + 软关联，不强 FK — 删订单保留通知历史）
+  orderId   String?
+  // 已读时间（null = 未读；已读后填当前时间）
+  readAt    DateTime?
+  // 结构化附加（JSON 字符串；amount/masterName/cancelReason 等）
+  metadata  String    @default("{}")
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
+  @@index([role, type])
+  @@index([createdAt])
+}
+
+// ============================================================
 // 订单
 // ============================================================
 model Order {
-  id              String   @id                 // 业务订单号
-  customerName    String
-  customerPhone   String   @default("")        // 下单时填的手机号
-  serviceSkuId    String?
-  serviceSku      ServiceSku? @relation(fields: [serviceSkuId], references: [id])
-  serviceName     String                       // 冗余快照
-  masterId        String?
-  master          Master? @relation(fields: [masterId], references: [id])
-  masterName      String?                      // 冗余快照
+  id             String      @id // 业务订单号
+  customerName   String
+  customerPhone  String      @default("") // 下单时填的手机号
+  serviceSkuId   String?
+  serviceSku     ServiceSku? @relation(fields: [serviceSkuId], references: [id])
+  serviceName    String // 冗余快照
+  masterId       String?
+  master         Master?     @relation(fields: [masterId], references: [id])
+  masterName     String? // 冗余快照
   // [任务 3] 4 级地址字段 — 派单匹配必用（精确 4 级 = PlatformArea）
   // 旧 address 字段保留作为"展示冗余"（拼接 4 级 + detail），不参与匹配
-  province        String   @default("")
-  city            String   @default("")
-  district        String   @default("")
-  street          String   @default("")
-  addressDetail   String   @default("")
+  province       String      @default("")
+  city           String      @default("")
+  district       String      @default("")
+  street         String      @default("")
+  addressDetail  String      @default("")
   // 旧 address 字段：保留 = "省/市/区县/街道 addressDetail" 拼接；新订单不写，靠读取时拼
-  address         String
-  scheduledAt     DateTime
-  amount          Int                          // 单位：分
-  status          String   @default("pending") // pending | assigned | in_service | completed | cancelled
+  address        String
+  scheduledAt    DateTime
+  amount         Int // 单位：分
+  status         String      @default("pending") // pending | assigned | in_service | completed | cancelled
   // [支付] 任务 X + 任务 19: payStatus 独立于 status — 模拟支付（演示期不接真实支付）
   // unpaid    = 下单后未付, status=pending + payStatus=unpaid  = 待支付
   // paid      = 模拟支付成功, status=pending + payStatus=paid    = 待派单
@@ -159,23 +204,23 @@ model Order {
   // 派单校验: status=pending AND payStatus=paid
   // 取消已支付订单时：事务内两步 paid → refunding → refunded（同步释放师傅）
   // refunding 状态 assignOrder 自动拒绝（payStatus !== "paid"）
-  payStatus       String   @default("unpaid")  // unpaid | paid | refunding | refunded
-  paidAt          DateTime?                    // 支付成功时间
+  payStatus      String      @default("unpaid") // unpaid | paid | refunding | refunded
+  paidAt         DateTime? // 支付成功时间
   // 用户下单时填的备注（可选）— 加于 2026-06 师傅端/用户端 MVP
-  remark          String?
+  remark         String?
   // [v0.7.6] 业务扩展：内部备注（后台）和师傅完成说明
   // - remark = 用户下单备注（v0.3.0 已有）
   // - internalRemark = 后台调度备注（admin 写，user/worker 看）
   // - serviceSummary = 师傅完成订单时填的服务说明（admin/user/worker 看）
-  internalRemark  String?
-  serviceSummary  String?
+  internalRemark String?
+  serviceSummary String?
   // [v0.7.9] 取消订单字段
   // - cancelReason = 取消原因（in_service 必填，其他选填；3 端都展示）
   // - canceledAt = 取消时间（status=cancelled 时有值）
   cancelReason   String?
   canceledAt     DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
 
   // [任务 6] 结算预览（1 对 1）
   settlementPreview SettlementPreview?
@@ -241,28 +286,28 @@ model PlatformArea {
 // 本阶段 Merchant 只是商家基础资料，不做服务区域绑定、不绑定师傅。
 // ============================================================
 model Merchant {
-  id            String   @id @default(cuid())
-  name          String
-  contactName   String
-  phone         String
-  status        String   @default("active") // active | inactive
+  id                String   @id @default(cuid())
+  name              String
+  contactName       String
+  phone             String
+  status            String   @default("active") // active | inactive
   // [任务 4] 商家邀请码 — 师傅通过 /worker/join 入驻绑定
   // 创建时自动生成（8 字符 base36）；seed 也填
   inviteCode        String   @unique
   inviteCodeEnabled Boolean  @default(true)
-  province      String
-  city          String
-  district      String
-  street        String
-  addressDetail String
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  province          String
+  city              String
+  district          String
+  street            String
+  addressDetail     String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   // [任务 2] 商家绑定的区域（多对多）
   merchantAreas MerchantArea[]
 
   // [任务 2] 商家拥有的师傅（1 对多）
-  masters       Master[]
+  masters Master[]
 
   // [任务 5] 商家分成策略（1 对多）
   commissionStrategies CommissionStrategy[]
@@ -300,15 +345,15 @@ model Merchant {
 // - PlatformArea 必须是 enabled=true 才能被绑定
 // ============================================================
 model MerchantArea {
-  id            String   @id @default(cuid())
-  merchantId    String
+  id             String   @id @default(cuid())
+  merchantId     String
   platformAreaId String
-  enabled       Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @default(now())
+  enabled        Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @default(now())
 
-  merchant      Merchant     @relation(fields: [merchantId], references: [id], onDelete: Cascade)
-  platformArea  PlatformArea @relation(fields: [platformAreaId], references: [id], onDelete: Restrict)
+  merchant     Merchant     @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  platformArea PlatformArea @relation(fields: [platformAreaId], references: [id], onDelete: Restrict)
 
   @@unique([merchantId, platformAreaId])
   @@index([merchantId])
@@ -326,22 +371,22 @@ model MerchantArea {
 // - 不做支付/提现/结算，只做配置
 // ============================================================
 model CommissionStrategy {
-  id        String   @id @default(cuid())
-  merchantId String
-  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
-  name       String   // 策略名（如 "默认策略" "保洁专项"）
-  strategyType String  // percentage | fixed
+  id                  String   @id @default(cuid())
+  merchantId          String
+  merchant            Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  name                String // 策略名（如 "默认策略" "保洁专项"）
+  strategyType        String // percentage | fixed
   // percentage 模式
-  platformRate  Float  @default(0)
-  merchantRate  Float  @default(0)
-  workerRate    Float  @default(0)
+  platformRate        Float    @default(0)
+  merchantRate        Float    @default(0)
+  workerRate          Float    @default(0)
   // fixed 模式（单位：分）
-  fixedPlatformAmount Int @default(0)
-  fixedMerchantAmount Int @default(0)
-  fixedWorkerAmount   Int @default(0)
-  enabled Boolean @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  fixedPlatformAmount Int      @default(0)
+  fixedMerchantAmount Int      @default(0)
+  fixedWorkerAmount   Int      @default(0)
+  enabled             Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   // [任务 6] 反向关系：结算预览可追溯用的策略
   settlementPreviews SettlementPreview[]
@@ -359,26 +404,26 @@ model CommissionStrategy {
 // - 不做提现/打款/真实结算
 // ============================================================
 model SettlementPreview {
-  id        String   @id @default(cuid())
-  orderId   String   @unique
-  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  merchantId String
-  merchant   Merchant @relation(fields: [merchantId], references: [id])
-  masterId  String
-  master    Master   @relation(fields: [masterId], references: [id])
+  id             String              @id @default(cuid())
+  orderId        String              @unique
+  order          Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  merchantId     String
+  merchant       Merchant            @relation(fields: [merchantId], references: [id])
+  masterId       String
+  master         Master              @relation(fields: [masterId], references: [id])
   // 策略快照 ID — 用来追溯用的策略（不强制 FK；可空表示无策略 fallback）
-  strategyId String?
-  strategy   CommissionStrategy? @relation(fields: [strategyId], references: [id], onDelete: SetNull)
+  strategyId     String?
+  strategy       CommissionStrategy? @relation(fields: [strategyId], references: [id], onDelete: SetNull)
   // 订单金额（快照，不变）
-  orderAmount Int
+  orderAmount    Int
   // 三方分成（单位：分）
   platformAmount Int
   merchantAmount Int
   workerAmount   Int
   // 状态：generated / archived / failed
-  status    String   @default("generated")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  status         String              @default("generated")
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
 
   @@index([merchantId])
   @@index([status])
@@ -395,26 +440,26 @@ model SettlementPreview {
 // - 不做打款/提现
 // ============================================================
 model MerchantSettlement {
-  id        String   @id @default(cuid())
-  merchantId String
-  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  id              String   @id @default(cuid())
+  merchantId      String
+  merchant        Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
   // 期间（year-month，例 "2026-06"）
-  period    String
+  period          String
   // 订单数（completed 订单数）
-  totalOrderCount Int @default(0)
+  totalOrderCount Int      @default(0)
   // 订单总金额（分）
-  totalAmount Int @default(0)
+  totalAmount     Int      @default(0)
   // 三方分成（分）
-  platformFee      Int @default(0)
-  merchantIncome   Int @default(0)
-  workerIncome     Int @default(0)
+  platformFee     Int      @default(0)
+  merchantIncome  Int      @default(0)
+  workerIncome    Int      @default(0)
   // [任务 9+10] 状态机：pending / confirmed / archived
   // - pending：刚生成，待 admin 确认
   // - confirmed：已确认（admin 主动确认）
   // - archived：周期已关闭，只读不可再改
-  status    String   @default("pending")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  status          String   @default("pending")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   // [任务 12] 反向关系：线下打款记录（1 对多）
   payoutRecords PayoutRecord[]
@@ -448,7 +493,7 @@ model WorkerSettlement {
   id           String   @id @default(cuid())
   workerId     String
   worker       Master   @relation(fields: [workerId], references: [id], onDelete: Cascade)
-  period       String   // "YYYY-MM"
+  period       String // "YYYY-MM"
   orderCount   Int      @default(0)
   totalAmount  Int      @default(0) // 订单总金额（分）
   workerIncome Int      @default(0) // 师傅实收（分）
@@ -474,23 +519,23 @@ model WorkerSettlement {
 // - 只录入不接支付通道
 // ============================================================
 model PayoutRecord {
-  id        String   @id @default(cuid())
+  id                String             @id @default(cuid())
   // FK MerchantSettlement.id（Cascade）
   withdrawRequestId String
   settlement        MerchantSettlement @relation(fields: [withdrawRequestId], references: [id], onDelete: Cascade)
   // 反范式存 merchantId：方便 /payout-records 列表筛选
-  merchantId String
-  merchant   Merchant @relation(fields: [merchantId], references: [id])
+  merchantId        String
+  merchant          Merchant           @relation(fields: [merchantId], references: [id])
   // 打款金额（单位：分）
-  amount Int
+  amount            Int
   // 打款时间（必填）
-  paidAt DateTime
+  paidAt            DateTime
   // 打款凭证 URL（optional；填了必须 http(s):// 开头）
-  proofUrl String?
+  proofUrl          String?
   // 操作人（admin User.name 冗余）
-  operator String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  operator          String
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
 
   @@index([withdrawRequestId])
   @@index([merchantId])
@@ -516,28 +561,29 @@ model PayoutRecord {
 // - 只做申请和审核；不做真实打款
 // ============================================================
 model WorkerWithdrawRequest {
-  id        String   @id @default(cuid())
-  workerId  String
-  worker    Master   @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  id           String    @id @default(cuid())
+  workerId     String
+  worker       Master    @relation(fields: [workerId], references: [id], onDelete: Cascade)
   // 申请金额（分）
-  amount    Int
+  amount       Int
   // 状态机
-  status    String   @default("pending") // pending | approved | rejected
+  status       String    @default("pending") // pending | approved | rejected
   // 师傅填的用途说明（optional）
-  remark    String?
+  remark       String?
   // 审核人（User.name 字符串冗余）
   reviewerName String?
   // 审核时间（status ∈ approved/rejected 时有值）
   reviewedAt   DateTime?
   // 拒绝原因（status=rejected 必填）
   rejectReason String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   @@index([workerId])
   @@index([status])
   @@index([createdAt])
 }
+
 //
 // 设计要点：
 // - merchantId 必填（FK Merchant；状态 active 才允许申请）
@@ -553,23 +599,23 @@ model WorkerWithdrawRequest {
 // - 只做申请和审核；不做真实打款
 // ============================================================
 model WithdrawRequest {
-  id        String   @id @default(cuid())
-  merchantId String
-  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  id           String    @id @default(cuid())
+  merchantId   String
+  merchant     Merchant  @relation(fields: [merchantId], references: [id], onDelete: Cascade)
   // 申请金额（分）
-  amount Int
+  amount       Int
   // 状态机
-  status    String   @default("pending") // pending | approved | rejected
+  status       String    @default("pending") // pending | approved | rejected
   // merchant 填的用途说明（optional）
-  remark    String?
+  remark       String?
   // 审核人（User.name 字符串冗余）
   reviewerName String?
   // 审核时间（status ∈ approved/rejected 时有值）
   reviewedAt   DateTime?
   // 拒绝原因（status=rejected 必填）
   rejectReason String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   @@index([merchantId])
   @@index([status])
@@ -593,22 +639,22 @@ model WithdrawRequest {
 // - 只记账，不接银行
 // ============================================================
 model FinanceLedger {
-  id        String   @id @default(cuid())
+  id         String   @id @default(cuid())
   merchantId String
   merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
   // 类型
-  type      String   // order_commission | withdraw | payout
+  type       String // order_commission | withdraw | payout
   // 方向 — MVP 全部 'out'
-  direction String   @default("out") // out
+  direction  String   @default("out") // out
   // 关联业务对象 id（settlement / withdrawRequest / payoutRecord）
-  sourceId  String
+  sourceId   String
   // 关联订单 id（仅 order_commission 才有；其他 NULL）
-  orderId   String?
+  orderId    String?
   // 金额（Decimal(12,2) — 元；PG 原生）
-  amount    Decimal  @db.Decimal(12, 2)
+  amount     Decimal  @db.Decimal(12, 2)
   // 备注
-  remark    String?
-  createdAt DateTime @default(now())
+  remark     String?
+  createdAt  DateTime @default(now())
 
   @@unique([type, sourceId])
   @@index([merchantId])
@@ -630,14 +676,14 @@ model FinanceLedger {
 // ============================================================
 model ActivityLog {
   id         String   @id @default(cuid())
-  actorId    String?                  // 操作人 User.id（可空 = system）
-  actorName  String                   // 冗余：避免 User 删除后日志失名
-  actorRole  String                   // admin | worker | customer | system
-  action     String                   // 动作类型：order_created / order_assigned / ...
-  targetType String                   // 对象类型：order / master / serviceSku / dispatchRule / withdrawRequest / ...
-  targetId   String                   // 对象 id
-  message    String                   // 人类可读文案
-  metadata   String   @default("{}")  // JSON 字符串（可空）
+  actorId    String? // 操作人 User.id（可空 = system）
+  actorName  String // 冗余：避免 User 删除后日志失名
+  actorRole  String // admin | worker | customer | system
+  action     String // 动作类型：order_created / order_assigned / ...
+  targetType String // 对象类型：order / master / serviceSku / dispatchRule / withdrawRequest / ...
+  targetId   String // 对象 id
+  message    String // 人类可读文案
+  metadata   String   @default("{}") // JSON 字符串（可空）
   createdAt  DateTime @default(now())
 
   @@index([createdAt])

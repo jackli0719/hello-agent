@@ -18,6 +18,7 @@ import { normalizeCode } from "@/src/lib/codes";
 import { logInfo, logError } from "@/src/lib/logger";
 import { incrementCounter, METRIC } from "@/src/lib/metrics";
 import { createActivityLog } from "@/src/lib/activity-log";
+import { dispatchOrderNotifications } from "@/src/lib/notifications";
 import {
   validateAddress,
   validateCancelReason,
@@ -422,6 +423,14 @@ export async function payOrder(orderId: string): Promise<PayOrderResult> {
     };
   }
 
+  // [任务 19] 通知：支付成功 → customer/merchant 各 1 条
+  // masterId=null 时尚未派单，师傅不收（worker 节点）；dispatch 内部按 type 跳过 worker
+  await dispatchOrderNotifications(
+    { id: orderId, customerPhone: order.customerPhone, masterId: null },
+    "order_paid",
+    { amount: order.amount },
+  );
+
   return { ok: true, orderId, paidAt };
 }
 
@@ -582,6 +591,14 @@ export async function assignOrder(
     orderId,
     masterId: master.id,
   });
+
+  // [任务 19] 通知：派单成功 → customer/worker/merchant 三方各 1 条
+  await dispatchOrderNotifications(
+    { id: orderId, customerPhone: order.customerPhone, masterId: master.id },
+    "order_assigned",
+    { masterName: master.name, amount: order.amount },
+  );
+
   return {
     ok: true,
     orderId,
@@ -953,6 +970,30 @@ export async function transitionOrder(
   incrementCounter(METRIC.ORDER_TRANSITION_SUCCESS(nextStatus), {
     from: order.status,
   });
+
+  // [任务 19] 通知：完成/取消节点 → 三方分发
+  // - in_service（开始服务）不发通知：演示期不打扰（用户场景下也基本是隐藏状态）
+  // - completed：customer/worker/merchant 三方都收
+  // - cancelled：customer/worker/merchant 三方都收（cancelReason 带进 content）
+  // - 取消 + 退款联动：refundOrder 也会发 order_refunded（业务上是 2 条通知，演示期 OK）
+  if (nextStatus === "completed" || nextStatus === "cancelled") {
+    const notifType: "order_completed" | "order_canceled" =
+      nextStatus === "completed" ? "order_completed" : "order_canceled";
+    await dispatchOrderNotifications(
+      {
+        id: orderId,
+        customerPhone: order.customerPhone,
+        masterId: order.masterId,
+      },
+      notifType,
+      {
+        masterName: order.masterName,
+        cancelReason:
+          nextStatus === "cancelled" ? (cancelReason ?? undefined) : undefined,
+      },
+    );
+  }
+
   return {
     ok: true,
     orderId,
@@ -1092,6 +1133,18 @@ export async function refundOrder(orderId: string): Promise<RefundOrderResult> {
       error: e instanceof Error ? e.message : "退款失败",
     };
   }
+
+  // [任务 19] 通知：售后退款 → customer/merchant 各 1 条
+  // 师傅不收退款通知（演示期商家关心、师傅无需知道；用户决策）
+  // masterId 此时可能为 null（演示期师傅完成订单后已被 transitionOrder 释放，但 order.masterId 是快照）
+  await dispatchOrderNotifications(
+    { id: orderId, customerPhone: order.customerPhone, masterId: order.masterId },
+    "order_refunded",
+    {
+      masterName: order.masterName,
+      amount: order.amount,
+    },
+  );
 
   return { ok: true, orderId };
 }
