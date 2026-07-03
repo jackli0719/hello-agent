@@ -119,15 +119,19 @@ describe("merchant-admin 查询层 — 越权防控 (P0-1)", () => {
   it("listMerchantMasters('') → 返回空数组（不抛错）", async () => {
     expect(await listMerchantMasters("")).toEqual([]);
   });
+  // # documents current behavior: 空 merchantId 走 prisma where 返 0 行
   it("listMerchantSettlements('') → 返回空数组", async () => {
     expect(await listMerchantSettlements("")).toEqual([]);
   });
+  // # documents current behavior: 空 merchantId 走 prisma where 返 0 行
   it("listMerchantWithdrawRequests('') → 返回空数组", async () => {
     expect(await listMerchantWithdrawRequests("")).toEqual([]);
   });
+  // # documents current behavior: 空 merchantId 走 getOrdersVisibleToMerchant 返空
   it("listOrdersByArea('') → 返回空数组", async () => {
     expect(await listOrdersByArea("")).toEqual([]);
   });
+  // # documents current behavior: 空 merchantId 不会崩；counts 全 0
   it("listMerchantOrders('') → 返回空结果", async () => {
     const r = await listMerchantOrders("");
     expect(r.orders).toEqual([]);
@@ -191,6 +195,22 @@ describe("merchant-admin — getEffectiveMerchantId 守卫", () => {
       merchantId: null,
     };
     await expect(getEffectiveMerchantId(user)).rejects.toThrow(/worker/);
+  });
+
+  // # spec: merchant 角色 → URL/form 传 M002 也无效（page 用 getEffectiveMerchantId 隔离）
+  // 等价于 merchant1 访问 /merchant-admin?merchantId=M002 — 实际查 session.merchantId(M001)
+  it("merchant1 调用 getEffectiveMerchantId 永远返 M001，不受调用方传什么 merchantId 影响", async () => {
+    const merchant1: AuthenticatedUser = {
+      id: "u-m1",
+      name: "merchant1",
+      role: "merchant",
+      phone: null,
+      workerId: null,
+      merchantId: M001,
+    };
+    const dashboard = await getMerchantDashboard(await getEffectiveMerchantId(merchant1));
+    expect(dashboard.merchantId).toBe(M001);
+    expect(dashboard.merchantId).not.toBe(M002);
   });
 });
 

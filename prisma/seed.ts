@@ -416,7 +416,57 @@ async function main() {
       },
     });
   }
-  console.log(`  ✓ Order × ${MOCK_ORDERS.length}`);
+  // [任务 X 修 — 2026-07-03] payOrder 集成测试需要 2 笔 unpaid 订单样本
+  // 任务 X 时只在 seed-demo.ts 加了演示数据；db:reset 跑 seed.ts 缺这 2 笔 → 测试挂
+  // 这里补回，让 db:reset 流程自包含
+  const payTestSamples = [
+    {
+      id: "O20260629002",
+      customerName: "测试客户 A",
+      customerPhone: "13900000099", // customer1 的手机号
+      serviceName: "日常保洁 2 小时",
+      technicianName: null as string | null,
+      address: "广东省深圳市南山区粤海街道科技园 200 号",
+      scheduledAt: "2026-06-29T10:00:00+08:00",
+      amount: 200,
+      status: "pending",
+      payStatus: "unpaid",
+    },
+    {
+      id: "O20260630002",
+      customerName: "测试客户 B",
+      customerPhone: "13900000088", // customer2 的手机号（演示）
+      serviceName: "日常保洁 2 小时",
+      technicianName: null as string | null,
+      address: "广东省深圳市福田区华强北街道华强路 99 号",
+      scheduledAt: "2026-06-30T14:00:00+08:00",
+      amount: 200,
+      status: "pending",
+      payStatus: "unpaid",
+    },
+  ];
+  for (const o of payTestSamples) {
+    await prisma.order.create({
+      data: {
+        id: o.id,
+        customerName: o.customerName,
+        customerPhone: o.customerPhone,
+        serviceSkuId: skuByName.get(o.serviceName) ?? null,
+        serviceName: o.serviceName,
+        masterId: o.technicianName
+          ? (masterByName.get(o.technicianName) ?? null)
+          : null,
+        masterName: o.technicianName,
+        address: o.address,
+        ...parseSeedAddress(o.address),
+        scheduledAt: new Date(o.scheduledAt),
+        amount: Math.round(o.amount * 100),
+        status: o.status,
+        payStatus: o.payStatus,
+      },
+    });
+  }
+  console.log(`  ✓ Order × ${MOCK_ORDERS.length + payTestSamples.length}（含 ${payTestSamples.length} 笔 payOrder 测试样本）`);
 
   // ----- 6. DispatchRule -----
   // 两条规则演示「SKU 精确优先 + 类目兜底」：
@@ -517,6 +567,100 @@ async function main() {
   });
   console.log(`  ✓ ActivityLog × 5（示例）`);
 
+  // ----- 7.5. Notification（[任务 19] 通知中心示例）-----
+  // 给 3 个测试账号各灌 3-4 条历史通知（含已读 + 未读混合），演示时打开 /notifications 即可看到。
+  // 注意：只在 customer1 / worker1 存在时灌（admin 看 ActivityLog 不发通知）。
+  // 不在断言里硬等条数（避免 Notification 表清空后断言失败）。
+  const customer1 = await prisma.user.findUnique({ where: { name: "customer1" } });
+  const worker1 = await prisma.user.findUnique({ where: { name: "worker1" } });
+  if (customer1) {
+    await prisma.notification.createMany({
+      data: [
+        {
+          userId: customer1.id,
+          role: "customer",
+          type: "order_paid",
+          title: "订单已支付",
+          content: `您的订单 ${MOCK_ORDERS[0]?.id ?? "O0001"} 已支付成功（¥${(MOCK_ORDERS[0]?.amount ?? 100).toFixed(2)}），等待派单`,
+          orderId: MOCK_ORDERS[0]?.id ?? "O0001",
+          metadata: JSON.stringify({ amount: MOCK_ORDERS[0]?.amount }),
+          createdAt: new Date(Date.now() - 3 * 24 * 3600 * 1000), // 3 天前
+        },
+        {
+          userId: customer1.id,
+          role: "customer",
+          type: "order_assigned",
+          title: "订单已派单",
+          content: `您的订单 ${MOCK_ORDERS[1]?.id ?? "O0002"} 已派给师傅${MOCK_ORDERS[1]?.technicianName ?? "李师傅"}，请保持电话畅通`,
+          orderId: MOCK_ORDERS[1]?.id ?? "O0002",
+          readAt: new Date(Date.now() - 2 * 24 * 3600 * 1000), // 已读
+          metadata: JSON.stringify({ masterName: MOCK_ORDERS[1]?.technicianName }),
+          createdAt: new Date(Date.now() - 2 * 24 * 3600 * 1000),
+        },
+        {
+          userId: customer1.id,
+          role: "customer",
+          type: "order_completed",
+          title: "服务已完成",
+          content: `您的订单 ${MOCK_ORDERS[1]?.id ?? "O0002"} 服务已完成`,
+          orderId: MOCK_ORDERS[1]?.id ?? "O0002",
+          readAt: new Date(Date.now() - 1 * 24 * 3600 * 1000), // 已读
+          metadata: JSON.stringify({}),
+          createdAt: new Date(Date.now() - 1 * 24 * 3600 * 1000),
+        },
+        {
+          userId: customer1.id,
+          role: "customer",
+          type: "order_canceled",
+          title: "订单已取消",
+          content: `您的订单 O0006 已取消：客户改时间`,
+          orderId: "O0006",
+          metadata: JSON.stringify({ cancelReason: "客户改时间" }),
+          createdAt: new Date(Date.now() - 5 * 3600 * 1000), // 5 小时前（最新 → 列表顶部）
+        },
+      ],
+    });
+  }
+  if (worker1) {
+    await prisma.notification.createMany({
+      data: [
+        {
+          userId: worker1.id,
+          role: "worker",
+          type: "order_assigned",
+          title: "订单已派单",
+          content: `您有一个新任务：订单 ${MOCK_ORDERS[1]?.id ?? "O0002"}`,
+          orderId: MOCK_ORDERS[1]?.id ?? "O0002",
+          readAt: new Date(Date.now() - 1 * 24 * 3600 * 1000),
+          metadata: JSON.stringify({}),
+          createdAt: new Date(Date.now() - 2 * 24 * 3600 * 1000),
+        },
+        {
+          userId: worker1.id,
+          role: "worker",
+          type: "order_completed",
+          title: "服务已完成",
+          content: `您已完成订单 ${MOCK_ORDERS[1]?.id ?? "O0002"}`,
+          orderId: MOCK_ORDERS[1]?.id ?? "O0002",
+          metadata: JSON.stringify({}),
+          createdAt: new Date(Date.now() - 1 * 24 * 3600 * 1000),
+        },
+        {
+          userId: worker1.id,
+          role: "worker",
+          type: "order_canceled",
+          title: "订单已取消",
+          content: `订单 O0006 已被取消：师傅临时有事`,
+          orderId: "O0006",
+          metadata: JSON.stringify({ cancelReason: "师傅临时有事" }),
+          createdAt: new Date(Date.now() - 4 * 3600 * 1000),
+        },
+      ],
+    });
+  }
+  const notifCount = await prisma.notification.count();
+  console.log(`  ✓ Notification × ${notifCount}（示例 — customer1 / worker1）`);
+
   // ----- 8. 校验 -----
   const counts = {
     categories: await prisma.serviceCategory.count(),
@@ -540,7 +684,7 @@ async function main() {
     counts.skus !== MOCK_SERVICES.length ||
     // [任务 4] MOCK_TECHNICIANS 5 个 + T006 邀请码入驻 1 个 = 6 个
     counts.masters !== MOCK_TECHNICIANS.length + 1 ||
-    counts.orders !== MOCK_ORDERS.length ||
+    counts.orders !== MOCK_ORDERS.length + payTestSamples.length ||
     counts.platformAreas !== PLATFORM_AREAS.length ||
     counts.merchants !== MERCHANTS.length ||
     counts.merchantAreas !== MERCHANT_AREAS.length ||
