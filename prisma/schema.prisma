@@ -83,6 +83,8 @@ model Master {
   user   User?
   // [任务 6] 结算预览（1 对多）
   settlementPreviews SettlementPreview[]
+  // [任务 17] 师傅维度结算汇总（1 对多）
+  workerSettlements  WorkerSettlement[]
 
   @@index([status])
   @@index([merchantId])
@@ -396,6 +398,42 @@ model MerchantSettlement {
   @@unique([merchantId, period])
   @@index([period])
   @@index([status])
+}
+
+// ============================================================
+// [任务 17] 师傅维度结算汇总（WorkerSettlement）
+//
+// 设计要点：
+// - workerId: FK Master（Cascade）— 删师傅时自动清汇总
+// - period: "YYYY-MM"（与 MerchantSettlement 口径一致）
+// - orderCount: 该 (worker, period) 下 completed 订单数
+// - totalAmount: 该 (worker, period) 下 completed 订单总金额（分）
+// - workerIncome: 师傅实收（分，来自 SettlementPreview.workerAmount 之和）
+//
+// 与 MerchantSettlement 的差异：
+// - 无 status 字段（无状态机，仅展示用）
+// - 无 platformFee / merchantIncome（worker 视角不关心）
+// - 无 payoutRecords 关系（不走打款）
+//
+// 数据源：SettlementPreview（commission strategy 拆分后）
+// 生成时机：admin 点 "生成汇总" 按钮（手动触发）
+// 更新策略：upsert 同 (worker, period) 重新聚合
+// 快照语义：masterId 变更后历史 settlement 保留（与 MerchantSettlement 一致）
+// ============================================================
+model WorkerSettlement {
+  id           String   @id @default(cuid())
+  workerId     String
+  worker       Master   @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  period       String   // "YYYY-MM"
+  orderCount   Int      @default(0)
+  totalAmount  Int      @default(0) // 订单总金额（分）
+  workerIncome Int      @default(0) // 师傅实收（分）
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([workerId, period])
+  @@index([period])
+  @@index([workerId])
 }
 
 // ============================================================
