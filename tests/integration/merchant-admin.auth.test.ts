@@ -56,14 +56,36 @@ async function loadTestUsers(): Promise<void> {
     prisma.user.findUnique({ where: { name: "worker1" } }),
   ]);
   if (!a || !m1 || !w1) {
-    throw new Error("需要先跑 npm run db:reset && npm run seed:demo（缺 admin/merchant1/worker1）");
+    throw new Error(
+      "需要先跑 npm run db:reset && npm run seed:demo（缺 admin/merchant1/worker1）",
+    );
   }
-  adminUser = { id: a.id, name: a.name, role: a.role, merchantId: a.merchantId };
-  merchant1User = { id: m1.id, name: m1.name, role: m1.role, merchantId: m1.merchantId };
+  adminUser = {
+    id: a.id,
+    name: a.name,
+    role: a.role,
+    merchantId: a.merchantId,
+  };
+  merchant1User = {
+    id: m1.id,
+    name: m1.name,
+    role: m1.role,
+    merchantId: m1.merchantId,
+  };
   if (m2) {
-    merchant2User = { id: m2.id, name: m2.name, role: m2.role, merchantId: m2.merchantId };
+    merchant2User = {
+      id: m2.id,
+      name: m2.name,
+      role: m2.role,
+      merchantId: m2.merchantId,
+    };
   }
-  worker1User = { id: w1.id, name: w1.name, role: w1.role, merchantId: w1.merchantId };
+  worker1User = {
+    id: w1.id,
+    name: w1.name,
+    role: w1.role,
+    merchantId: w1.merchantId,
+  };
 }
 
 describe("商家后台 — 越权隔离 (P0-1)", () => {
@@ -117,7 +139,12 @@ describe("商家后台 — 越权隔离 (P0-1)", () => {
     }
     // 准备：给 M002 创建一笔测试申请
     const testWr = await prisma.withdrawRequest.create({
-      data: { merchantId: M002, amount: 100, status: "pending", remark: "M002-test" },
+      data: {
+        merchantId: M002,
+        amount: 100,
+        status: "pending",
+        remark: "M002-test",
+      },
     });
     testWithdrawIds.push(testWr.id);
 
@@ -130,12 +157,17 @@ describe("商家后台 — 越权隔离 (P0-1)", () => {
   // # spec: listMerchantOrders(M001) byMaster 来源不会含 M002 师傅的订单
   // 注：byArea 来源是"本商家服务区域内的可见订单"，多个 merchant 可能共享区域（如 PA001 被 M001+M002 绑），
   //     所以 byArea 集合在 M001/M002 间可以有重叠（不是越权 — 区域本就共享）
+  // # documents current behavior: byArea 多商家共享区域可重叠，仅 assert byMaster 互不相交
   it("listMerchantOrders(M001) byMaster 来源不会含 M002 师傅接的订单", async () => {
     const m001Result = await listMerchantOrders(M001);
     const m002Result = await listMerchantOrders(M002);
     // 只比对 byMaster 集合（强绑 merchantId 路径）
-    const m001ByMaster = m001Result.orders.filter((o) => o.source === "byMaster");
-    const m002ByMaster = m002Result.orders.filter((o) => o.source === "byMaster");
+    const m001ByMaster = m001Result.orders.filter(
+      (o) => o.source === "byMaster",
+    );
+    const m002ByMaster = m002Result.orders.filter(
+      (o) => o.source === "byMaster",
+    );
     const m001Ids = new Set(m001ByMaster.map((o) => o.id));
     const m002Ids = new Set(m002ByMaster.map((o) => o.id));
     for (const id of m001Ids) {
@@ -147,6 +179,7 @@ describe("商家后台 — 越权隔离 (P0-1)", () => {
   // getEffectiveMerchantId 守卫
   // ============================================================
 
+  // # spec: admin 角色 → getEffectiveMerchantId fallback 第一个 active 商家（M001）
   it("admin 登录 → getEffectiveMerchantId fallback M001（第一个 active）", async () => {
     await setSessionCookie(adminUser.id, "admin");
     const u = await getCurrentUser();
@@ -155,6 +188,7 @@ describe("商家后台 — 越权隔离 (P0-1)", () => {
     expect(m).toBe(M001);
   });
 
+  // # spec: worker 角色不允许访问商家后台，getEffectiveMerchantId 抛错（兜底，layout 应先跳走）
   it("worker 登录 → getEffectiveMerchantId 抛错（应被 layout 跳走）", async () => {
     await setSessionCookie(worker1User.id, "worker");
     const u = await getCurrentUser();
@@ -162,6 +196,7 @@ describe("商家后台 — 越权隔离 (P0-1)", () => {
     await expect(getEffectiveMerchantId(u!)).rejects.toThrow();
   });
 
+  // # spec: merchant 角色但 session.merchantId=null（orphan 账号）→ 抛错
   it("merchant 角色但 user.merchantId=null → getEffectiveMerchantId 抛错", async () => {
     // 临时构造一个 orphan merchant 账号
     const orphan = await prisma.user.create({
@@ -264,14 +299,17 @@ describe("商家后台 — 越权隔离 (P0-1)", () => {
   });
 
   // # spec: getMerchantAvailable 口径与 getMerchantDashboard.totalIncomeYuan 一致
-  it("getMerchantAvailable(M001) === getMerchantDashboard(M001).totalIncomeYuan * 100 + paid + pending", async () => {
+  it("getMerchantAvailable(M001) totalIncome ≈ getMerchantDashboard(M001).totalIncomeYuan * 100", async () => {
     const a = await getMerchantAvailable(M001);
     const d = await getMerchantDashboard(M001);
-    // available = totalIncome - paid - pending（不严格相等，因为 totalIncomeYuan 不含 paid）
-    // 但 totalIncome 应该是 available + paid + pending
+    // 业务口径一致:
+    // - getMerchantAvailable.totalIncome = prisma aggregate SUM(merchantIncome) 分
+    // - getMerchantDashboard.totalIncomeYuan = aggregate sum / 100 元 → *100 还原分
+    // 浮点: 元路径做了一次 /100 又 *100, 必然损失精度(< 1 元)
+    // 用 toBeCloseTo 容许 1 分误差
     const sumCents = a.totalIncome;
     const dashboardCents = d.totalIncomeYuan * 100;
-    expect(sumCents).toBe(dashboardCents);
+    expect(sumCents).toBeCloseTo(dashboardCents, 0); // 整数位一致即可
   });
 });
 

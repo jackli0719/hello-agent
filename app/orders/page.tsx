@@ -23,6 +23,7 @@ interface PageProps {
   searchParams: Promise<{
     keyword?: string;
     status?: string;
+    payStatus?: string; // [任务 X] 支付状态过滤
     skuCode?: string;
     created?: string;
     page?: string;
@@ -48,6 +49,7 @@ function formatDateTime(iso: string) {
 function buildOrdersUrl(params: {
   keyword?: string;
   status?: string;
+  payStatus?: string; // [任务 X]
   skuCode?: string;
   dateFrom?: string;
   dateTo?: string;
@@ -63,6 +65,9 @@ function buildOrdersUrl(params: {
   if (params.dateField && params.dateField !== "createdAt")
     sp.set("dateField", params.dateField);
   if (params.status && params.status !== "all") sp.set("status", params.status);
+  // [任务 X] 支付状态
+  if (params.payStatus && params.payStatus !== "all")
+    sp.set("payStatus", params.payStatus);
   if (params.page && params.page !== "1") sp.set("page", params.page);
   // pageSize 总是写入（因为它改变会改变 page 总数；URL 必须显式）
   // [v0.7.0 任务] 默认 10（之前默认 20）
@@ -76,6 +81,7 @@ export default async function OrdersPage({ searchParams }: PageProps) {
   const {
     keyword = "",
     status = "all",
+    payStatus = "all", // [任务 X] 支付状态过滤
     skuCode = "",
     created,
     page = "1",
@@ -92,6 +98,13 @@ export default async function OrdersPage({ searchParams }: PageProps) {
     FILTERS.some((f) => f.value === status) ? status : "all"
   ) as "all" | OrderStatus;
   const statusFilter = validStatus;
+  // [任务 X] payStatus 校验
+  const validPayStatus = (
+    ["all", "unpaid", "paid", "refunded"].includes(payStatus)
+      ? payStatus
+      : "all"
+  ) as "all" | "unpaid" | "paid" | "refunded";
+  const payStatusFilter = validPayStatus;
 
   // 时间字段校验
   const validDateField =
@@ -136,6 +149,9 @@ export default async function OrdersPage({ searchParams }: PageProps) {
   const kw = keyword.trim().toLowerCase();
   const filtered = allOrders.filter((o) => {
     if (statusFilter !== "all" && o.status !== statusFilter) return false;
+    // [任务 X] 支付状态过滤
+    if (payStatusFilter !== "all" && o.payStatus !== payStatusFilter)
+      return false;
     if (!kw) return true;
     return (
       o.id.toLowerCase().includes(kw) ||
@@ -162,6 +178,16 @@ export default async function OrdersPage({ searchParams }: PageProps) {
       completed: 0,
       cancelled: 0,
     } as Record<"all" | OrderStatus, number>,
+  );
+
+  // [任务 X] 支付状态计数 — 独立 chip 行
+  const payCounts = allOrders.reduce(
+    (acc, o) => {
+      acc.all++;
+      acc[o.payStatus]++;
+      return acc;
+    },
+    { all: 0, unpaid: 0, paid: 0, refunded: 0 },
   );
 
   // 当前是否筛选中（决定「重置」按钮显示）
@@ -371,6 +397,7 @@ export default async function OrdersPage({ searchParams }: PageProps) {
             const href = buildOrdersUrl({
               keyword,
               status: f.value,
+              payStatus: payStatusFilter, // [任务 X] 保留 payStatus
               skuCode,
               dateFrom,
               dateTo,
@@ -393,6 +420,59 @@ export default async function OrdersPage({ searchParams }: PageProps) {
               >
                 {f.label}{" "}
                 <span style={{ opacity: 0.7 }}>({counts[f.value]})</span>
+              </Link>
+            );
+          })}
+        </div>
+
+        {/* [任务 X] 支付状态筛选 chips — 独立一行,与 status 平行 */}
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            marginBottom: 20,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          <span style={{ fontSize: 12, color: "#6b7280", marginRight: 4 }}>
+            支付状态:
+          </span>
+          {(
+            [
+              { v: "all", label: "全部" },
+              { v: "unpaid", label: "未支付" },
+              { v: "paid", label: "已支付" },
+              { v: "refunded", label: "已退款" },
+            ] as const
+          ).map((p) => {
+            const active = payStatusFilter === p.v;
+            const href = buildOrdersUrl({
+              keyword,
+              status: statusFilter, // 保留 status
+              payStatus: p.v,
+              skuCode,
+              dateFrom,
+              dateTo,
+              dateField: validDateField,
+              page: "1",
+            });
+            return (
+              <Link
+                key={p.v}
+                href={href}
+                style={{
+                  padding: "4px 12px",
+                  borderRadius: 999,
+                  fontSize: 12,
+                  textDecoration: "none",
+                  background: active ? "#2563eb" : "#fff",
+                  color: active ? "#fff" : "#374151",
+                  border: active ? "1px solid #2563eb" : "1px solid #e5e7eb",
+                }}
+              >
+                {p.label}{" "}
+                <span style={{ opacity: 0.7 }}>({payCounts[p.v]})</span>
               </Link>
             );
           })}
@@ -509,8 +589,13 @@ export default async function OrdersPage({ searchParams }: PageProps) {
                       )}
                     </td>
                     <td style={td}>
+                      {/* [任务 X] pending + unpaid → "待支付" 区分,避免后台误以为「待派单」 */}
                       <StatusBadge
-                        label={ORDER_STATUS_LABEL[o.status]}
+                        label={
+                          o.status === "pending" && o.payStatus === "unpaid"
+                            ? "待支付"
+                            : ORDER_STATUS_LABEL[o.status]
+                        }
                         tone={ORDER_TONE[o.status]}
                       />
                     </td>
@@ -795,9 +880,26 @@ function ActionCell({
   }
 
   // pending + 有候选：派单按钮列表 + 取消订单按钮
+  // [任务 X] 任务守门:未支付订单 payStatus=unpaid — OrderActions 内置「请先支付」红条
   return (
     <div>
       {areaBlock}
+      {/* [任务 X] 未支付订单红条提示 — UI 层提醒,服务端守门在 assignOrder 守 payStatus */}
+      {order.payStatus === "unpaid" ? (
+        <div
+          style={{
+            padding: "4px 8px",
+            background: "#fef2f2",
+            color: "#b91c1c",
+            border: "1px solid #fecaca",
+            borderRadius: 4,
+            fontSize: 11,
+            marginBottom: 6,
+          }}
+        >
+          ⚠ 未支付订单 — 服务端会拒绝派单,请通知客户先支付
+        </div>
+      ) : null}
       <OrderActions
         orderId={order.id}
         status={order.status}

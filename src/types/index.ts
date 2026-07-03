@@ -11,6 +11,12 @@ export type OrderStatus =
   | "completed" // 已完成
   | "cancelled"; // 已取消
 
+// [任务 X] 支付状态 — 模拟支付（演示期）
+// unpaid    = 下单后未付, status=pending + payStatus=unpaid = 待支付
+// paid      = 模拟支付成功, status=pending + payStatus=paid   = 待派单
+// refunded  = 已退款(预留字段,本次不做 UI)
+export type PayStatus = "unpaid" | "paid" | "refunded";
+
 export type TechnicianStatus = "available" | "busy" | "offline";
 
 export interface Order {

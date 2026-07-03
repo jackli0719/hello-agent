@@ -16,10 +16,16 @@
 //   未登录场景：仍允许（按需求保留 /customer 公开下单）
 
 import { revalidatePath } from "next/cache";
-import { createOrder, type CreateOrderResult } from "@/src/lib/orders";
+import {
+  createOrder,
+  payOrder,
+  type CreateOrderResult,
+  type PayOrderResult,
+} from "@/src/lib/orders";
 import { getSkuBasePriceByCode } from "@/src/lib/customer";
 import { createActivityLog } from "@/src/lib/activity-log";
 import { getCurrentUser } from "@/src/lib/auth";
+import { requireCsrf, requireRole } from "@/src/lib/auth-helpers";
 
 export type CustomerCreateOrderResult = CreateOrderResult;
 
@@ -119,4 +125,81 @@ export async function customerCreateOrderAction(
   }
 
   return { ok: true, orderId: result.orderId };
+}
+
+// ============================================================
+// [任务 X] 支付下单闭环 — 客户/管理员触发「模拟支付成功」
+// ============================================================
+
+export type CustomerPayOrderResult = PayOrderResult;
+
+/**
+ * 客户/管理员触发「模拟支付成功」。
+ *
+ * 规则：
+ * - customer 只能付自己手机号下的订单（user.phone === order.customerPhone）
+ * - admin 可以代付（演示用，admin 是平台运维）
+ * - worker 角色拒绝
+ * - 调 src/lib/orders.ts:payOrder（事务 + 乐观锁）
+ *
+ * 成功 → 刷新订单详情页 + 列表 + 后台 /orders
+ * 失败 → 返回结构化错误
+ */
+export async function customerPayOrderAction(
+  formData: FormData,
+): Promise<CustomerPayOrderResult> {
+  // 鉴权：customer 或 admin
+  const auth = await requireRole(["customer", "admin"]);
+  if (!auth.ok) {
+    return { ok: false, category: "validation", error: auth.error };
+  }
+  const csrf = await requireCsrf(formData);
+  if (!csrf.ok) {
+    return { ok: false, category: "validation", error: csrf.error };
+  }
+
+  const orderId = String(formData.get("orderId") ?? "").trim();
+  if (!orderId) {
+    return { ok: false, category: "validation", error: "缺少 orderId" };
+  }
+
+  // [v0.5.0] 修 A5 思路：customer 只能付自己手机号下的订单
+  // 加载订单校验 customer phone === session phone
+  if (auth.user.role === "customer") {
+    const { prisma } = await import("@/src/lib/db");
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      select: { customerPhone: true },
+    });
+    if (!order) {
+      return {
+        ok: false,
+        category: "validation",
+        error: `订单 ${orderId} 不存在`,
+      };
+    }
+    if (auth.user.phone && order.customerPhone !== auth.user.phone) {
+      return {
+        ok: false,
+        category: "validation",
+        error: "无权支付他人订单",
+      };
+    }
+  }
+
+  const result = await payOrder(orderId);
+  if (!result.ok) {
+    return result;
+  }
+
+  // 刷新相关页面
+  try {
+    revalidatePath("/customer/orders");
+    revalidatePath(`/customer/orders/${orderId}`);
+    revalidatePath("/orders"); // 后台订单列表（admin 派单视图）
+  } catch {
+    // 单测环境无 Next runtime
+  }
+
+  return { ok: true, orderId: result.orderId, paidAt: result.paidAt };
 }

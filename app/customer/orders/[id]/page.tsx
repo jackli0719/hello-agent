@@ -21,21 +21,27 @@ import { getCurrentUser } from "@/src/lib/auth";
 import { ensureCsrfCookie } from "@/src/lib/csrf";
 import { customerCancelOrderAction } from "@/app/orders/actions";
 import { CancelForm } from "@/components/CancelForm";
+import { PayForm } from "./PayForm";
 import { StatusBadge, ORDER_TONE } from "@/components/ui";
 import { ORDER_STATUS_LABEL } from "@/lib/mock-data";
-import type { OrderStatus } from "@/src/types";
+import type { OrderStatus, PayStatus } from "@/src/types";
 
 interface PageProps {
   params: Promise<{ id: string }>;
 }
 
 // 状态文案 — 按业务规则
-function statusHint(status: OrderStatus): string {
+// [任务 X] payStatus 区分: status=pending + payStatus=unpaid → 待支付
+//         status=pending + payStatus=paid   → 待派单
+function statusHint(status: OrderStatus, payStatus: PayStatus): string {
+  if (status === "pending" && payStatus === "unpaid") {
+    return "订单待支付 — 完成支付后将进入待派单";
+  }
   switch (status) {
     case "pending":
-      return "等待后台派单";
+      return "已支付,等待后台派单";
     case "assigned":
-      return "已派单，师傅即将联系您";
+      return "已派单,师傅即将联系您";
     case "in_service":
       return "师傅正在服务中";
     case "completed":
@@ -130,7 +136,7 @@ export default async function CustomerOrderDetailPage({ params }: PageProps) {
             marginBottom: 16,
           }}
         >
-          {statusHint(order.status)}
+          {statusHint(order.status, order.payStatus)}
         </div>
 
         {/* 客户信息 */}
@@ -177,10 +183,18 @@ export default async function CustomerOrderDetailPage({ params }: PageProps) {
         <SectionTitle title="时间信息" />
         <Field label="下单时间" value={formatDateTime(order.createdAt)} />
 
-        {/* [v0.7.9] 用户取消按钮 — 仅 pending 状态（业务规则 #10）*/}
+        {/* [v0.7.9] 用户取消按钮 — 仅 pending 状态（业务规则 #10）
+            [任务 X] 支付按钮 — 仅 payStatus=unpaid 时显示 */}
         {order.status === "pending" && (
           <div style={{ marginTop: 16 }}>
             <SectionTitle title="操作" />
+            {order.payStatus === "unpaid" ? (
+              <PayForm
+                orderId={order.id}
+                csrfToken={csrfToken}
+                amountYuan={order.amountYuan}
+              />
+            ) : null}
             <CancelForm
               orderId={order.id}
               formAction={customerCancelOrderAction}

@@ -151,6 +151,13 @@ model Order {
   scheduledAt     DateTime
   amount          Int                          // 单位：分
   status          String   @default("pending") // pending | assigned | in_service | completed | cancelled
+  // [支付] 任务 X: payStatus 独立于 status — 模拟支付（演示期不接真实支付）
+  // unpaid = 下单后未付, status=pending + payStatus=unpaid = 待支付
+  // paid   = 模拟支付成功, status=pending + payStatus=paid   = 待派单
+  // refunded = 已退款(预留字段,本次不做 UI)
+  // 派单校验: status=pending AND payStatus=paid
+  payStatus       String   @default("unpaid")  // unpaid | paid | refunded
+  paidAt          DateTime?                    // 支付成功时间
   // 用户下单时填的备注（可选）— 加于 2026-06 师傅端/用户端 MVP
   remark          String?
   // [v0.7.6] 业务扩展：内部备注（后台）和师傅完成说明

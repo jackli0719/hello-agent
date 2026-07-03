@@ -244,6 +244,8 @@ export async function createOrder(
           scheduledAt: input.scheduledAt,
           amount: Math.round(input.amount * 100),
           status: "pending",
+          // [支付] 默认 unpaid;模拟支付成功后由 payOrder 改 paid
+          payStatus: "unpaid",
           remark: input.remark ?? null,
         },
       });
@@ -316,6 +318,113 @@ export async function generateNextOrderId(
 // 派单
 // ============================================================
 
+// [支付] payOrder / PayOrderError — 模拟支付成功（演示期不接真实支付）
+//
+// 规则：
+// 1. 订单必须存在
+// 2. 订单 status 必须 === "pending"（已派单/已完成/已取消 不能再付）
+// 3. payStatus 必须 === "unpaid"（已支付/已退款 不能再付）
+// 4. 事务里改 payStatus=paid + paidAt=now
+// 5. 写 ActivityLog + 埋点
+//
+// 成功 → { ok: true, orderId }
+// 失败 → 分类返回，调用方按 category 决定 UI 展示
+
+export class PayOrderError extends Error {
+  constructor(
+    message: string,
+    readonly reason: string,
+  ) {
+    super(message);
+    this.name = "PayOrderError";
+  }
+}
+
+export type PayOrderResult =
+  | { ok: true; orderId: string; paidAt: Date }
+  | {
+      ok: false;
+      category: "validation" | "system";
+      error: string;
+    };
+
+export async function payOrder(orderId: string): Promise<PayOrderResult> {
+  // 1. 加载订单
+  const order = await prisma.order.findUnique({ where: { id: orderId } });
+  if (!order) {
+    return {
+      ok: false,
+      category: "validation",
+      error: `订单 ${orderId} 不存在`,
+    };
+  }
+
+  // 2. 订单 status 必须 pending
+  if (order.status !== "pending") {
+    return {
+      ok: false,
+      category: "validation",
+      error: `订单当前状态为「${order.status}」，不能支付`,
+    };
+  }
+
+  // 3. payStatus 必须 unpaid
+  if (order.payStatus !== "unpaid") {
+    return {
+      ok: false,
+      category: "validation",
+      error:
+        order.payStatus === "paid"
+          ? "订单已支付，无需重复支付"
+          : `订单支付状态为「${order.payStatus}」，不能支付`,
+    };
+  }
+
+  // 4. 事务：改 payStatus=paid + paidAt=now
+  //    乐观锁：updateMany 条件 where: { id, payStatus: "unpaid" } 防并发
+  const paidAt = new Date();
+  try {
+    await prisma.$transaction(async (tx) => {
+      const result = await tx.order.updateMany({
+        where: { id: orderId, payStatus: "unpaid" },
+        data: { payStatus: "paid", paidAt },
+      });
+      if (result.count === 0) {
+        // 并发场景：别人先付了
+        throw new PayOrderError(
+          "支付失败（订单状态已变更）",
+          "concurrent_change",
+        );
+      }
+
+      // 埋点 + ActivityLog
+      logInfo("order paid", { orderId, customerPhone: order.customerPhone });
+      incrementCounter(METRIC.ORDER_PAY_SUCCESS, { orderId });
+      await createActivityLog({
+        action: "order_paid",
+        targetType: "order",
+        targetId: orderId,
+        message: `订单 ${orderId} 已支付（模拟）`,
+        metadata: { paidAt: paidAt.toISOString() },
+        actorRole: "customer",
+        actorName: order.customerName,
+      });
+    });
+  } catch (e) {
+    if (e instanceof PayOrderError) {
+      return { ok: false, category: "validation", error: e.message };
+    }
+    logError("pay order failed", e, { orderId });
+    return {
+      ok: false,
+      category: "system",
+      error: "支付失败，请重试",
+    };
+  }
+
+  return { ok: true, orderId, paidAt };
+}
+
 export class AssignOrderError extends Error {
   constructor(
     message: string,
@@ -385,6 +494,15 @@ export async function assignOrder(
       ok: false,
       category: "validation",
       error: `订单当前状态为「${order.status}」，不能重复派单`,
+    };
+  }
+  // [支付] 任务 X: 守门 — 未支付订单不能派单
+  // payStatus === "unpaid" → 客户还没付款,即使状态是 pending 也不能派
+  if (order.payStatus !== "paid") {
+    return {
+      ok: false,
+      category: "validation",
+      error: `订单未支付（payStatus=${order.payStatus}），请先完成支付后再派单`,
     };
   }
   if (master.status !== "available") {

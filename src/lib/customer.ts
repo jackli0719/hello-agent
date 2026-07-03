@@ -106,6 +106,9 @@ export interface CustomerOrderLookupItem {
   serviceName: string;
   serviceCategoryName: string | null;
   status: import("@/src/types").OrderStatus;
+  // [任务 X] 支付状态
+  payStatus: import("@/src/types").PayStatus;
+  paidAt: string | null;
   scheduledAt: string;
   amountYuan: number;
   /** 已派单师傅 ID（null = 未派单） */
@@ -149,6 +152,8 @@ export async function listOrdersForCustomerPhone(
       address: true,
       serviceName: true,
       status: true,
+      payStatus: true, // [任务 X] 支付状态
+      paidAt: true, // [任务 X]
       scheduledAt: true,
       amount: true,
       masterId: true,
@@ -171,6 +176,8 @@ export async function listOrdersForCustomerPhone(
     serviceName: r.serviceName,
     serviceCategoryName: r.serviceSku?.category.name ?? null,
     status: r.status as import("@/src/types").OrderStatus,
+    payStatus: r.payStatus as import("@/src/types").PayStatus, // [任务 X]
+    paidAt: r.paidAt ? r.paidAt.toISOString() : null, // [任务 X]
     scheduledAt: r.scheduledAt.toISOString(),
     amountYuan: r.amount / 100,
     masterId: r.masterId,
@@ -213,6 +220,8 @@ export async function getOrderForCustomer(
       address: true,
       serviceName: true,
       status: true,
+      payStatus: true, // [任务 X] 支付状态
+      paidAt: true, // [任务 X]
       scheduledAt: true,
       amount: true,
       masterId: true,
@@ -235,6 +244,8 @@ export async function getOrderForCustomer(
     serviceName: row.serviceName,
     serviceCategoryName: row.serviceSku?.category.name ?? null,
     status: row.status as import("@/src/types").OrderStatus,
+    payStatus: row.payStatus as import("@/src/types").PayStatus, // [任务 X]
+    paidAt: row.paidAt ? row.paidAt.toISOString() : null, // [任务 X]
     scheduledAt: row.scheduledAt.toISOString(),
     amountYuan: row.amount / 100,
     masterId: row.masterId,

@@ -711,6 +711,7 @@ const ORDERS = [
     scheduledAt: "2026-06-29T10:00:00",
     amount: 268,
     status: "pending",
+    payStatus: "paid", // 演示「待派单」
   },
   {
     id: "O20260629002",
@@ -722,6 +723,7 @@ const ORDERS = [
     scheduledAt: "2026-06-29T14:00:00",
     amount: 128,
     status: "pending",
+    payStatus: "unpaid", // 演示「待支付」 — customer 详情页可点支付
   },
   {
     id: "O20260629003",
@@ -733,6 +735,7 @@ const ORDERS = [
     scheduledAt: "2026-06-29T16:30:00",
     amount: 180,
     status: "pending",
+    payStatus: "paid", // 演示「待派单」
   },
   {
     id: "O20260630001",
@@ -744,6 +747,7 @@ const ORDERS = [
     scheduledAt: "2026-06-30T09:00:00",
     amount: 158,
     status: "pending",
+    payStatus: "paid", // customer1 演示订单 — 已支付,演示取消
     remark: "客户要求戴鞋套",
   },
   {
@@ -756,6 +760,7 @@ const ORDERS = [
     scheduledAt: "2026-06-30T11:00:00",
     amount: 168,
     status: "pending",
+    payStatus: "unpaid", // 演示「待支付」 — 客户详情页可演示支付流程
   },
   {
     id: "O20260630003",
@@ -767,6 +772,7 @@ const ORDERS = [
     scheduledAt: "2026-06-30T14:00:00",
     amount: 120,
     status: "pending",
+    payStatus: "paid", // 演示「待派单」
   },
   // 演示「暂无推荐师傅」 — 开锁换锁 SKU 没人会
   {
@@ -779,6 +785,7 @@ const ORDERS = [
     scheduledAt: "2026-06-30T15:00:00",
     amount: 199,
     status: "pending",
+    payStatus: "paid", // 演示「待派单」 + 无候选师傅
     remark: "钥匙锁家里了，需要紧急开锁",
   },
   // 演示「暂无推荐师傅」 — 用 REPAIR-DISABLED 不可用的 SKU
@@ -792,6 +799,7 @@ const ORDERS = [
     scheduledAt: "2026-06-30T17:00:00",
     amount: 199,
     status: "pending",
+    payStatus: "paid", // 演示「待派单」 + 无候选师傅
   },
   // ============ assigned × 4 ============
   {
@@ -804,6 +812,7 @@ const ORDERS = [
     scheduledAt: "2026-06-28T10:00:00",
     amount: 158,
     status: "assigned",
+    payStatus: "paid", // 已支付后派单
     remark: "阿姨带吸尘器",
   },
   {
@@ -816,6 +825,7 @@ const ORDERS = [
     scheduledAt: "2026-06-28T14:00:00",
     amount: 128,
     status: "assigned",
+    payStatus: "paid",
   },
   {
     id: "O20260628003",
@@ -827,6 +837,7 @@ const ORDERS = [
     scheduledAt: "2026-06-28T15:30:00",
     amount: 180,
     status: "assigned",
+    payStatus: "paid",
     internalRemark: "VIP 客户优先",
   },
   {
@@ -839,6 +850,7 @@ const ORDERS = [
     scheduledAt: "2026-06-28T17:00:00",
     amount: 120,
     status: "assigned",
+    payStatus: "paid",
     remark: "冰箱不制冷",
   },
   // ============ in_service × 4 ============
@@ -852,6 +864,7 @@ const ORDERS = [
     scheduledAt: "2026-06-29T09:00:00",
     amount: 268,
     status: "in_service",
+    payStatus: "paid",
   },
   {
     id: "O20260629012",
@@ -863,6 +876,7 @@ const ORDERS = [
     scheduledAt: "2026-06-29T11:00:00",
     amount: 128,
     status: "in_service",
+    payStatus: "paid",
   },
   {
     id: "O20260629013",
@@ -874,6 +888,7 @@ const ORDERS = [
     scheduledAt: "2026-06-29T13:30:00",
     amount: 180,
     status: "in_service",
+    payStatus: "paid",
   },
   {
     id: "O20260629014",
@@ -885,6 +900,7 @@ const ORDERS = [
     scheduledAt: "2026-06-29T15:00:00",
     amount: 120,
     status: "in_service",
+    payStatus: "paid",
   },
   // ============ completed × 3 ============
   // 带 serviceSummary（v0.7.6 业务扩展）
@@ -898,6 +914,7 @@ const ORDERS = [
     scheduledAt: "2026-06-27T10:00:00",
     amount: 268,
     status: "completed",
+    payStatus: "paid",
     serviceSummary: "厨房油烟机已深度清洗，卫生间瓷砖已除霉，客户验收满意",
   },
   {
@@ -910,6 +927,7 @@ const ORDERS = [
     scheduledAt: "2026-06-27T14:00:00",
     amount: 128,
     status: "completed",
+    payStatus: "paid",
     serviceSummary: "空调滤网清洗完毕，制冷效果恢复，已测试 30 分钟正常",
     internalRemark: "VIP 客户，2 个月后回访",
   },
@@ -923,6 +941,7 @@ const ORDERS = [
     scheduledAt: "2026-06-26T15:00:00",
     amount: 120,
     status: "completed",
+    payStatus: "paid",
     serviceSummary: "冰箱压缩机启动器更换，运行正常，已教客户使用",
   },
   // ============ cancelled × 1 ============
@@ -937,6 +956,7 @@ const ORDERS = [
     scheduledAt: "2026-06-26T09:00:00",
     amount: 158,
     status: "cancelled",
+    payStatus: "paid", // 演示「支付后取消」
     cancelReason: "客户临时有事取消",
     canceledAt: "2026-06-26T08:00:00",
   },
@@ -1108,6 +1128,10 @@ async function main() {
         scheduledAt: new Date(o.scheduledAt),
         amount: Math.round(o.amount * 100),
         status: o.status,
+        // [支付] 演示订单 payStatus — pending 大部分 paid(待派单),2 笔 unpaid(待支付)
+        // 兜底: 老 data (无 payStatus 字段) 默认 unpaid
+        payStatus: o.payStatus ?? "unpaid",
+        paidAt: o.payStatus === "paid" ? new Date(o.scheduledAt) : null,
         remark: "remark" in o ? o.remark : null,
         internalRemark: "internalRemark" in o ? o.internalRemark : null,
         serviceSummary: "serviceSummary" in o ? o.serviceSummary : null,

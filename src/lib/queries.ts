@@ -11,7 +11,7 @@ import {
   type DispatchRuleRow,
   type RecommendationResult,
 } from "@/lib/dispatch";
-import type { Order, OrderStatus, Technician } from "@/src/types";
+import type { Order, OrderStatus, PayStatus, Technician } from "@/src/types";
 
 // ---------- 类型 ----------
 export interface OrderListItem {
@@ -47,6 +47,9 @@ export interface OrderListItem {
   cancelReason: string | null;
   /** 取消时间 */
   canceledAt: string | null;
+  // [任务 X] 支付状态
+  payStatus: import("@/src/types").PayStatus;
+  paidAt: string | null;
 }
 
 export interface OrdersPageData {
@@ -243,6 +246,9 @@ export async function listOrdersForPage(
         serviceSummary: true, // [v0.7.6]
         cancelReason: true, // [v0.7.9]
         canceledAt: true, // [v0.7.9]
+        // [任务 X] 支付状态 + 支付时间
+        payStatus: true,
+        paidAt: true,
         address: true,
         // [任务 3] 4 级地址 — 推荐走精确匹配
         province: true,
@@ -376,6 +382,9 @@ export async function listOrdersForPage(
       // [v0.7.9]
       cancelReason: r.cancelReason,
       canceledAt: r.canceledAt ? toLocalISOString(r.canceledAt) : null,
+      // [任务 X] 支付状态
+      payStatus: r.payStatus as PayStatus,
+      paidAt: r.paidAt ? toLocalISOString(r.paidAt) : null,
     };
   });
 
@@ -456,14 +465,25 @@ export async function getOrdersVisibleToMerchant(merchantId: string) {
   // 4. 查订单 — 4 级地址命中任一 platformArea
   // Prisma 用 OR 组合每条 platformArea 的 4 字段精确匹配
   // 注意：旧订单（4 级字段为空）会落不到任何 platformArea — 业务上需要商家主动迁移
+  // [任务 X] 支付守门: 商家只看到已支付订单 — 未支付订单应在客户侧完成支付
+  //          商家看到「待派单」= status=pending + payStatus=paid,业务上可派
+  //          过滤 cancelled / refunded 一并完成(避免商家看脏数据)
   const orders = await prisma.order.findMany({
     where: {
-      OR: platformAreas.map((pa) => ({
-        province: pa.province,
-        city: pa.city,
-        district: pa.district,
-        street: pa.street,
-      })),
+      AND: [
+        {
+          OR: platformAreas.map((pa) => ({
+            province: pa.province,
+            city: pa.city,
+            district: pa.district,
+            street: pa.street,
+          })),
+        },
+        {
+          payStatus: { in: ["paid"] },
+          status: { in: ["pending", "assigned", "in_service", "completed"] },
+        },
+      ],
     },
     orderBy: { createdAt: "desc" },
     select: {

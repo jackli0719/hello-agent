@@ -84,6 +84,9 @@ export function resetCounters(): void {
 export const METRIC = {
   ORDER_CREATE_SUCCESS: "order.create.success",
   ORDER_CREATE_FAILED: "order.create.failed",
+  // [支付] 模拟支付成功/失败 — 任务 X 演示闭环
+  ORDER_PAY_SUCCESS: "order.pay.success",
+  ORDER_PAY_FAILED: "order.pay.failed",
   ORDER_ASSIGN_SUCCESS: "order.assign.success",
   ORDER_ASSIGN_FAILED: "order.assign.failed",
   ORDER_TRANSITION_SUCCESS: (status: string) =>

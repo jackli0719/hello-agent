@@ -177,6 +177,8 @@ describe("assignOrder — 端到端", () => {
         scheduledAt: new Date(),
         amount: 10000,
         status: "pending",
+        // [任务 X] 必须设 paid 才能跳过守门,继续测「师傅不符合推荐规则」
+        payStatus: "paid",
       },
     });
     try {

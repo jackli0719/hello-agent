@@ -21,11 +21,18 @@
 
 ## 已知限制（故意没做）
 
-### 1. 当前没有真实支付
+### 1. ~~当前没有真实支付~~ [部分解决 2026-07-03]
 
-- **现状**：订单金额只展示 + 录入，**不结算**
-- **影响**：客户下单后没有支付环节，师傅上门后也没有收款步骤
-- **真实场景差异**：美团 / 58 等 O2O 平台都有在线支付 + 退款
+- **现状（[任务 X] 支付下单闭环）**：
+  - ✅ **Order.payStatus 字段已加**（unpaid / paid / refunded），migration `20260703061943_add_pay_status`
+  - ✅ **模拟支付** — 客户在 `/customer/orders/[id]` 点「立即支付」（演示用按钮，不接真实微信/支付宝）
+  - ✅ **派单守门** — `assignOrder` 校验 `payStatus === "paid"`，未支付订单会拒绝派单（验收点）
+  - ✅ **业务规则**：`status=pending + payStatus=unpaid` = 待支付；`status=pending + payStatus=paid` = 待派单
+  - ❌ **真实支付** — 不接微信/支付宝/银联，演示期
+  - ❌ **退款** — schema 预留 `refunded` 字段，本次不做退款 UI
+  - ❌ **支付时间窗**（30 分钟未付自动关闭）— 不在 MVP 范围
+- **影响**：演示闭环完整，但**任何人都能点「立即支付」**，没有真钱流动
+- **真实场景差异**：美团 / 58 等都有真实支付 + 退款 + 资金分账
 - **下一阶段**：见 [ROADMAP.md P2-1](ROADMAP.md#p2--体验优化中期)
 
 ### 2. 当前没有短信验证码
@@ -153,7 +160,15 @@
   - 规则：merchant 角色 → 用 session.merchantId；admin 角色 → 动态取 `prisma.merchant.findFirst({ where: { status: "active" }, orderBy: { id: "asc" }})`；worker/customer → 抛错
   - 5 子页 + 总览页 guard 改用 helper，admin 进 `/merchant-admin` 不再红字
   - `React.cache()` 包裹：同 request 内 5 子页调用只跑 1 次 DB query
-- **风险**：admin 排障默认看 M001；上线后应撤掉 admin 放行（layout admin 也跳 `/dashboard`），不在 MVP 范围
+- **数据层零信任调用方（merchantId 来源唯一 = session）**：
+  - 所有 page.tsx 中 `merchantId = await getEffectiveMerchantId(user)`，**不接 URL.searchParams / form data**
+  - `grep -rn 'searchParams.*merchantId' app/merchant-admin/` 返回 0 命中（仅读 `error` / `created` 等 UI 反馈字段）
+  - 回归测试：`src/lib/merchant-admin.test.ts` 的 "merchant1 调用 getEffectiveMerchantId 永远返 M001" it()
+  - 即 merchant1 访问 `/merchant-admin?merchantId=M002`，实际查 session merchantId (M001) → 不会拿到 M002 数据
+- **admin fallback 副作用**：
+  - admin 角色进 `/merchant-admin` 默认看 id 最小的 active 商家（M001，因 seed 顺序）
+  - 这是演示期排障便利决策；**不是** admin 真有商家数据访问权
+  - 上线后建议：layout 对 admin 也跳 `/dashboard`（或 403），把 fallback 逻辑删掉
 - **决策回报**：见 plan 文件 `merchant-admin` 任务第 3 决策
 
 ---
