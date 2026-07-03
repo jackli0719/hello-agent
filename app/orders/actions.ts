@@ -6,9 +6,11 @@ import {
   assignOrder,
   createOrder,
   transitionOrder,
+  refundOrder,
   type AssignOrderResult,
   type CreateOrderResult,
   type TransitionOrderResult,
+  type RefundOrderResult,
 } from "@/src/lib/orders";
 import { releaseMaster, ReleaseOrderError } from "@/src/lib/repos/orders";
 import { createActivityLog } from "@/src/lib/activity-log";
@@ -40,6 +42,9 @@ export type CancelDispatchActionResult =
 export type TransitionActionResult =
   | Exclude<TransitionOrderResult, { ok: true }>
   | { ok: true; orderId: string; nextStatus: string };
+
+// [任务 19] 退款 action 返回值（与 src/lib/orders.ts 的 RefundOrderResult 一致）
+export type RefundActionResult = RefundOrderResult;
 
 /**
  * 新建订单 server action。
@@ -614,5 +619,129 @@ export async function customerCancelOrderAction(
     undefined,
     cancelReason,
   );
+  return result;
+}
+
+// ============================================================
+// [任务 19] 售后退款 — 仅 completed + payStatus=paid 可走
+// ============================================================
+
+/**
+ * [任务 19] 客户申请售后退款 — completed 订单发现问题后客户主动申请退款。
+ *
+ * 规则：
+ * - 订单必须属于当前 customer（user.phone === order.customerPhone）
+ * - 订单 status 必须 completed + payStatus=paid
+ * - 调 src/lib/orders.ts:refundOrder（事务 + 乐观锁）
+ */
+export async function customerRefundOrderAction(
+  formData: FormData,
+): Promise<RefundOrderResult> {
+  // 鉴权：customer 专属
+  const auth = await requireRole(["customer"]);
+  if (!auth.ok) {
+    return { ok: false, category: "validation", error: auth.error };
+  }
+  // CSRF 校验
+  const csrfToken = String(formData.get(CSRF_FORM_FIELD) ?? "");
+  if (!(await verifyCsrfToken(csrfToken))) {
+    return {
+      ok: false,
+      category: "validation",
+      error: "会话已过期，请刷新页面后重试",
+    };
+  }
+
+  const orderId = String(formData.get("orderId") ?? "").trim();
+  if (!orderId) {
+    return { ok: false, category: "validation", error: "缺少 orderId" };
+  }
+
+  // 越权防护：customer 只能退自己手机号下的订单
+  const { prisma } = await import("@/src/lib/db");
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: { status: true, payStatus: true, customerPhone: true },
+  });
+  if (!order) {
+    return {
+      ok: false,
+      category: "validation",
+      error: `订单 ${orderId} 不存在`,
+    };
+  }
+  if (!auth.user.phone || order.customerPhone !== auth.user.phone) {
+    return {
+      ok: false,
+      category: "validation",
+      error: "该订单不属于您",
+    };
+  }
+  if (order.status !== "completed" || order.payStatus !== "paid") {
+    return {
+      ok: false,
+      category: "validation",
+      error: `订单当前状态（status=${order.status}, payStatus=${order.payStatus}）不符合售后退款条件`,
+    };
+  }
+
+  const result = await refundOrder(orderId);
+  if (result.ok) {
+    try {
+      revalidatePath(`/customer/orders/${orderId}`);
+      revalidatePath("/customer/orders");
+      revalidatePath("/orders"); // 后台订单列表
+    } catch {
+      // 单测无 Next runtime
+    }
+  }
+  return result;
+}
+
+/**
+ * [任务 19] admin 代售后退款 — admin 是平台运维，演示期可代任何订单发起售后退款。
+ *
+ * 业务场景：客户来电要求退款 / 投诉处理 / 风控介入
+ * 规则：同 refundOrder — 仅 completed + payStatus=paid 可退
+ */
+export async function adminRefundOrderAction(
+  orderId: string,
+): Promise<RefundOrderResult> {
+  // 鉴权：admin 专属
+  const auth = await requireAdmin();
+  if (!auth.ok) {
+    return { ok: false, category: "validation", error: auth.error };
+  }
+  // CSRF：非 FormData action 用 Origin 头校验
+  const csrf = await verifyCsrfOrigin();
+  if (!csrf.ok) {
+    return { ok: false, category: "validation", error: csrf.error };
+  }
+
+  if (!orderId) {
+    return { ok: false, category: "validation", error: "缺少 orderId" };
+  }
+
+  const result = await refundOrder(orderId);
+  if (result.ok) {
+    // 写活动日志（admin 视角 — actorRole=admin，actorName=当前 admin）
+    const { getCurrentUser } = await import("@/src/lib/auth");
+    const admin = await getCurrentUser();
+    await createActivityLog({
+      action: "order_refunded",
+      targetType: "order",
+      targetId: orderId,
+      message: `管理员 ${admin?.name ?? ""} 为订单 ${orderId} 发起售后退款`,
+      metadata: { operator: admin?.name ?? "admin" },
+      actorId: admin?.id,
+      actorName: admin?.name ?? "admin",
+      actorRole: "admin",
+    });
+    try {
+      revalidatePath("/orders");
+    } catch {
+      // 单测无 Next runtime
+    }
+  }
   return result;
 }

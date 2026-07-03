@@ -93,4 +93,7 @@ export const METRIC = {
     `order.transition.success.${status}`,
   ORDER_TRANSITION_FAILED: (status: string) =>
     `order.transition.failed.${status}`,
+  // [任务 19] 售后退款（completed 订单专属）
+  ORDER_REFUND_SUCCESS: "order.refund.success",
+  ORDER_REFUND_FAILED: "order.refund.failed",
 } as const;

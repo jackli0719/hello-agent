@@ -19,8 +19,9 @@ import { redirect } from "next/navigation";
 import { getOrderForCustomer } from "@/src/lib/customer";
 import { getCurrentUser } from "@/src/lib/auth";
 import { ensureCsrfCookie } from "@/src/lib/csrf";
-import { customerCancelOrderAction } from "@/app/orders/actions";
+import { customerCancelOrderAction, customerRefundOrderAction } from "@/app/orders/actions";
 import { CancelForm } from "@/components/CancelForm";
+import { RefundForm } from "@/components/RefundForm";
 import { PayForm } from "./PayForm";
 import { StatusBadge, ORDER_TONE } from "@/components/ui";
 import { ORDER_STATUS_LABEL } from "@/lib/mock-data";
@@ -31,11 +32,20 @@ interface PageProps {
 }
 
 // 状态文案 — 按业务规则
-// [任务 X] payStatus 区分: status=pending + payStatus=unpaid → 待支付
+// [任务 X + 任务 19] payStatus 区分: status=pending + payStatus=unpaid → 待支付
 //         status=pending + payStatus=paid   → 待派单
+//         status=cancelled + payStatus=refunded → 已取消已退款
+//         status=completed + payStatus=refunded → 已完成已退款
 function statusHint(status: OrderStatus, payStatus: PayStatus): string {
   if (status === "pending" && payStatus === "unpaid") {
     return "订单待支付 — 完成支付后将进入待派单";
+  }
+  // [任务 19] 已退款终态
+  if (status === "cancelled" && payStatus === "refunded") {
+    return "订单已取消 — 款项已退回";
+  }
+  if (status === "completed" && payStatus === "refunded") {
+    return "服务已完成 — 售后已退款";
   }
   switch (status) {
     case "pending":
@@ -45,7 +55,7 @@ function statusHint(status: OrderStatus, payStatus: PayStatus): string {
     case "in_service":
       return "师傅正在服务中";
     case "completed":
-      return "服务已完成";
+      return "服务已完成 — 如有问题可申请售后退款";
     case "cancelled":
       return "订单已取消";
   }
@@ -184,7 +194,8 @@ export default async function CustomerOrderDetailPage({ params }: PageProps) {
         <Field label="下单时间" value={formatDateTime(order.createdAt)} />
 
         {/* [v0.7.9] 用户取消按钮 — 仅 pending 状态（业务规则 #10）
-            [任务 X] 支付按钮 — 仅 payStatus=unpaid 时显示 */}
+            [任务 X] 支付按钮 — 仅 payStatus=unpaid 时显示
+            [任务 19] 售后退款 — 仅 completed + payStatus=paid 时显示 */}
         {order.status === "pending" && (
           <div style={{ marginTop: 16 }}>
             <SectionTitle title="操作" />
@@ -200,6 +211,18 @@ export default async function CustomerOrderDetailPage({ params }: PageProps) {
               formAction={customerCancelOrderAction}
               csrfToken={csrfToken}
               buttonLabel="确认取消订单"
+            />
+          </div>
+        )}
+        {order.status === "completed" && order.payStatus === "paid" && (
+          <div style={{ marginTop: 16 }}>
+            <SectionTitle title="售后" />
+            <RefundForm
+              orderId={order.id}
+              formAction={customerRefundOrderAction}
+              csrfToken={csrfToken}
+              amountYuan={order.amountYuan}
+              buttonLabel="申请售后退款"
             />
           </div>
         )}

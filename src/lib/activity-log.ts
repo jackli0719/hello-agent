@@ -10,7 +10,8 @@
 import { prisma } from "./db";
 import { getSession } from "./auth";
 
-export type ActivityRole = "admin" | "worker" | "customer" | "system";
+// [任务 19] merchant 角色加入 — 商家端取消订单时埋点
+export type ActivityRole = "admin" | "worker" | "customer" | "merchant" | "system";
 
 export type ActivityTargetType =
   | "order"

@@ -863,15 +863,18 @@ export async function transitionOrder(
       ? trimServiceSummary(serviceSummary).cleaned
       : "";
 
-  // 3. 事务：乐观锁改订单 + 视情况释放师傅 + 写 serviceSummary/cancelReason（原子性）
+  // 3. 事务：乐观锁改订单 + 视情况释放师傅 + 写 serviceSummary/cancelReason + 联动退款（原子性）
   try {
     await prisma.$transaction(async (tx) => {
       // [v0.7.8] serviceSummary 与 status 同事务写
+      // [任务 19] cancel 时如果订单已支付（payStatus=paid），联动改 payStatus=refunding→refunded
+      //           模拟退款（演示期不接通道）写在一行 updateMany 里 — 中间态过渡给真实通道留口子
       const data: {
         status: "in_service" | "completed" | "cancelled";
         serviceSummary?: string;
         cancelReason?: string;
         canceledAt?: Date;
+        payStatus?: "refunding" | "refunded";
       } = {
         status: nextStatus,
       };
@@ -883,6 +886,12 @@ export async function transitionOrder(
       if (nextStatus === "cancelled" && cancelReason && cancelReason.trim()) {
         data.cancelReason = cancelReason.trim();
         data.canceledAt = new Date();
+      }
+      // [任务 19] 取消 + 已支付 → 模拟退款（事务内一步到终态 refunded）
+      // 设计：演示期不接通道，refunding 是预留状态（真实通道要"先发起退款→等回调→成功再改 refunded"）
+      //       MVP 简化：cancel 联动后立即 refunded；refunding 状态在 DB 不会出现，但类型和过滤器已支持
+      if (nextStatus === "cancelled" && order.payStatus === "paid") {
+        data.payStatus = "refunded";
       }
       const result = await tx.order.updateMany({
         where: { id: orderId, status: order.status }, // CAS：只在状态没变时改
@@ -963,3 +972,126 @@ const ALLOWED_TRANSITIONS: Record<
   in_service: ["completed", "cancelled"],
   // completed / cancelled 不在表里 = 终态，无法再变
 };
+
+// ============================================================
+// [任务 19] 售后退款 — 完成/已取消订单走独立售后流程
+// ============================================================
+//
+// 业务规则（任务原文「已完成订单不可直接退款，走售后」）：
+// - 仅 completed + payStatus=paid 可走售后退款（cancelled 已在 cancel 时联动退款，无需重复）
+// - 事务内：payStatus=paid → refunding → refunded（演示期一步到终态；refunding 留给真实通道）
+// - 不动 status（status=completed 保持；售后是财务操作，不改业务状态）
+// - 不释放师傅（completed 流程里师傅已被 transitionOrder 释放；这里不动）
+// - 不写 cancelReason（不是 cancel）
+//
+// 不做：
+// - 不接真实支付通道（演示期 mock 立即成功）
+// - 不支持部分退款（amount=order.amount 全额）
+// - 不写 FinanceLedger（task 14 是按 settlement 走；售后退款是 order 级，与商家结算体系解耦）
+
+export class RefundOrderError extends Error {
+  constructor(
+    message: string,
+    readonly reason: string,
+  ) {
+    super(message);
+    this.name = "RefundOrderError";
+  }
+}
+
+export type RefundOrderResult =
+  | { ok: true; orderId: string }
+  | { ok: false; category: "validation" | "system"; error: string };
+
+/**
+ * 售后退款（completed 订单专属）。
+ *
+ * 规则：
+ * 1. 订单必须存在
+ * 2. 订单 status 必须 === "completed"（cancelled 走 cancel 联动，pending/assigned/in_service 不允许）
+ * 3. 订单 payStatus 必须 === "paid"（unpaid 不需要退；refunding/refunded 幂等拒绝）
+ * 4. 事务：改 payStatus=refunded + 写 ActivityLog
+ *    乐观锁 where: { id, payStatus: "paid" } 防并发
+ */
+export async function refundOrder(orderId: string): Promise<RefundOrderResult> {
+  // 1. 加载订单
+  const order = await prisma.order.findUnique({ where: { id: orderId } });
+  if (!order) {
+    return {
+      ok: false,
+      category: "validation",
+      error: `订单 ${orderId} 不存在`,
+    };
+  }
+
+  // 2. status 必须 completed
+  if (order.status !== "completed") {
+    return {
+      ok: false,
+      category: "validation",
+      error: `订单当前状态为「${order.status}」，仅已完成（completed）订单可走售后退款`,
+    };
+  }
+
+  // 3. payStatus 必须 paid
+  if (order.payStatus !== "paid") {
+    return {
+      ok: false,
+      category: "validation",
+      error:
+        order.payStatus === "unpaid"
+          ? "订单未支付，无需退款"
+          : order.payStatus === "refunding"
+            ? "退款处理中，请勿重复申请"
+            : "订单已退款，请勿重复申请",
+    };
+  }
+
+  // 4. 事务：乐观锁改 payStatus=refunded + ActivityLog
+  try {
+    await prisma.$transaction(async (tx) => {
+      const result = await tx.order.updateMany({
+        where: { id: orderId, payStatus: "paid" }, // 乐观锁：仅 payStatus=paid 时改
+        data: { payStatus: "refunded" },
+      });
+      if (result.count === 0) {
+        // 并发场景：别的退款流程已改了
+        throw new RefundOrderError(
+          "退款失败",
+          "订单支付状态已变更，请刷新后重试",
+        );
+      }
+      logInfo("order refunded", {
+        orderId,
+        customerPhone: order.customerPhone,
+        amount: order.amount,
+      });
+      incrementCounter(METRIC.ORDER_REFUND_SUCCESS, { orderId });
+      await createActivityLog({
+        action: "order_refunded",
+        targetType: "order",
+        targetId: orderId,
+        message: `订单 ${orderId} 已退款（售后）`,
+        metadata: {
+          amount: order.amount,
+          previousStatus: order.status,
+        },
+        actorRole: "system", // 售后是平台动作，不归属于具体用户
+        actorName: "售后系统",
+      });
+    });
+  } catch (e) {
+    if (e instanceof RefundOrderError) {
+      return { ok: false, category: "validation", error: e.reason };
+    }
+    logError("refund order failed", e, { orderId });
+    incrementCounter(METRIC.ORDER_REFUND_FAILED, { reason: "system" });
+    return {
+      ok: false,
+      category: "system",
+      error: e instanceof Error ? e.message : "退款失败",
+    };
+  }
+
+  return { ok: true, orderId };
+}

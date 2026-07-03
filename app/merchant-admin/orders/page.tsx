@@ -4,7 +4,10 @@
 // 1. 本商家师傅接了的订单（master.merchantId = user.merchantId）
 // 2. 本商家 enabled 服务区域内的可见订单（reuse getOrdersVisibleToMerchant）
 // 合并去重 — byMaster 优先（同订单两套都落只算"已派单"）
+//
+// [任务 19] byMaster 订单行可点进详情页（/merchant-admin/orders/[id]）执行「取消订单」
 
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/src/lib/auth";
 import { getEffectiveMerchantId, listMerchantOrders } from "@/src/lib/merchant-admin";
@@ -47,12 +50,13 @@ export default async function MerchantOrdersPage() {
               <th style={th}>金额</th>
               <th style={th}>状态</th>
               <th style={th}>预约时间</th>
+              <th style={th}>操作</th>
             </tr>
           </thead>
           <tbody>
             {orders.length === 0 ? (
               <tr>
-                <td colSpan={8} style={{ ...td, color: "#6b7280", textAlign: "center", padding: 32 }}>
+                <td colSpan={9} style={{ ...td, color: "#6b7280", textAlign: "center", padding: 32 }}>
                   暂无订单
                 </td>
               </tr>
@@ -86,6 +90,25 @@ export default async function MerchantOrdersPage() {
                     />
                   </td>
                   <td style={td}>{o.scheduledAt.slice(0, 16)}</td>
+                  <td style={td}>
+                    {o.source === "byMaster" ? (
+                      <Link
+                        href={`/merchant-admin/orders/${o.id}`}
+                        style={{
+                          fontSize: 12,
+                          color: "#2563eb",
+                          textDecoration: "none",
+                          padding: "2px 8px",
+                          border: "1px solid #bfdbfe",
+                          borderRadius: 4,
+                        }}
+                      >
+                        详情
+                      </Link>
+                    ) : (
+                      <span style={{ fontSize: 12, color: "#9ca3af" }}>—</span>
+                    )}
+                  </td>
                 </tr>
               ))
             )}
@@ -93,7 +116,7 @@ export default async function MerchantOrdersPage() {
         </table>
       </div>
       <p style={{ color: "#9ca3af", fontSize: 12, marginTop: 12 }}>
-        说明：订单详情、状态变更由 admin 后台 / 操作员处理。
+        说明：仅「已派单（byMaster）」订单可点详情；「可派单区域（byArea）」订单未派单，无详情入口。
       </p>
     </div>
   );

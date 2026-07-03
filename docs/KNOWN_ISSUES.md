@@ -183,3 +183,46 @@
 - **P1** — 下一 sprint
 - **P2** — 中期 backlog
 - **P3** — 长期规划
+
+### 18. 订单取消/退款流程（任务 19）
+
+- **原状**（任务前）：
+  - `cancelOrderAction` 只改 `status=cancelled`，**不动 `payStatus`** — 已支付订单取消后 payStatus 仍是 paid，财务上等于"客户付了钱但没拿到服务 + 没退款"（P0 隐患）
+  - `payStatus` schema 注释「refunded 预留字段本次不做 UI」 — 退款 UI 完全没有
+  - 商家端无 cancel 入口（任务要求"用户/商家/后台可取消"含商家）
+  - 已完成订单发现问题后无售后退款入口
+- **解决**（任务 19）：
+  - **`payStatus` 扩到 4 态**：`unpaid | paid | refunding | refunded`（schema.prisma + src/types/index.ts + app/orders/page.tsx 过滤器同步）
+  - **cancel 联动退款**：`transitionOrder` 事务内检测 `cancelled + payStatus=paid` → 事务一步 `payStatus=refunded`（与 status 同步原子写）
+  - **独立售后入口** `refundOrder(orderId)`：仅 `completed + payStatus=paid` 可走，事务乐观锁
+  - **3 端 server actions**：
+    - `customerCancelOrderAction`（既有，加联动退款）
+    - `customerRefundOrderAction`（新）— 客户申请售后退款，越权防护 `user.phone === order.customerPhone`
+    - `adminRefundOrderAction`（新）— admin 代任何订单发起售后退款
+    - `merchantCancelOrderAction`（新）— 商家取消本商家师傅接的订单，越权防护 `master.merchantId === user.merchantId`
+  - **3 端 UI**：
+    - customer 详情页：completed + paid 时显示「申请售后退款」按钮 + 已退款状态文案
+    - admin 订单列表：completed + paid 行的 OrderActions 组件显示「售后退款」按钮
+    - merchant 端新建 `app/merchant-admin/orders/[id]/page.tsx` 详情页 + `merchantCancelOrderAction`；列表行可点详情
+- **退款中间态 `refunding` 状态机**：
+  - 演示期不接真实通道，事务内一步到 `refunded`；`refunding` 字段保留给真实通道（"先发起退款→等回调→成功再改 refunded"）
+  - assignOrder 守门 `payStatus !== "paid"` 已自动拒绝 refunding 订单（无新代码）
+- **已退款订单的二次防御**：
+  - `payOrder` 守门：refunded 订单不能再付
+  - `refundOrder` 乐观锁：第二次 refundOrder 被 updateMany 条件拒绝
+- **测试覆盖**（`src/lib/orders.refund.test.ts`，13 个 it）：
+  - cancel 联动退款 3 个状态分支（paid+pending / unpaid+pending / paid+in_service）
+  - refundOrder 5 个守门 + 1 个不存在的订单 + 1 个乐观锁
+  - assignOrder 拒绝 refunding 订单回归
+  - payOrder 拒绝 refunded 订单回归
+  - 每个 describe 用 `beforeEach/afterEach` 自建测试订单 + 清理（不污染 seed）
+- **决策回报**：
+  - 选了「cancel 自动联动退款」而非「cancel/refund 独立」：业务上客户体验更顺（一句话"取消=退款"）
+  - 选了「加 refunding 中间态」：给真实通道留口子，演示期一跳到 refunded
+  - 选了「做 merchant 端 cancel」：任务原文"用户/商家/后台可取消"包含商家
+  - 选了「全套 (后端 + UI + 测试)」：不留 TODO
+- **遗留 / 不做**：
+  - 真实支付通道集成（`payStatus=refunding` 状态机已留接口）
+  - 商家端 cancel 自动通过 admin 审核（演示期直接生效，真实业务可加 24h 审核窗口）
+  - 部分退款 / 自动退款到原支付渠道
+  - `FinanceLedger` 退款冲正（任务 14 财务流水按 settlement 走；售后退款是 order 级，独立维度）

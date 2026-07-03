@@ -6,17 +6,21 @@ import {
   cancelOrderAction,
   completeOrderAction,
   startServiceAction,
+  adminRefundOrderAction,
   type AssignOrderActionResult,
   type TransitionActionResult,
+  type RefundActionResult,
 } from "@/app/orders/actions";
 import { ORDER_STATUS_LABEL } from "@/lib/mock-data";
-import type { OrderStatus, Technician } from "@/src/types";
+import type { OrderStatus, PayStatus, Technician } from "@/src/types";
 
 interface Props {
   orderId: string;
   status: OrderStatus;
   ruleName: string | null;
   candidates: Technician[]; // pending 状态用
+  // [任务 19] 售后退款入口用 — 仅 completed + payStatus=paid 时展示
+  payStatus?: PayStatus;
 }
 
 /**
@@ -32,7 +36,7 @@ interface Props {
  * - validation 错误：内联展示（红字）
  * - system 错误：banner + 「重试」按钮（点重试直接重新调同一个 action）
  */
-export function OrderActions({ orderId, status, ruleName, candidates }: Props) {
+export function OrderActions({ orderId, status, ruleName, candidates, payStatus }: Props) {
   // 派单的乐观状态：点击立即显示「✓ 已派给 xxx」
   const [dispatchedTo, setDispatchedTo] = useState<string | null>(null);
 
@@ -41,6 +45,8 @@ export function OrderActions({ orderId, status, ruleName, candidates }: Props) {
     useState<TransitionActionResult | null>(null);
   const [dispatchResult, setDispatchResult] =
     useState<AssignOrderActionResult | null>(null);
+  // [任务 19] 退款结果 — 独立 state，与状态流转的 transitionResult 分开
+  const [refundResult, setRefundResult] = useState<RefundActionResult | null>(null);
 
   const [isPending, startTransition] = useTransition();
   const confirmedRef = useRef(false);
@@ -198,6 +204,49 @@ export function OrderActions({ orderId, status, ruleName, candidates }: Props) {
         }
         onCancel={() => runTransition(() => cancelOrderAction(orderId))}
       />
+    );
+  }
+
+  // [任务 19] completed + payStatus=paid → 售后退款按钮
+  if (status === "completed" && payStatus === "paid") {
+    return (
+      <div style={{ fontSize: 12 }}>
+        {refundResult?.ok ? (
+          <div style={{ color: "#15803d", fontWeight: 600 }}>
+            ✓ 已发起售后退款
+          </div>
+        ) : (
+          <button
+            type="button"
+            disabled={isPending}
+            onClick={() => {
+              if (isPending) return;
+              setRefundResult(null);
+              startTransition(async () => {
+                const r = await adminRefundOrderAction(orderId);
+                setRefundResult(r);
+              });
+            }}
+            style={{
+              background: isPending ? "#f3f4f6" : "#fff",
+              color: "#7c2d12",
+              border: "1px solid #fdba74",
+              padding: "4px 12px",
+              borderRadius: 4,
+              fontSize: 12,
+              fontWeight: 500,
+              cursor: isPending ? "not-allowed" : "pointer",
+            }}
+          >
+            {isPending ? "退款中…" : "售后退款"}
+          </button>
+        )}
+        {refundResult && !refundResult.ok ? (
+          <div style={{ color: "#b91c1c", marginTop: 4 }}>
+            {refundResult.error}
+          </div>
+        ) : null}
+      </div>
     );
   }
 

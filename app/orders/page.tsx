@@ -98,12 +98,12 @@ export default async function OrdersPage({ searchParams }: PageProps) {
     FILTERS.some((f) => f.value === status) ? status : "all"
   ) as "all" | OrderStatus;
   const statusFilter = validStatus;
-  // [任务 X] payStatus 校验
+  // [任务 X + 任务 19] payStatus 校验
   const validPayStatus = (
-    ["all", "unpaid", "paid", "refunded"].includes(payStatus)
+    ["all", "unpaid", "paid", "refunding", "refunded"].includes(payStatus)
       ? payStatus
       : "all"
-  ) as "all" | "unpaid" | "paid" | "refunded";
+  ) as "all" | "unpaid" | "paid" | "refunding" | "refunded";
   const payStatusFilter = validPayStatus;
 
   // 时间字段校验
@@ -180,14 +180,14 @@ export default async function OrdersPage({ searchParams }: PageProps) {
     } as Record<"all" | OrderStatus, number>,
   );
 
-  // [任务 X] 支付状态计数 — 独立 chip 行
+  // [任务 X + 任务 19] 支付状态计数 — 独立 chip 行
   const payCounts = allOrders.reduce(
     (acc, o) => {
       acc.all++;
       acc[o.payStatus]++;
       return acc;
     },
-    { all: 0, unpaid: 0, paid: 0, refunded: 0 },
+    { all: 0, unpaid: 0, paid: 0, refunding: 0, refunded: 0 },
   );
 
   // 当前是否筛选中（决定「重置」按钮显示）
@@ -443,6 +443,7 @@ export default async function OrdersPage({ searchParams }: PageProps) {
               { v: "all", label: "全部" },
               { v: "unpaid", label: "未支付" },
               { v: "paid", label: "已支付" },
+              { v: "refunding", label: "退款中" },
               { v: "refunded", label: "已退款" },
             ] as const
           ).map((p) => {
@@ -812,6 +813,7 @@ function ActionCell({
 
   // pending 状态：派单按钮列表（候选可能为空，OrderActions 自己处理）
   // assigned / in_service / completed：OrderActions 按 status 分发
+  // [任务 19] completed + paid 时 OrderActions 展示「售后退款」按钮
   if (order.status !== "pending") {
     return (
       <div>
@@ -820,6 +822,7 @@ function ActionCell({
           status={order.status}
           ruleName={null}
           candidates={[]}
+          payStatus={order.payStatus}
         />
         {canCancel && (
           <div style={{ marginTop: 6 }}>
@@ -873,6 +876,7 @@ function ActionCell({
             status={order.status}
             ruleName={null}
             candidates={[]}
+            payStatus={order.payStatus}
           />
         </div>
       </div>
@@ -905,6 +909,7 @@ function ActionCell({
         status={order.status}
         ruleName={rule.name}
         candidates={recommendation.candidates}
+        payStatus={order.payStatus}
       />
       {candidateBlock}
     </div>

@@ -218,6 +218,62 @@ export async function listMerchantMasters(merchantId: string): Promise<MerchantM
 // Settlements：本商家商家月结算汇总（复用 lib/merchant-settlement.ts）
 // ============================================================
 
+/**
+ * [任务 19] 单订单查（商家端详情页用）— 越权防护
+ *
+ * 规则：
+ * - 订单 masterId 必须属于 merchantId（master.merchantId === merchantId）
+ * - 订单存在但不属于本商家 → 返 null（不告诉调用方"订单存在"，与 customer 端一致）
+ * - 订单未派单（masterId=null）→ 也返 null（商家端只能看"已派单可入账"的）
+ *
+ * 越权防护（CLAUDE.md P0-1）：
+ * - merchantId 来源唯一 = getCurrentUser().merchantId（不接 URL 参数）
+ * - 即使 URL 拼 ?orderId=别人家的 → 返 null，不暴露
+ */
+export async function getMerchantOrderDetail(
+  orderId: string,
+  merchantId: string,
+): Promise<MerchantOrderItem | null> {
+  if (!orderId || !merchantId) return null;
+  const o = await prisma.order.findFirst({
+    where: {
+      id: orderId,
+      // 关键：master 必须是本商家的师傅
+      master: { merchantId },
+    },
+    select: {
+      id: true,
+      customerName: true,
+      customerPhone: true,
+      serviceName: true,
+      masterId: true,
+      masterName: true,
+      status: true,
+      amount: true,
+      scheduledAt: true,
+      createdAt: true,
+    },
+  });
+  if (!o) return null;
+  return {
+    id: o.id,
+    customerName: o.customerName,
+    customerPhone: o.customerPhone,
+    serviceName: o.serviceName,
+    masterId: o.masterId,
+    masterName: o.masterName,
+    status: o.status,
+    amountYuan: o.amount / 100,
+    scheduledAt: o.scheduledAt.toISOString(),
+    createdAt: o.createdAt.toISOString(),
+    source: "byMaster" as const, // 已派单所以是 byMaster
+  };
+}
+
+// ============================================================
+// Settlements：本商家商家月结算汇总（复用 lib/merchant-settlement.ts）
+// ============================================================
+
 export async function listMerchantSettlements(merchantId: string) {
   if (!merchantId) return [];
   return listMerchantSettlementsByMerchant(merchantId);
