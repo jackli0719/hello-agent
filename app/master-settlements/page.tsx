@@ -112,14 +112,6 @@ export default async function WorkerSettlementsPage({
               cursor: "pointer",
               letterSpacing: "0.01em",
             }}
-            onMouseEnter={(e) =>
-              ((e.currentTarget as HTMLButtonElement).style.background =
-                "#1d4ed8")
-            }
-            onMouseLeave={(e) =>
-              ((e.currentTarget as HTMLButtonElement).style.background =
-                "#2563eb")
-            }
           >
             生成汇总
           </button>
@@ -209,7 +201,7 @@ export default async function WorkerSettlementsPage({
 
         {(filterPeriod || filterWorkerId) && (
           <Link
-            href="/worker-settlements"
+            href="/master-settlements"
             style={{
               fontSize: 13,
               color: "#2563eb",

@@ -102,7 +102,7 @@ export const SIDEBAR_GROUPS: SidebarGroup[] = [
       {
         key: "worker-settlements",
         label: "师傅结算汇总",
-        href: "/worker-settlements",
+        href: "/master-settlements",
         icon: "👨‍🔧",
       },
       {

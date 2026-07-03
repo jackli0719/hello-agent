@@ -13,7 +13,7 @@ import { redirect } from "next/navigation";
 import { requireAdmin, requireCsrf } from "@/src/lib/auth-helpers";
 import { generateAllWorkerSettlements } from "@/src/lib/worker-settlement";
 
-const BACK = "/worker-settlements";
+const BACK = "/master-settlements";
 
 export async function generateWorkerSettlementsAction(formData: FormData) {
   const auth = await requireAdmin();

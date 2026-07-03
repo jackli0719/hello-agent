@@ -99,9 +99,9 @@ describe("Sidebar — detectActiveGroup", () => {
   it("/finance-ledgers → 财务", () => {
     expect(detectActiveGroup("/finance-ledgers")).toBe("finance");
   });
-  // # spec: /worker-settlements 归属「财务」组
-  it("/worker-settlements → 财务", () => {
-    expect(detectActiveGroup("/worker-settlements")).toBe("finance");
+  // # spec: /master-settlements 归属「财务」组
+  it("/master-settlements → 财务", () => {
+    expect(detectActiveGroup("/master-settlements")).toBe("finance");
   });
 
   // 系统
@@ -130,9 +130,9 @@ describe("Sidebar — isItemActive", () => {
   it("完全匹配", () => {
     expect(isItemActive("/orders", "/orders")).toBe(true);
   });
-  // # spec: worker-settlements 完全匹配
-  it("worker-settlements 完全匹配", () => {
-    expect(isItemActive("/worker-settlements", "/worker-settlements")).toBe(
+  // # spec: master-settlements 完全匹配
+  it("master-settlements 完全匹配", () => {
+    expect(isItemActive("/master-settlements", "/master-settlements")).toBe(
       true,
     );
   });
@@ -211,10 +211,10 @@ describe("Sidebar — SIDEBAR_GROUPS 完整性", () => {
     const f = SIDEBAR_GROUPS.find((g) => g.key === "finance");
     expect(f?.items.length).toBe(6);
   });
-  // # spec: 财务组含 worker-settlements
-  it("财务组含 worker-settlements", () => {
+  // # spec: 财务组含 master-settlements
+  it("财务组含 master-settlements", () => {
     const f = SIDEBAR_GROUPS.find((g) => g.key === "finance");
-    const has = f?.items.some((it) => it.href === "/worker-settlements");
+    const has = f?.items.some((it) => it.href === "/master-settlements");
     expect(has).toBe(true);
   });
   // # spec: 系统组 2 项固定（业务指标 / 操作日志）
