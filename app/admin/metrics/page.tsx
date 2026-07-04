@@ -1,108 +1,42 @@
-// /admin/metrics — 业务指标快照（演示版）。
+// /admin/metrics — [任务 22] 数据看板 + 业务计数器调试表
 //
 // 设计：
-// - 后台管理页，受 middleware 保护（需登录）
-// - 显示内存计数器（订单创建/派单/状态流转的成功失败数）
-// - 显示 uptime + 当前时间
-// - 不实时刷新（演示版手动 reload 即可）
-// - 进程重启会清零（dev HMR 也是预期行为）
+// - 顶部：6 张业务指标卡（GMV / 订单量 / 完单率 / 退款率 / 商家收入 / 平台抽成）
+// - 中部：2 chip 切换窗口（全部 / 本月）
+// - 底部：原内存计数器调试表（Prometheus 替代品职责，保留）
+// - server component + 动态渲染（每次重新聚合）
+// - admin only（middleware 已保护）
 
+import Link from "next/link";
 import { getMetricsSnapshot } from "@/src/lib/metrics";
+import { getDashboardMetrics, type DashboardWindow } from "@/src/lib/dashboard";
 
 export const dynamic = "force-dynamic"; // 不缓存，每次拿实时数据
 
-export default function AdminMetricsPage() {
+function formatYuan(yuan: number): string {
+  return `¥${yuan.toFixed(2)}`;
+}
+
+function formatPercent(rate: number): string {
+  return `${(rate * 100).toFixed(1)}%`;
+}
+
+interface PageProps {
+  searchParams: Promise<{ window?: string }>;
+}
+
+export default async function AdminMetricsPage({ searchParams }: PageProps) {
+  // 1. 取 window chip 参数（默认 all）
+  const params = await searchParams;
+  const window: DashboardWindow =
+    params.window === "thisMonth" ? "thisMonth" : "all";
+
+  // 2. 聚合 6 指标
+  const metrics = await getDashboardMetrics(window);
+
+  // 3. 计数器调试表
   const snapshot = getMetricsSnapshot();
   const counters = snapshot.counters;
-
-  // 分组：按业务事件分组
-  const groups: {
-    title: string;
-    items: { name: string; value: number; tone?: "success" | "failed" }[];
-  }[] = [
-    {
-      title: "订单创建",
-      items: [
-        {
-          name: "成功",
-          value: counters["order.create.success"] ?? 0,
-          tone: "success",
-        },
-        {
-          name: "失败",
-          value: counters["order.create.failed"] ?? 0,
-          tone: "failed",
-        },
-      ],
-    },
-    {
-      title: "派单",
-      items: [
-        {
-          name: "成功",
-          value: counters["order.assign.success"] ?? 0,
-          tone: "success",
-        },
-        {
-          name: "失败",
-          value: counters["order.assign.failed"] ?? 0,
-          tone: "failed",
-        },
-      ],
-    },
-    {
-      title: "状态流转 — 开始服务",
-      items: [
-        {
-          name: "成功",
-          value: counters["order.transition.success.in_service"] ?? 0,
-          tone: "success",
-        },
-        {
-          name: "失败",
-          value: counters["order.transition.failed.in_service"] ?? 0,
-          tone: "failed",
-        },
-      ],
-    },
-    {
-      title: "状态流转 — 完成订单",
-      items: [
-        {
-          name: "成功",
-          value: counters["order.transition.success.completed"] ?? 0,
-          tone: "success",
-        },
-        {
-          name: "失败",
-          value: counters["order.transition.failed.completed"] ?? 0,
-          tone: "failed",
-        },
-      ],
-    },
-    {
-      title: "状态流转 — 取消订单",
-      items: [
-        {
-          name: "成功",
-          value: counters["order.transition.success.cancelled"] ?? 0,
-          tone: "success",
-        },
-        {
-          name: "失败",
-          value: counters["order.transition.failed.cancelled"] ?? 0,
-          tone: "failed",
-        },
-      ],
-    },
-  ];
-
-  // 成功率 = success / (success + failed)（分母为 0 → -）
-  const rate = (success: number, failed: number): string => {
-    const total = success + failed;
-    if (total === 0) return "—";
-    return `${((success / total) * 100).toFixed(1)}%`;
-  };
 
   return (
     <main
@@ -113,16 +47,33 @@ export default function AdminMetricsPage() {
         color: "#111827",
       }}
     >
-      <h1 style={{ fontSize: 24, margin: "0 0 4px 0" }}>业务指标</h1>
+      <h1 style={{ fontSize: 24, margin: "0 0 4px 0" }}>数据看板</h1>
       <p style={{ color: "#6b7280", margin: "0 0 8px 0", fontSize: 13 }}>
-        演示版用内存计数器（dev HMR / 进程重启会清零） · 生产前应替换为
-        Prometheus / OpenTelemetry
-      </p>
-      <p style={{ color: "#9ca3af", margin: "0 0 24px 0", fontSize: 12 }}>
-        快照时间 {snapshot.ts} · 进程 uptime {snapshot.uptimeSec}s
+        全局 6 指标 · 直查 Prisma · 演示期数据量小（20 订单）一次聚合亚毫秒
       </p>
 
-      {/* 指标卡片 */}
+      {/* 窗口切换 chip */}
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          marginBottom: 20,
+          alignItems: "center",
+        }}
+      >
+        <span style={{ color: "#6b7280", fontSize: 13 }}>时间窗口：</span>
+        <ChipLink href="/admin/metrics?window=all" active={window === "all"}>
+          全部
+        </ChipLink>
+        <ChipLink
+          href="/admin/metrics?window=thisMonth"
+          active={window === "thisMonth"}
+        >
+          本月
+        </ChipLink>
+      </div>
+
+      {/* 6 张指标卡 */}
       <div
         style={{
           display: "grid",
@@ -131,62 +82,71 @@ export default function AdminMetricsPage() {
           marginBottom: 32,
         }}
       >
-        {groups.map((g) => {
-          const success = g.items.find((i) => i.tone === "success")?.value ?? 0;
-          const failed = g.items.find((i) => i.tone === "failed")?.value ?? 0;
-          return (
-            <section
-              key={g.title}
-              style={{
-                background: "#fff",
-                border: "1px solid #e5e7eb",
-                borderRadius: 8,
-                padding: 16,
-                boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
-              }}
-            >
-              <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 8 }}>
-                {g.title}
-              </div>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "baseline",
-                  gap: 8,
-                  marginBottom: 4,
-                }}
-              >
-                <span
-                  style={{ fontSize: 24, fontWeight: 600, color: "#15803d" }}
-                >
-                  {success}
-                </span>
-                <span style={{ fontSize: 13, color: "#9ca3af" }}>成功</span>
-              </div>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "baseline",
-                  gap: 8,
-                  marginBottom: 4,
-                }}
-              >
-                <span
-                  style={{ fontSize: 14, fontWeight: 500, color: "#b91c1c" }}
-                >
-                  {failed}
-                </span>
-                <span style={{ fontSize: 13, color: "#9ca3af" }}>失败</span>
-              </div>
-              <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
-                成功率 {rate(success, failed)}
-              </div>
-            </section>
-          );
-        })}
+        <MetricCard
+          label="GMV"
+          value={formatYuan(metrics.gmvYuan)}
+          hint="已支付且已完成订单金额"
+        />
+        <MetricCard
+          label="订单量"
+          value={`${metrics.orderCount}`}
+          hint="所有订单总数"
+        />
+        <MetricCard
+          label="完单率"
+          value={formatPercent(metrics.completionRate)}
+          hint="已完成 / (已完成 + 已取消)"
+        />
+        <MetricCard
+          label="退款率"
+          value={formatPercent(metrics.refundRate)}
+          hint="已退款 / (已支付 + 已退款)"
+        />
+        <MetricCard
+          label="商家收入"
+          value={formatYuan(metrics.merchantIncomeYuan)}
+          hint="已完成订单的商家分成"
+        />
+        <MetricCard
+          label="平台抽成"
+          value={formatYuan(metrics.platformFeeYuan)}
+          hint="已完成订单的平台分成"
+        />
       </div>
 
-      {/* 完整 counters 列表（调试用） */}
+      {/* 口径说明 */}
+      <section
+        style={{
+          background: "#fffbeb",
+          border: "1px solid #fde68a",
+          borderRadius: 8,
+          padding: 12,
+          marginBottom: 32,
+          fontSize: 12,
+          color: "#78350f",
+        }}
+      >
+        <strong>口径说明</strong>
+        <ul style={{ margin: "4px 0 0 0", paddingLeft: 20, lineHeight: 1.6 }}>
+          <li>
+            GMV = status=completed 且 payStatus=paid 的 Order.amount 之和（按
+            paidAt 时间窗）
+          </li>
+          <li>
+            完单率分母 = 已完成 + 已取消（终态订单）；退款率分母 = 已支付 +
+            已退款（订单进入支付才可能被退款）
+          </li>
+          <li>
+            商家收入 + 平台抽成 = SettlementPreview
+            三方分成快照（每张完成订单生成 1 条）
+          </li>
+          <li>
+            演示期 seed 全在 2026-06，本月窗口（演示期 = 2026-07）通常 = 0 订单
+          </li>
+        </ul>
+      </section>
+
+      {/* 完整 counters 列表（调试用 — Prometheus 占位） */}
       <section
         style={{
           background: "#fff",
@@ -196,9 +156,14 @@ export default function AdminMetricsPage() {
           boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
         }}
       >
-        <h2 style={{ fontSize: 16, fontWeight: 600, margin: "0 0 12px 0" }}>
-          完整计数器（{Object.keys(counters).length} 项）
+        <h2 style={{ fontSize: 16, fontWeight: 600, margin: "0 0 4px 0" }}>
+          业务事件计数器（{Object.keys(counters).length} 项）
         </h2>
+        <p style={{ color: "#9ca3af", fontSize: 12, margin: "0 0 12px 0" }}>
+          演示版用内存计数器（dev HMR / 进程重启会清零） · 生产前应替换为
+          Prometheus / OpenTelemetry · 快照时间 {snapshot.ts} · 进程 uptime{" "}
+          {snapshot.uptimeSec}s
+        </p>
         {Object.keys(counters).length === 0 ? (
           <div style={{ color: "#9ca3af", fontSize: 13 }}>
             还没有事件 — 跑一次完整 DEMO（用户下单 → 后台派单 → 师傅履约 →
@@ -230,6 +195,67 @@ export default function AdminMetricsPage() {
         )}
       </section>
     </main>
+  );
+}
+
+// ============================================================
+// 子组件
+// ============================================================
+
+function MetricCard({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+}) {
+  return (
+    <section
+      style={{
+        background: "#fff",
+        border: "1px solid #e5e7eb",
+        borderRadius: 8,
+        padding: 16,
+        boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+      }}
+    >
+      <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 8 }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 26, fontWeight: 600, color: "#111827" }}>
+        {value}
+      </div>
+      <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 6 }}>{hint}</div>
+    </section>
+  );
+}
+
+function ChipLink({
+  href,
+  active,
+  children,
+}: {
+  href: string;
+  active: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <Link
+      href={href}
+      style={{
+        padding: "4px 12px",
+        borderRadius: 999,
+        fontSize: 13,
+        textDecoration: "none",
+        background: active ? "#111827" : "#fff",
+        color: active ? "#fff" : "#374151",
+        border: active ? "1px solid #111827" : "1px solid #d1d5db",
+      }}
+    >
+      {children}
+    </Link>
   );
 }
 
