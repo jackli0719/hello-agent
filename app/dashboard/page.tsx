@@ -63,6 +63,13 @@ export default async function DashboardPage() {
         href: "/admin/after-sales?status=pending",
         hint: `共 ${afterSalesCounts.all} 笔`,
       },
+      // [任务 22] 数据看板 — 6 指标（GMV / 订单量 / 完单率 / 退款率 / 商家收入 / 平台抽成）
+      {
+        label: "数据看板",
+        value: 6,
+        href: "/admin/metrics?window=all",
+        hint: "GMV/订单量/完单率等",
+      },
     ];
 
   return (
