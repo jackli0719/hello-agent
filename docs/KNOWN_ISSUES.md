@@ -388,3 +388,39 @@
 **baseline 失败**（与本任务无关）：
 
 - `tests/integration/merchant-admin.auth.test.ts:291` "商家提现二次申请被拒" 失败 — 任务 13 时代 + 任务 18 跑出来的 pre-existing issue；不在任务 21 验收范围
+
+## #22 数据看板（任务 22）— 基础版 6 指标 + 口径边界
+
+**原状**：`/admin/metrics` 只有内存计数器（Prometheus 占位），无金额/时间维度，无法给运营看「本月 GMV/订单量/完单率」等核心指标。
+
+**解决**（任务 22）：
+
+- `src/lib/dashboard.ts` 新增 `getDashboardMetrics(window)` — 7 个 Prisma aggregate/count 并行
+- 6 指标：GMV / 订单量 / 完单率 / 退款率 / 商家收入 / 平台抽成
+- 2 时间窗口：全部 / 本月（URL `?window=` 切换，server component 自动重 fetch）
+- `/admin/metrics` 升级为数据看板（admin only，保留底部业务事件计数器调试表）
+- `/dashboard` 顶部加「数据看板」入口卡，链接 `/admin/metrics?window=all`
+
+**口径**：
+
+- GMV = `status=completed AND payStatus=paid` 的 `Order.amount` 之和（按 `paidAt` 时间窗）
+- 完单率 = `completed / (completed + cancelled)`
+- 退款率 = `refunded / (paid + refunded)`（订单进入支付才可能被退款）
+- 商家收入 + 平台抽成 = `SettlementPreview.merchantAmount / platformAmount` 之和（每张完成订单生成 1 条分成快照）
+
+**遗留 / 不做**（路线图 P2/P3）：
+
+- **趋势图（按天/按月折线）**：演示期静态卡已覆盖验收；groupBy by day + 折线 = P2-5 后续
+- **按商家切分**：admin 全局视角；商家已有 `app/merchant-admin/page.tsx` 5 卡（单商家视角）
+- **缓存 / 物化视图**：演示期 20 订单一次 DB < 5ms，缓存失效问题大于收益
+- **退款率分母争议**：选了 `paid + refunded`（最保守口径）。若改"按全集"或"按 paid"需讨论业务语义
+- **`SettlementPreview` 缺退款联动**：当前只 completed 时生成；已完成订单走 `refundOrder` 后仍计入平台抽成。演示期 0 笔 completed 退款，无影响；真实业务需要反记账
+- **本月窗口演示期退化**：seed 全在 2026-06；演示期 now = 2026-07，本月窗口通常 = 0 订单（全部窗口才有数据）。**生产前需扩 seed 时间范围或加历史订单**
+
+**测试**（`src/lib/dashboard.test.ts`，**5 it 全过**）：
+
+- 全集窗口 GMV 只算 completed 且 paid
+- 本月窗口 createdAt 落在当月起点之后
+- 退款率分母 = paid + refunded（公式验证）
+- 完单率分母为 0 不除零
+- 退款率分母为 0 不除零
