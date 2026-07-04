@@ -91,6 +91,24 @@ async function loadTestUsers(): Promise<void> {
 describe("商家后台 — 越权隔离 (P0-1)", () => {
   beforeAll(async () => {
     await loadTestUsers();
+    // [P3-2 修 baseline] seed 没有给 M002 灌 settlement（因为 M002 师傅接的订单
+    //   都是 assigned/in_service，没 completed）→ getMerchantAvailable(M002).available = 0
+    //   "同一 merchant 已有 pending → 二次申请被拒" 测试期望第 1 笔成功，但 amount:200 > 0 失败
+    // 修法：给 M002 灌一笔 confirmed settlement 提供余额（不污染其他测试）
+    await prisma.merchantSettlement.upsert({
+      where: { merchantId_period: { merchantId: M002, period: "_test_int_" } },
+      update: {},
+      create: {
+        merchantId: M002,
+        period: "_test_int_",
+        totalOrderCount: 1,
+        totalAmount: 50000, // ¥500
+        platformFee: 5000,
+        merchantIncome: 30000, // ¥300 — 足够 2 笔 200/300 测试
+        workerIncome: 15000,
+        status: "confirmed",
+      },
+    });
   });
 
   beforeEach(() => {
@@ -105,6 +123,10 @@ describe("商家后台 — 越权隔离 (P0-1)", () => {
       });
       testWithdrawIds = [];
     }
+    // 清理 P3-2 灌的测试用 settlement
+    await prisma.merchantSettlement.deleteMany({
+      where: { period: "_test_int_" },
+    });
     clearSessionCookie();
   });
 
