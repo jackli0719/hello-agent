@@ -424,3 +424,48 @@
 - 退款率分母 = paid + refunded（公式验证）
 - 完单率分母为 0 不除零
 - 退款率分母为 0 不除零
+
+# 数据看板（任务 22）决策回报
+
+> 5 个 commit 内的非显然决策主动暴露（CLAUDE.md P2-3）
+
+## 关键决策
+
+1. **路径选择**：升级现有 `/admin/metrics` 而非新建 `/admin/analytics`
+   - 理由：原 `/admin/metrics` 只有内存计数器，业务定位已被取代（演示期无 Prometheus）；用户决策「升级」最直接
+   - 风险：原调试表用户（开发看 success/failed 计数）失去入口 — 已保留底部计数器
+
+2. **时间窗口 = 全部 + 本月 双 chip**
+   - 理由：演示数据全在 2026-06；本月（演示期 = 2026-07）退化 = 0；本年退化为全集；选 2 chip 演示期最清晰
+   - 风险：本月窗口用户看不到数据会觉得"功能挂了" → 已在 UI 加「口径说明」黄色警告框 + KNOWN_ISSUES #22
+
+3. **退款率分母 = paid + refunded（不用全集）**
+   - 理由：订单要进入支付环节才可能被退款；用全集分母会把未支付订单错误计入 → 数字虚低
+   - 风险：演示期只有 1 笔 cancelled + paid 订单 ≠ refunded → 退款率 = 0% — 用户决策「保持 seed 不变」已知
+
+4. **架构 = Prisma groupBy/aggregate（不用 $queryRaw / 不用缓存）**
+   - 理由：20 订单一次聚合亚毫秒；零状态；SQL 透明
+   - 风险：10万+ 订单时需要 raw SQL + 日期截断 — 列出为 P2-5 后续
+
+5. **不动 `src/lib/metrics.ts`（内存计数器职责不变）**
+   - 理由：业务事件计数（success/failed）和业务聚合（GMV/订单量）是两件事；前者是 Prometheus 占位，后者是 BI
+   - 风险：开发者失去原 `/admin/metrics` 调试功能 — 已保留底部
+
+## 我决定不做什么
+
+- 不画趋势图（按天/按月折线）— P2-5 后续
+- 不切商家 — admin 全局；商家已有 `/merchant-admin`
+- 不缓存 — 演示期 < 5ms
+- 不写新后台页 — 升级现有
+- 不引入日期选择器 — 演示期 2 chip 足够
+- 不删底部业务事件计数器 — 保留 Prometheus 替代品职责
+- 不暴露 API（不做 `/api/dashboard`）
+- 不改 seed-demo.ts — 用户决策「保持不变」
+- 不写 Playwright — 端到端 6 步靠手测 + vitest 覆盖
+- 不写集成测试 — 单元测试 5 it 已覆盖 6 指标公式 + 边界
+
+## 暴露的边界
+
+- 演示期 `Order.createdAt` 默认 `now()`（seed 重置时刷新），所以「本月窗口按 createdAt」= 全集
+- GMV 按 paidAt 过滤 → 本月 = 0（seed paidAt 全在 2026-06）
+- `SettlementPreview` 缺退款联动：已完成订单走 refundOrder 后仍计入平台抽成 → 演示期 0 笔 completed 退款
