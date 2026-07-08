@@ -31,14 +31,19 @@ const MERCHANT_A = `${PREFIX}merchantA`;
 const MERCHANT_B = `${PREFIX}merchantB`;
 const ORDER_ID = `${PREFIX}order_001`;
 
+function fixtureDigits(id: string, length: number): string {
+  const sum = [...id].reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+  return String(sum).padStart(length, "0").slice(-length);
+}
+
 async function makeMerchant(id: string, name: string): Promise<void> {
   await prisma.merchant.create({
     data: {
       id,
       name,
       contactName: "测试",
-      phone: `139${Date.now().toString().slice(-9)}`,
-      inviteCode: `T${Date.now().toString().slice(-7)}`,
+      phone: `139${fixtureDigits(id, 8)}`,
+      inviteCode: `T23${fixtureDigits(id, 7)}`,
       province: "广东",
       city: "深圳",
       district: "南山",
