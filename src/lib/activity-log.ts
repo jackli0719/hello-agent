@@ -11,7 +11,8 @@ import { prisma } from "./db";
 import { getSession } from "./auth";
 
 // [任务 19] merchant 角色加入 — 商家端取消订单时埋点
-export type ActivityRole = "admin" | "worker" | "customer" | "merchant" | "system";
+export type ActivityRole =
+  "admin" | "worker" | "customer" | "merchant" | "system";
 
 export type ActivityTargetType =
   | "order"
@@ -122,6 +123,7 @@ export const ACTIVITY_ACTIONS = [
   "order_completed",
   "order_canceled",
   "order_dispatch_canceled",
+  "order_refunded",
   "order_internal_remark_updated",
   "order_service_summary_added",
   "master_created",
@@ -130,6 +132,7 @@ export const ACTIVITY_ACTIONS = [
   "service_sku_updated",
   "dispatch_rule_created",
   "dispatch_rule_updated",
+  "auto_dispatch_failed",
 ] as const;
 export type ActivityAction = (typeof ACTIVITY_ACTIONS)[number];
 

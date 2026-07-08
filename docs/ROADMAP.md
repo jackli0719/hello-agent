@@ -75,6 +75,24 @@
 
 ---
 
+## 风险预警系统（v0.x 后续单独区块）
+
+> **任务 23 (T23) 部分交付** — 风控预警 MVP：仅 2 类（派单失败 + 异常提现），实时查询（不存 RiskAlert 表），阈值写死默认，admin 端只读 `/admin/risk-alerts`。
+>
+> **覆盖范围**：
+>
+> - **派单失败**：最近 24h 内所有 `ActivityLog.action = auto_dispatch_failed`（6 种 failureCode + 原因 + 时间）
+> - **异常提现**：
+>   - 大额：单笔 ≥ ¥5000（含 approved，复盘；rejected 不计）
+>   - 频繁：同商家 7 天内 ≥ 3 笔 pending（**演示期不可达** — partial unique `(merchantId) WHERE status='pending'` 限制，规则保留供生产启用）
+>   - 超提：单笔 > 该商家已确认余额 × 80%
+>
+> **规则**：只预警不拦截。详情页无任何写操作按钮；阈值改 `src/lib/risk-alerts.ts` 顶部常量。
+>
+> **下阶段 TODO**：频繁取消 / 异常退款 2 类（需新增聚合规则）+ 阈值配置文件 + 离线批检测。详见 `src/lib/risk-alerts.ts` + `src/lib/risk-alerts.test.ts`。
+
+---
+
 ## 已完成（历史 sprint）
 
 > 列出已交付的功能，避免重复提议。

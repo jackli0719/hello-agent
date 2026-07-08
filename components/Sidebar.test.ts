@@ -177,9 +177,9 @@ describe("Sidebar — isItemActive", () => {
 describe("Sidebar — SIDEBAR_GROUPS 完整性", () => {
   const allHrefs = SIDEBAR_GROUPS.flatMap((g) => g.items.map((it) => it.href));
 
-  // # spec: 共 15 个 sidebar 入口（dashboard 不在 group 内）
-  it("覆盖所有 sidebar 入口（共 15 个；dashboard 在顶部独立入口）", () => {
-    expect(allHrefs.length).toBe(15);
+  // # spec: 共 16 个 sidebar 入口（dashboard 不在 group 内；任务 23 +风险预警）
+  it("覆盖所有 sidebar 入口（共 16 个；dashboard 在顶部独立入口）", () => {
+    expect(allHrefs.length).toBe(16);
   });
   // # spec: group key 唯一性（防配置错误导致 React key 冲突）
   it("每个 group key 唯一", () => {
@@ -217,10 +217,11 @@ describe("Sidebar — SIDEBAR_GROUPS 完整性", () => {
     const has = f?.items.some((it) => it.href === "/master-settlements");
     expect(has).toBe(true);
   });
-  // # spec: 系统组 2 项固定（业务指标 / 操作日志）
-  it("系统组包含 2 项", () => {
+  // # spec: 系统组含 业务指标 / 风险预警 / 操作日志 3 项
+  it("系统组包含 3 项（含风险预警）", () => {
     const s = SIDEBAR_GROUPS.find((g) => g.key === "system");
-    expect(s?.items.length).toBe(2);
+    expect(s?.items.length).toBe(3);
+    expect(s?.items.some((it) => it.href === "/admin/risk-alerts")).toBe(true);
   });
 });
 

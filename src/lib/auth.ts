@@ -54,6 +54,7 @@ export const PROTECTED_PATHS = [
   "/activity-logs",
   "/admin",
   "/admin/after-sales", // [任务 21] 售后工单后台
+  "/admin/risk-alerts", // [任务 23] 风控预警后台
   "/worker",
   "/merchant-admin", // [任务 18] 商家端后台
   "/customer/orders",
@@ -96,6 +97,7 @@ export const ROLE_ALLOWED: Record<Role, string[]> = {
     "/activity-logs",
     "/admin",
     "/admin/after-sales", // [任务 21] 售后工单（admin 专属）
+    "/admin/risk-alerts", // [任务 23] 风控预警（admin 专属）
     "/merchant-admin", // [任务 18] admin 也能看商家后台（演示/排障）
   ],
   worker: ["/worker", "/master-withdraw-requests", "/notifications"], // [任务 19]

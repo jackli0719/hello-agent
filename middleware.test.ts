@@ -103,4 +103,13 @@ describe("middleware", () => {
     expect(location).toContain("next=");
     expect(location).toContain("admin");
   });
+
+  // # spec: [任务 23] /admin/risk-alerts 受保护，未登录跳登录页
+  it("未登录访问 /admin/risk-alerts → /login?next=%2Fadmin%2Frisk-alerts", () => {
+    const res = middleware(request("/admin/risk-alerts"));
+    expect(res.status).toBe(307);
+    const location = res.headers.get("location") ?? "";
+    expect(location).toContain("/login");
+    expect(location).toContain("next=%2Fadmin%2Frisk-alerts");
+  });
 });

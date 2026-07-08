@@ -132,6 +132,12 @@ export const SIDEBAR_GROUPS: SidebarGroup[] = [
     items: [
       { key: "metrics", label: "业务指标", href: "/admin/metrics", icon: "📈" },
       {
+        key: "risk-alerts",
+        label: "风险预警",
+        href: "/admin/risk-alerts",
+        icon: "🚨",
+      },
+      {
         key: "activity-logs",
         label: "操作日志",
         href: "/activity-logs",
