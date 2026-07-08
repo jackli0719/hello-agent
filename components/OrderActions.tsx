@@ -36,7 +36,13 @@ interface Props {
  * - validation 错误：内联展示（红字）
  * - system 错误：banner + 「重试」按钮（点重试直接重新调同一个 action）
  */
-export function OrderActions({ orderId, status, ruleName, candidates, payStatus }: Props) {
+export function OrderActions({
+  orderId,
+  status,
+  ruleName,
+  candidates,
+  payStatus,
+}: Props) {
   // 派单的乐观状态：点击立即显示「✓ 已派给 xxx」
   const [dispatchedTo, setDispatchedTo] = useState<string | null>(null);
 
@@ -46,7 +52,9 @@ export function OrderActions({ orderId, status, ruleName, candidates, payStatus 
   const [dispatchResult, setDispatchResult] =
     useState<AssignOrderActionResult | null>(null);
   // [任务 19] 退款结果 — 独立 state，与状态流转的 transitionResult 分开
-  const [refundResult, setRefundResult] = useState<RefundActionResult | null>(null);
+  const [refundResult, setRefundResult] = useState<RefundActionResult | null>(
+    null,
+  );
 
   const [isPending, startTransition] = useTransition();
   const confirmedRef = useRef(false);

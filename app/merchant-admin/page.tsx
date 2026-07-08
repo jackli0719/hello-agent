@@ -4,7 +4,10 @@
 
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/src/lib/auth";
-import { getEffectiveMerchantId, getMerchantDashboard } from "@/src/lib/merchant-admin";
+import {
+  getEffectiveMerchantId,
+  getMerchantDashboard,
+} from "@/src/lib/merchant-admin";
 import { card } from "@/components/ui";
 
 function formatYuan(yuan: number) {
@@ -20,9 +23,7 @@ export default async function MerchantAdminDashboard() {
   } catch (e) {
     const msg = e instanceof Error ? e.message : "未授权";
     return (
-      <div style={{ ...card, color: "#b91c1c" }}>
-        {msg}。请联系平台管理员。
-      </div>
+      <div style={{ ...card, color: "#b91c1c" }}>{msg}。请联系平台管理员。</div>
     );
   }
   const summary = await getMerchantDashboard(merchantId);

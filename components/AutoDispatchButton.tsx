@@ -16,9 +16,7 @@ import { adminAutoDispatchAction } from "@/app/orders/actions";
  */
 export function AutoDispatchButton({ orderId }: { orderId: string }) {
   const [result, setResult] = useState<
-    | { ok: true; masterName: string }
-    | { ok: false; error: string }
-    | null
+    { ok: true; masterName: string } | { ok: false; error: string } | null
   >(null);
   const [isPending, startTransition] = useTransition();
 

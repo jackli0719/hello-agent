@@ -1,9 +1,6 @@
 import type { Technician } from "./types";
 import { z } from "zod";
-import {
-  defaultAreaMatcher,
-  type AreaMatcher,
-} from "@/src/lib/area-matcher";
+import { defaultAreaMatcher, type AreaMatcher } from "@/src/lib/area-matcher";
 
 // 派单匹配 — 纯函数，方便单测和复用。
 // 不在这里做 I/O、不在这里改状态，只回答一个问题：

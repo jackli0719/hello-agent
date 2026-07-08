@@ -156,7 +156,10 @@ async function runCreateTx(
             where: { workerId, status: "pending" },
           });
           if (existingPending > 0) {
-            return { ok: false as const, error: "已有未审核的申请，请先处理后再发起" };
+            return {
+              ok: false as const,
+              error: "已有未审核的申请，请先处理后再发起",
+            };
           }
 
           // 4. 重算 available（事务内）

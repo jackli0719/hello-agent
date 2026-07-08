@@ -266,11 +266,9 @@ describe("assignOrder — failureCode 错误文案精确", () => {
         id: testOrderId,
         customerName: "Test",
         customerPhone: "13900000000",
-        serviceSkuId: (
-          await prisma.serviceSku.findUnique({
-            where: { skuCode: "CLEAN-DAILY-2H" },
-          })
-        )!.id,
+        serviceSkuId: (await prisma.serviceSku.findUnique({
+          where: { skuCode: "CLEAN-DAILY-2H" },
+        }))!.id,
         serviceName: "日常保洁-2小时",
         province: "广东省",
         city: "深圳市",
@@ -305,11 +303,9 @@ describe("assignOrder — failureCode 错误文案精确", () => {
         id: testOrderId,
         customerName: "Test",
         customerPhone: "13900000000",
-        serviceSkuId: (
-          await prisma.serviceSku.findUnique({
-            where: { skuCode: "CLEAN-DAILY-2H" },
-          })
-        )!.id,
+        serviceSkuId: (await prisma.serviceSku.findUnique({
+          where: { skuCode: "CLEAN-DAILY-2H" },
+        }))!.id,
         serviceName: "日常保洁-2小时",
         // 用一个不存在的区域（北京市朝阳区 — demo seed 没灌这条 PlatformArea）
         province: "北京市",
@@ -345,11 +341,9 @@ describe("assignOrder — failureCode 错误文案精确", () => {
         id: testOrderId,
         customerName: "Test",
         customerPhone: "13900000000",
-        serviceSkuId: (
-          await prisma.serviceSku.findUnique({
-            where: { skuCode: "APPLIANCE-AC-WALL" },
-          })
-        )!.id,
+        serviceSkuId: (await prisma.serviceSku.findUnique({
+          where: { skuCode: "APPLIANCE-AC-WALL" },
+        }))!.id,
         serviceName: "空调维修",
         // PA001 区域 — 区域 OK，但 T001 没"空调维修"技能
         province: "广东省",
@@ -376,4 +370,3 @@ describe("assignOrder — failureCode 错误文案精确", () => {
     }
   });
 });
-

@@ -10,7 +10,10 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/src/lib/auth";
-import { getEffectiveMerchantId, listMerchantOrders } from "@/src/lib/merchant-admin";
+import {
+  getEffectiveMerchantId,
+  listMerchantOrders,
+} from "@/src/lib/merchant-admin";
 import { card, th, td, StatusBadge, ORDER_TONE } from "@/components/ui";
 import { ORDER_STATUS_LABEL } from "@/lib/mock-data";
 
@@ -35,13 +38,26 @@ export default async function MerchantOrdersPage() {
     <div>
       <h1 style={{ fontSize: 22, margin: "0 0 8px 0" }}>订单</h1>
       <p style={{ color: "#6b7280", fontSize: 14, margin: "0 0 20px 0" }}>
-        共 {orders.length} 单 — 已派单 {counts.byMaster} / 可派单区域 {counts.byArea}（重叠 {counts.overlap}）
+        共 {orders.length} 单 — 已派单 {counts.byMaster} / 可派单区域{" "}
+        {counts.byArea}（重叠 {counts.overlap}）
       </p>
 
-      <div style={{ overflowX: "auto", background: "#fff", borderRadius: 8, border: "1px solid #e5e7eb" }}>
+      <div
+        style={{
+          overflowX: "auto",
+          background: "#fff",
+          borderRadius: 8,
+          border: "1px solid #e5e7eb",
+        }}
+      >
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
-            <tr style={{ background: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
+            <tr
+              style={{
+                background: "#f9fafb",
+                borderBottom: "1px solid #e5e7eb",
+              }}
+            >
               <th style={th}>订单号</th>
               <th style={th}>来源</th>
               <th style={th}>服务</th>
@@ -56,7 +72,15 @@ export default async function MerchantOrdersPage() {
           <tbody>
             {orders.length === 0 ? (
               <tr>
-                <td colSpan={9} style={{ ...td, color: "#6b7280", textAlign: "center", padding: 32 }}>
+                <td
+                  colSpan={9}
+                  style={{
+                    ...td,
+                    color: "#6b7280",
+                    textAlign: "center",
+                    padding: 32,
+                  }}
+                >
                   暂无订单
                 </td>
               </tr>
@@ -72,7 +96,8 @@ export default async function MerchantOrdersPage() {
                         fontSize: 12,
                         padding: "2px 8px",
                         borderRadius: 4,
-                        background: o.source === "byMaster" ? "#dcfce7" : "#dbeafe",
+                        background:
+                          o.source === "byMaster" ? "#dcfce7" : "#dbeafe",
                         color: o.source === "byMaster" ? "#15803d" : "#1d4ed8",
                       }}
                     >
@@ -85,7 +110,11 @@ export default async function MerchantOrdersPage() {
                   <td style={td}>¥{o.amountYuan.toFixed(2)}</td>
                   <td style={td}>
                     <StatusBadge
-                      label={ORDER_STATUS_LABEL[o.status as keyof typeof ORDER_STATUS_LABEL] ?? o.status}
+                      label={
+                        ORDER_STATUS_LABEL[
+                          o.status as keyof typeof ORDER_STATUS_LABEL
+                        ] ?? o.status
+                      }
                       tone={ORDER_TONE[o.status] ?? "neutral"}
                     />
                   </td>

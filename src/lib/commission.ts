@@ -59,9 +59,7 @@ function cleanText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function validateStrategyInput(
-  input: Partial<CreateCommissionStrategyInput>,
-):
+function validateStrategyInput(input: Partial<CreateCommissionStrategyInput>):
   | {
       ok: true;
       cleaned: Required<

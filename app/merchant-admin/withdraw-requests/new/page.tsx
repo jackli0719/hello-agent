@@ -9,9 +9,7 @@
 import { redirect } from "next/navigation";
 import { ensureCsrfCookie } from "@/src/lib/csrf";
 import { getCurrentUser } from "@/src/lib/auth";
-import {
-  getEffectiveMerchantId,
-} from "@/src/lib/merchant-admin";
+import { getEffectiveMerchantId } from "@/src/lib/merchant-admin";
 import { getMerchantAvailable } from "@/src/lib/withdraw-request";
 import { card } from "@/components/ui";
 import { createMerchantWithdrawRequestAction } from "./actions";

@@ -1190,7 +1190,11 @@ export async function refundOrder(orderId: string): Promise<RefundOrderResult> {
   // 师傅不收退款通知（演示期商家关心、师傅无需知道；用户决策）
   // masterId 此时可能为 null（演示期师傅完成订单后已被 transitionOrder 释放，但 order.masterId 是快照）
   await dispatchOrderNotifications(
-    { id: orderId, customerPhone: order.customerPhone, masterId: order.masterId },
+    {
+      id: orderId,
+      customerPhone: order.customerPhone,
+      masterId: order.masterId,
+    },
     "order_refunded",
     {
       masterName: order.masterName,

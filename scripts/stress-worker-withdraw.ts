@@ -53,7 +53,9 @@ async function main() {
   // 算可提现金额
   const before = await getWorkerAvailable(worker.id);
   console.log(`开始前可提现: ¥${(before.available / 100).toFixed(2)}`);
-  console.log(`开始压测: ${TOTAL} 并发 createWorkerWithdrawRequest ¥${AMOUNT_CENTS / 100}\n`);
+  console.log(
+    `开始压测: ${TOTAL} 并发 createWorkerWithdrawRequest ¥${AMOUNT_CENTS / 100}\n`,
+  );
 
   const start = Date.now();
 
@@ -83,8 +85,12 @@ async function main() {
         errorBuckets.set(key, (errorBuckets.get(key) ?? 0) + 1);
       }
     } else {
-      const msg = r.reason instanceof Error ? r.reason.message : String(r.reason);
-      errorBuckets.set(`UNEXPECTED_EXCEPTION: ${msg.slice(0, 80)}`, (errorBuckets.get(msg.slice(0, 80)) ?? 0) + 1);
+      const msg =
+        r.reason instanceof Error ? r.reason.message : String(r.reason);
+      errorBuckets.set(
+        `UNEXPECTED_EXCEPTION: ${msg.slice(0, 80)}`,
+        (errorBuckets.get(msg.slice(0, 80)) ?? 0) + 1,
+      );
     }
   }
 

@@ -18,12 +18,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "./db";
-import {
-  assignOrder,
-  transitionOrder,
-  refundOrder,
-  payOrder,
-} from "./orders";
+import { assignOrder, transitionOrder, refundOrder, payOrder } from "./orders";
 
 // 三个测试订单 id（自建，不依赖 seed）
 const TEST_PENDING_PAID = "_test_refund_pending_paid";
@@ -229,7 +224,10 @@ describe("[任务 19] cancel 联动 payStatus 退款", () => {
 
   // # spec: 取消 paid + in_service 订单 → status=cancelled + payStatus=refunded + 释放师傅
   it("paid + in_service → cancel → status=cancelled + payStatus=refunded + 师傅从 busy 释放回 available", async () => {
-    await prisma.master.update({ where: { id: "T002" }, data: { status: "busy" } });
+    await prisma.master.update({
+      where: { id: "T002" },
+      data: { status: "busy" },
+    });
     const r = await transitionOrder(
       TEST_IN_SERVICE,
       "cancelled",

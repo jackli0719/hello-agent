@@ -22,9 +22,10 @@ export default async function RootLayout({
   ]);
   // [任务 19] 通知未读数（仅登录用户查；未登录=0；admin 看 ActivityLog 不发通知 → 也是 0）
   // 演示期：admin 通知按用户决策不在站内发（看 ActivityLog），所以 admin 始终 0
-  const unreadCount = currentUser && currentUser.role !== "admin"
-    ? await countUnreadForUser(currentUser.id)
-    : 0;
+  const unreadCount =
+    currentUser && currentUser.role !== "admin"
+      ? await countUnreadForUser(currentUser.id)
+      : 0;
   return (
     <html lang="zh-CN">
       <body

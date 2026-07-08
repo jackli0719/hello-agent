@@ -42,7 +42,10 @@ const store: SessionStore = {
  * @param userId User.id（不是 name）
  * @param role  "admin" | "worker" | "customer" | "merchant"
  */
-export async function setSessionCookie(userId: string, role: string): Promise<void> {
+export async function setSessionCookie(
+  userId: string,
+  role: string,
+): Promise<void> {
   store.userId = userId;
   store.role = role;
   // sealData 异步 — 提前 await 生成 seal 存进 store

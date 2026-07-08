@@ -14,7 +14,11 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createActivityLog } from "@/src/lib/activity-log";
-import { requireAdmin, requireCsrf, requireWorker } from "@/src/lib/auth-helpers";
+import {
+  requireAdmin,
+  requireCsrf,
+  requireWorker,
+} from "@/src/lib/auth-helpers";
 import {
   approveWorkerWithdrawRequest,
   createWorkerWithdrawRequest,

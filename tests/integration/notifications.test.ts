@@ -152,10 +152,18 @@ describe("notifications — 5 触发点集成", () => {
     expect(r.ok).toBe(true);
 
     const cust = await prisma.notification.findMany({
-      where: { userId: userCustomer.id, type: "order_assigned", orderId: order.id },
+      where: {
+        userId: userCustomer.id,
+        type: "order_assigned",
+        orderId: order.id,
+      },
     });
     const worker = await prisma.notification.findMany({
-      where: { userId: userWorker.id, type: "order_assigned", orderId: order.id },
+      where: {
+        userId: userWorker.id,
+        type: "order_assigned",
+        orderId: order.id,
+      },
     });
     expect(cust.length).toBe(1);
     expect(worker.length).toBe(1);
@@ -195,10 +203,18 @@ describe("notifications — 5 触发点集成", () => {
     expect(r.ok).toBe(true);
 
     const cust = await prisma.notification.findMany({
-      where: { userId: userCustomer.id, type: "order_completed", orderId: order.id },
+      where: {
+        userId: userCustomer.id,
+        type: "order_completed",
+        orderId: order.id,
+      },
     });
     const worker = await prisma.notification.findMany({
-      where: { userId: userWorker.id, type: "order_completed", orderId: order.id },
+      where: {
+        userId: userWorker.id,
+        type: "order_completed",
+        orderId: order.id,
+      },
     });
     expect(cust.length).toBe(1);
     expect(worker.length).toBe(1);
@@ -226,15 +242,28 @@ describe("notifications — 5 触发点集成", () => {
       },
     });
 
-    const r = await transitionOrder(order.id, "cancelled", undefined, "客户改主意了");
+    const r = await transitionOrder(
+      order.id,
+      "cancelled",
+      undefined,
+      "客户改主意了",
+    );
     expect(r.ok).toBe(true);
 
     const cust = await prisma.notification.findMany({
-      where: { userId: userCustomer.id, type: "order_canceled", orderId: order.id },
+      where: {
+        userId: userCustomer.id,
+        type: "order_canceled",
+        orderId: order.id,
+      },
     });
     // cancel 时 masterId=null（未派单），worker 不收
     const w = await prisma.notification.findMany({
-      where: { userId: userWorker.id, type: "order_canceled", orderId: order.id },
+      where: {
+        userId: userWorker.id,
+        type: "order_canceled",
+        orderId: order.id,
+      },
     });
     expect(cust.length).toBe(1);
     expect(w.length).toBe(0); // masterId=null 时 worker 端无文案
@@ -266,7 +295,11 @@ describe("notifications — 5 触发点集成", () => {
     expect(r.ok).toBe(true);
 
     const cust = await prisma.notification.findMany({
-      where: { userId: userCustomer.id, type: "order_refunded", orderId: order.id },
+      where: {
+        userId: userCustomer.id,
+        type: "order_refunded",
+        orderId: order.id,
+      },
     });
     expect(cust.length).toBe(1);
   });

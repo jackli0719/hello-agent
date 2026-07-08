@@ -2,7 +2,10 @@
 
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/src/lib/auth";
-import { getEffectiveMerchantId, listMerchantMasters } from "@/src/lib/merchant-admin";
+import {
+  getEffectiveMerchantId,
+  listMerchantMasters,
+} from "@/src/lib/merchant-admin";
 import { card, th, td } from "@/components/ui";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -35,10 +38,22 @@ export default async function MerchantMastersPage() {
       <p style={{ color: "#6b7280", fontSize: 14, margin: "0 0 20px 0" }}>
         共 {masters.length} 位
       </p>
-      <div style={{ overflowX: "auto", background: "#fff", borderRadius: 8, border: "1px solid #e5e7eb" }}>
+      <div
+        style={{
+          overflowX: "auto",
+          background: "#fff",
+          borderRadius: 8,
+          border: "1px solid #e5e7eb",
+        }}
+      >
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
-            <tr style={{ background: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
+            <tr
+              style={{
+                background: "#f9fafb",
+                borderBottom: "1px solid #e5e7eb",
+              }}
+            >
               <th style={th}>编码</th>
               <th style={th}>姓名</th>
               <th style={th}>电话</th>
@@ -50,13 +65,22 @@ export default async function MerchantMastersPage() {
           <tbody>
             {masters.length === 0 ? (
               <tr>
-                <td colSpan={6} style={{ ...td, color: "#6b7280", textAlign: "center", padding: 32 }}>
+                <td
+                  colSpan={6}
+                  style={{
+                    ...td,
+                    color: "#6b7280",
+                    textAlign: "center",
+                    padding: 32,
+                  }}
+                >
                   暂无师傅
                 </td>
               </tr>
             ) : (
               masters.map((m) => {
-                const statusColor = STATUS_COLOR[m.status] ?? STATUS_COLOR.offline;
+                const statusColor =
+                  STATUS_COLOR[m.status] ?? STATUS_COLOR.offline;
                 return (
                   <tr key={m.id} style={{ borderBottom: "1px solid #f3f4f6" }}>
                     <td style={td}>
@@ -83,7 +107,9 @@ export default async function MerchantMastersPage() {
                       </span>
                     </td>
                     <td style={td}>
-                      <code style={{ fontSize: 11, color: "#6b7280" }}>{m.joinSource}</code>
+                      <code style={{ fontSize: 11, color: "#6b7280" }}>
+                        {m.joinSource}
+                      </code>
                     </td>
                   </tr>
                 );

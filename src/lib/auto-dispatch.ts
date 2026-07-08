@@ -80,11 +80,17 @@ export type AutoDispatchResult =
  * - 成功 → 写 ActivityLog action="auto_dispatch_succeeded" → 区分自动 vs 手动
  * - 抛错/失败不阻塞 payOrder 流程（fire-and-forget 调用方负责 try/catch）
  */
-export async function tryAutoDispatch(orderId: string): Promise<AutoDispatchResult> {
+export async function tryAutoDispatch(
+  orderId: string,
+): Promise<AutoDispatchResult> {
   // 0. 提前 load 订单拿状态（assignOrder 内也会 load；这里多一次读为了写日志时拿 customerName）
   const order = await prisma.order.findUnique({ where: { id: orderId } });
   if (!order) {
-    return { ok: false, failureCode: "order_not_pending", reason: `订单 ${orderId} 不存在` };
+    return {
+      ok: false,
+      failureCode: "order_not_pending",
+      reason: `订单 ${orderId} 不存在`,
+    };
   }
 
   try {
@@ -202,9 +208,7 @@ function mapAssignErrorToFailureCode(e: unknown): AutoDispatchFailureCode {
  *
  * @returns 失败时返回 { failureCode, reason, createdAt }；无失败日志返 null
  */
-export async function getLatestDispatchFailure(
-  orderId: string,
-): Promise<{
+export async function getLatestDispatchFailure(orderId: string): Promise<{
   failureCode: AutoDispatchFailureCode;
   reason: string;
   createdAt: Date;

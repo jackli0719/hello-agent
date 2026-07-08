@@ -53,10 +53,17 @@ export default async function MerchantAdminLayout({
           </div>
           <div style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>
             商家编码：
-            <code style={{ background: "#f3f4f6", padding: "2px 6px", borderRadius: 4 }}>
+            <code
+              style={{
+                background: "#f3f4f6",
+                padding: "2px 6px",
+                borderRadius: 4,
+              }}
+            >
               {user.merchantId ?? "(未绑定)"}
             </code>
-            {" · 账号："}{user.name}
+            {" · 账号："}
+            {user.name}
           </div>
         </div>
         <nav style={{ display: "flex", gap: 8 }}>

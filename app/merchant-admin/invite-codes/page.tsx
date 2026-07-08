@@ -12,10 +12,7 @@ import { getCurrentUser } from "@/src/lib/auth";
 import { getEffectiveMerchantId } from "@/src/lib/merchant-admin";
 import { prisma } from "@/src/lib/db";
 import { card } from "@/components/ui";
-import {
-  regenerateInviteCodeAction,
-  toggleInviteCodeAction,
-} from "./actions";
+import { regenerateInviteCodeAction, toggleInviteCodeAction } from "./actions";
 
 interface PageProps {
   searchParams: Promise<{ error?: string }>;
@@ -54,7 +51,8 @@ export default async function MerchantInviteCodesPage({
     <div style={{ maxWidth: 640 }}>
       <h1 style={{ fontSize: 22, margin: "0 0 8px 0" }}>邀请码管理</h1>
       <p style={{ color: "#6b7280", fontSize: 14, margin: "0 0 24px 0" }}>
-        商家 <code>{merchant.name}</code>（<code>{merchant.id}</code>）的入驻邀请码。
+        商家 <code>{merchant.name}</code>（<code>{merchant.id}</code>
+        ）的入驻邀请码。
         邀请码由商家端生成，师傅在注册入驻时填入即绑定到本商家。
       </p>
 
@@ -85,9 +83,7 @@ export default async function MerchantInviteCodesPage({
           background: merchant.inviteCodeEnabled ? "#fff" : "#f9fafb",
         }}
       >
-        <div
-          style={{ color: "#6b7280", fontSize: 13, marginBottom: 12 }}
-        >
+        <div style={{ color: "#6b7280", fontSize: 13, marginBottom: 12 }}>
           当前邀请码
         </div>
         <div
@@ -171,7 +167,9 @@ export default async function MerchantInviteCodesPage({
         💡 <strong>说明</strong>：
         <ul style={{ margin: "8px 0 0 0", paddingLeft: 20 }}>
           <li>启用中：师傅注册填此码即绑定到本商家</li>
-          <li>已禁用：新师傅注册时即使填此码也会被拒（已有历史绑定不受影响）</li>
+          <li>
+            已禁用：新师傅注册时即使填此码也会被拒（已有历史绑定不受影响）
+          </li>
           <li>重新生成：旧码立即失效，已用旧码注册的师傅不受影响</li>
           <li>演示期不支持在商家后台查看邀请码历史</li>
         </ul>

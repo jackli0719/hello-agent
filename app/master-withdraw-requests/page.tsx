@@ -253,9 +253,7 @@ export default async function WorkerWithdrawRequestsPage({
                 <th style={th}>金额</th>
                 <th style={th}>用途</th>
                 <th style={th}>状态</th>
-                <th style={th}>
-                  {isAdmin ? "审核信息 / 操作" : "审核信息"}
-                </th>
+                <th style={th}>{isAdmin ? "审核信息 / 操作" : "审核信息"}</th>
               </tr>
             </thead>
             <tbody>
@@ -305,11 +303,7 @@ export default async function WorkerWithdrawRequestsPage({
                           action={approveWorkerWithdrawRequestAction}
                           style={{ display: "inline" }}
                         >
-                          <input
-                            type="hidden"
-                            name="_csrf"
-                            value={csrfToken}
-                          />
+                          <input type="hidden" name="_csrf" value={csrfToken} />
                           <input type="hidden" name="id" value={r.id} />
                           <button
                             type="submit"
@@ -335,11 +329,7 @@ export default async function WorkerWithdrawRequestsPage({
                             flexWrap: "wrap",
                           }}
                         >
-                          <input
-                            type="hidden"
-                            name="_csrf"
-                            value={csrfToken}
-                          />
+                          <input type="hidden" name="_csrf" value={csrfToken} />
                           <input type="hidden" name="id" value={r.id} />
                           <input
                             type="text"

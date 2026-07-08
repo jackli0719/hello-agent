@@ -109,10 +109,22 @@ export default async function MerchantWithdrawRequestsPage({
         </div>
       )}
 
-      <div style={{ overflowX: "auto", background: "#fff", borderRadius: 8, border: "1px solid #e5e7eb" }}>
+      <div
+        style={{
+          overflowX: "auto",
+          background: "#fff",
+          borderRadius: 8,
+          border: "1px solid #e5e7eb",
+        }}
+      >
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
-            <tr style={{ background: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
+            <tr
+              style={{
+                background: "#f9fafb",
+                borderBottom: "1px solid #e5e7eb",
+              }}
+            >
               <th style={th}>申请编号</th>
               <th style={th}>金额</th>
               <th style={th}>状态</th>
@@ -125,7 +137,15 @@ export default async function MerchantWithdrawRequestsPage({
           <tbody>
             {requests.length === 0 ? (
               <tr>
-                <td colSpan={7} style={{ ...td, color: "#6b7280", textAlign: "center", padding: 32 }}>
+                <td
+                  colSpan={7}
+                  style={{
+                    ...td,
+                    color: "#6b7280",
+                    textAlign: "center",
+                    padding: 32,
+                  }}
+                >
                   暂无提现记录
                 </td>
               </tr>
@@ -137,7 +157,9 @@ export default async function MerchantWithdrawRequestsPage({
                     <td style={td}>
                       <code style={{ fontSize: 11 }}>{r.id.slice(0, 10)}</code>
                     </td>
-                    <td style={td}><strong>{fmt(r.amount)}</strong></td>
+                    <td style={td}>
+                      <strong>{fmt(r.amount)}</strong>
+                    </td>
                     <td style={td}>
                       <span
                         style={{
@@ -158,7 +180,9 @@ export default async function MerchantWithdrawRequestsPage({
                     </td>
                     <td style={td}>{r.reviewerName ?? "—"}</td>
                     <td style={td}>
-                      {r.reviewedAt ? new Date(r.reviewedAt).toISOString().slice(0, 16) : "—"}
+                      {r.reviewedAt
+                        ? new Date(r.reviewedAt).toISOString().slice(0, 16)
+                        : "—"}
                     </td>
                     <td style={td}>
                       <span style={{ fontSize: 12, color: "#b91c1c" }}>

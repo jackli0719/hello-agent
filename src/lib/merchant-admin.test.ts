@@ -30,7 +30,9 @@ const M002 = "M002";
 describe("merchant-admin 查询层 — 越权防控 (P0-1)", () => {
   beforeAll(async () => {
     // 确认 seed 已建 merchant1 / merchant2
-    const merchant1 = await prisma.user.findUnique({ where: { name: "merchant1" } });
+    const merchant1 = await prisma.user.findUnique({
+      where: { name: "merchant1" },
+    });
     if (!merchant1 || merchant1.merchantId !== M001) {
       throw new Error(
         "未找到 merchant1 / merchant2 — 请先 `npm run db:reset && npm run seed:demo`",
@@ -164,9 +166,7 @@ describe("merchant-admin — getEffectiveMerchantId 守卫", () => {
       workerId: null,
       merchantId: null,
     };
-    await expect(getEffectiveMerchantId(user)).rejects.toThrow(
-      /merchantId/,
-    );
+    await expect(getEffectiveMerchantId(user)).rejects.toThrow(/merchantId/);
   });
 
   // # spec: admin 角色 → fallback 到第一个 active 商家（不写死）
@@ -208,7 +208,9 @@ describe("merchant-admin — getEffectiveMerchantId 守卫", () => {
       workerId: null,
       merchantId: M001,
     };
-    const dashboard = await getMerchantDashboard(await getEffectiveMerchantId(merchant1));
+    const dashboard = await getMerchantDashboard(
+      await getEffectiveMerchantId(merchant1),
+    );
     expect(dashboard.merchantId).toBe(M001);
     expect(dashboard.merchantId).not.toBe(M002);
   });

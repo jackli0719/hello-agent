@@ -31,7 +31,9 @@ export async function createMerchantWithdrawRequestAction(formData: FormData) {
 
   const amountYuan = Number(amountYuanRaw);
   if (!Number.isFinite(amountYuan) || amountYuan <= 0) {
-    redirect(`${BACK}/new?error=${encodeURIComponent("申请金额必须为正数（元）")}`);
+    redirect(
+      `${BACK}/new?error=${encodeURIComponent("申请金额必须为正数（元）")}`,
+    );
   }
   const amountCents = Math.round(amountYuan * 100);
 
