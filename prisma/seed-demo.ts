@@ -3,10 +3,11 @@
 // 跟 prisma/seed.ts（基础种子）平行存在，互不影响。
 // 业务规则要求：覆盖三端完整演示链路
 // - 1 admin + 2 customer + 4 worker
-// - 4 师傅资料
+// - 5 师傅资料（含 1 个邀请码入驻样本）
 // - 3 服务品类 + 8 服务 SKU
-// - 20 订单覆盖 5 状态
+// - 20 订单覆盖 5 状态，全部写入四级地址字段
 // - 8 派单规则覆盖 SKU 精确 + 品类兜底 + 暂无推荐
+// - 结算预览 + 商家结算汇总演示数据
 // - 若干 Activity Log
 //
 // 用法：npm run seed:demo
@@ -18,7 +19,7 @@
 //   2. DATABASE_URL 指向非本地 DB（postgres:// 不含 localhost/127.0.0.1）
 // 显式覆盖：设置 ALLOW_DEMO_SEED=1 可绕过保护（测试用）
 
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
@@ -57,8 +58,53 @@ function guardProduction() {
 // ============================================================
 async function clearAll() {
   await prisma.activityLog.deleteMany();
+  try {
+    // [任务 12] PayoutRecord 依赖 MerchantSettlement，先删
+    await prisma.payoutRecord.deleteMany();
+  } catch {
+    // 老 Prisma Client 无 payoutRecord — 跳过
+  }
+  try {
+    // [任务 13] WithdrawRequest 依赖 Merchant，先删
+    await prisma.withdrawRequest.deleteMany();
+  } catch {
+    // 老 Prisma Client 无 withdrawRequest — 跳过
+  }
+  try {
+    // [任务 T2-1] WorkerWithdrawRequest 依赖 Master，先删
+    await prisma.workerWithdrawRequest.deleteMany();
+  } catch {
+    // 老 Prisma Client 无 workerWithdrawRequest — 跳过
+  }
+  try {
+    // WorkerSettlement 依赖 Master
+    await prisma.workerSettlement.deleteMany();
+  } catch {
+    // 老 Prisma Client 无 workerSettlement — 跳过
+  }
+  try {
+    // [任务 14] FinanceLedger 依赖 Merchant，先删
+    await prisma.financeLedger.deleteMany();
+  } catch {
+    // 老 Prisma Client 无 financeLedger — 跳过
+  }
+  try {
+    await prisma.merchantSettlement.deleteMany();
+  } catch {
+    // 老 Prisma Client 无 merchantSettlement — 跳过
+  }
+  try {
+    await prisma.settlementPreview.deleteMany();
+  } catch {
+    // 老 Prisma Client 无 settlementPreview — 跳过
+  }
   await prisma.order.deleteMany();
   await prisma.dispatchRule.deleteMany();
+  try {
+    await prisma.commissionStrategy.deleteMany();
+  } catch {
+    // 老 Prisma Client 无 commissionStrategy — 跳过
+  }
   // [任务 2] MerchantArea 依赖 Merchant / PlatformArea，先于它俩删
   try {
     await prisma.merchantArea.deleteMany();
@@ -215,6 +261,9 @@ const MERCHANTS = [
     contactName: "张三",
     phone: "13900000100",
     status: "active",
+    // [任务 4] 邀请码 — 可入驻
+    inviteCode: "NANSHAN01",
+    inviteCodeEnabled: true,
     province: "广东省",
     city: "深圳市",
     district: "南山区",
@@ -227,6 +276,9 @@ const MERCHANTS = [
     contactName: "李四",
     phone: "13900000200",
     status: "active",
+    // [任务 4] 邀请码 — 禁用（测 inviteCodeEnabled=false 拒）
+    inviteCode: "FUTIAN02",
+    inviteCodeEnabled: false,
     province: "广东省",
     city: "深圳市",
     district: "福田区",
@@ -238,7 +290,10 @@ const MERCHANTS = [
     name: "广州天河服务商 C",
     contactName: "王五",
     phone: "13900000300",
-    status: "active",
+    status: "inactive",
+    // [任务 4] 邀请码 — 商家 inactive 测拒
+    inviteCode: "TIANHE03",
+    inviteCodeEnabled: true,
     province: "广东省",
     city: "广州市",
     district: "天河区",
@@ -260,8 +315,244 @@ const MERCHANT_AREAS = [
   { merchantId: "M003", platformAreaId: "PA003", enabled: true },
 ] as const;
 
+function parseSeedAddress(address: string) {
+  const candidates = PLATFORM_AREAS.map((area) => {
+    const prefix = `${area.province}${area.city}${area.district}${area.street}`;
+    return { area, prefix };
+  });
+  const matched = candidates.find(({ prefix }) => address.startsWith(prefix));
+  if (!matched) {
+    throw new Error(`seed:demo 地址无法匹配平台合作区域：${address}`);
+  }
+  return {
+    province: matched.area.province,
+    city: matched.area.city,
+    district: matched.area.district,
+    street: matched.area.street,
+    addressDetail: address.slice(matched.prefix.length).trim(),
+  };
+}
+
+function formatPeriod(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+async function seedSettlementPreviewsAndSummaries() {
+  const completedOrders = await prisma.order.findMany({
+    where: { status: "completed" },
+    include: {
+      master: {
+        include: {
+          merchant: {
+            include: {
+              commissionStrategies: {
+                where: { enabled: true },
+                orderBy: { createdAt: "asc" },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  for (const order of completedOrders) {
+    if (!order.master?.merchant) continue;
+    const strategy = order.master.merchant.commissionStrategies[0] ?? null;
+    const platformAmount = strategy
+      ? Math.round(order.amount * strategy.platformRate)
+      : order.amount;
+    const merchantAmount = strategy
+      ? Math.round(order.amount * strategy.merchantRate)
+      : 0;
+    const workerAmount = strategy
+      ? Math.round(order.amount * strategy.workerRate)
+      : 0;
+    await prisma.settlementPreview.create({
+      data: {
+        orderId: order.id,
+        merchantId: order.master.merchant.id,
+        masterId: order.master.id,
+        strategyId: strategy?.id ?? null,
+        orderAmount: order.amount,
+        platformAmount,
+        merchantAmount,
+        workerAmount,
+        status: "generated",
+        createdAt: order.scheduledAt,
+      },
+    });
+  }
+
+  const previews = await prisma.settlementPreview.findMany();
+  const groups = new Map<
+    string,
+    {
+      merchantId: string;
+      period: string;
+      totalOrderCount: number;
+      totalAmount: number;
+      platformFee: number;
+      merchantIncome: number;
+      workerIncome: number;
+    }
+  >();
+  for (const preview of previews) {
+    const period = formatPeriod(preview.createdAt);
+    const key = `${preview.merchantId}|${period}`;
+    const current = groups.get(key) ?? {
+      merchantId: preview.merchantId,
+      period,
+      totalOrderCount: 0,
+      totalAmount: 0,
+      platformFee: 0,
+      merchantIncome: 0,
+      workerIncome: 0,
+    };
+    current.totalOrderCount += 1;
+    current.totalAmount += preview.orderAmount;
+    current.platformFee += preview.platformAmount;
+    current.merchantIncome += preview.merchantAmount;
+    current.workerIncome += preview.workerAmount;
+    groups.set(key, current);
+  }
+
+  for (const group of groups.values()) {
+    await prisma.merchantSettlement.create({ data: group });
+  }
+
+  // ============================================================
+  // [任务 12] 演示数据 — 让 1 条 MerchantSettlement 进入 archived，并录入 1 条 PayoutRecord
+  // 选第一条（按 period asc）作为"历史已结算"案例，金额为 merchantIncome 的 50%
+  // 这样 /payout-records 列表页和 /merchant-settlements/[id] 底部都有数据可看
+  // ============================================================
+  const firstArchivedSettlement = await prisma.merchantSettlement.findFirst({
+    orderBy: [{ period: "asc" }, { merchantId: "asc" }],
+  });
+  if (firstArchivedSettlement) {
+    await prisma.merchantSettlement.update({
+      where: { id: firstArchivedSettlement.id },
+      data: { status: "archived" },
+    });
+    const halfAmount = Math.floor(firstArchivedSettlement.merchantIncome / 2);
+    if (halfAmount > 0) {
+      await prisma.payoutRecord.create({
+        data: {
+          withdrawRequestId: firstArchivedSettlement.id,
+          merchantId: firstArchivedSettlement.merchantId,
+          amount: halfAmount,
+          paidAt: new Date("2026-06-15T10:00:00Z"),
+          proofUrl: "https://example.com/proof/demo-payout-001",
+          operator: "system",
+        },
+      });
+    }
+  }
+
+  // ============================================================
+  // [任务 13] 演示数据 — 3 条 WithdrawRequest (pending / approved / rejected)
+  // 全部挂在第一个 active merchant 上
+  //   - pending:  ¥1000 — 待审核
+  //   - approved: ¥500  — admin 已通过（演示审核人：admin）
+  //   - rejected: ¥300  — admin 已拒绝，原因：金额异常
+  // 这样 /withdraw-requests 列表页三种状态都有数据可看
+  // ============================================================
+  const firstMerchant = await prisma.merchant.findFirst({
+    orderBy: [{ name: "asc" }],
+  });
+  if (firstMerchant) {
+    await prisma.withdrawRequest.create({
+      data: {
+        merchantId: firstMerchant.id,
+        amount: 100000,
+        status: "pending",
+        remark: "本月运营资金（待审核）",
+      },
+    });
+    await prisma.withdrawRequest.create({
+      data: {
+        merchantId: firstMerchant.id,
+        amount: 50000,
+        status: "approved",
+        remark: "5 月已结账款",
+        reviewerName: "admin",
+        reviewedAt: new Date("2026-06-20T10:00:00Z"),
+      },
+    });
+    await prisma.withdrawRequest.create({
+      data: {
+        merchantId: firstMerchant.id,
+        amount: 30000,
+        status: "rejected",
+        remark: "运营垫付",
+        reviewerName: "admin",
+        reviewedAt: new Date("2026-06-25T14:00:00Z"),
+        rejectReason: "金额异常，请提供对应结算期间明细",
+      },
+    });
+  }
+
+  // ============================================================
+  // [任务 T2-1] 演示数据 — 师傅 WorkerSettlement + 3 条 WorkerWithdrawRequest
+  // 挂在 T001（李师傅）上：
+  //   - WorkerSettlement：6 月汇总 workerIncome=¥500（50000 分）— 演示可提现余额基数
+  //   - pending:  ¥100 — 待审核
+  //   - approved: ¥50  — admin 已通过
+  //   - rejected: ¥80  — admin 已拒绝，原因：金额异常
+  // 这样 /master-withdraw-requests 列表页三种状态都有数据可看
+  //   worker1（T001）登录后看到自己的 3 条
+  //   admin 登录后看到所有 worker 的全部申请
+  // ============================================================
+  const worker1 = await prisma.master.findUnique({ where: { id: "T001" } });
+  if (worker1) {
+    await prisma.workerSettlement.create({
+      data: {
+        workerId: worker1.id,
+        period: "2026-06",
+        orderCount: 5,
+        totalAmount: 100000, // 订单总金额（分）
+        workerIncome: 50000, // 师傅实收（分）= ¥500
+      },
+    });
+    await prisma.workerWithdrawRequest.create({
+      data: {
+        workerId: worker1.id,
+        amount: 10000, // ¥100
+        status: "pending",
+        remark: "本月生活费（待审核）",
+      },
+    });
+    await prisma.workerWithdrawRequest.create({
+      data: {
+        workerId: worker1.id,
+        amount: 5000, // ¥50
+        status: "approved",
+        remark: "6 月已结",
+        reviewerName: "admin",
+        reviewedAt: new Date("2026-06-22T10:00:00Z"),
+      },
+    });
+    await prisma.workerWithdrawRequest.create({
+      data: {
+        workerId: worker1.id,
+        amount: 8000, // ¥80
+        status: "rejected",
+        remark: "应急垫付",
+        reviewerName: "admin",
+        reviewedAt: new Date("2026-06-25T14:00:00Z"),
+        rejectReason: "金额异常，请提供对应订单明细",
+      },
+    });
+  }
+
+  return {
+    settlementPreviews: completedOrders.length,
+    merchantSettlements: groups.size,
+  };
+}
+
 // ============================================================
-// 3. 师傅 × 4（[任务 2] merchantId 必填）
+// 3. 师傅 × 5（[任务 2] merchantId 必填）
 // T001 绑商家 A, T002 绑商家 B, T003 绑商家 B (同商家多师傅), T004 绑商家 C
 // ============================================================
 const MASTERS = [
@@ -305,6 +596,18 @@ const MASTERS = [
     serviceArea: "上海, 北京",
     merchantId: "M003", // 广州天河服务商 C
   },
+  {
+    id: "T005",
+    name: "林师傅",
+    phone: "13900000050",
+    skills: ["保洁", "家电清洗"],
+    rating: 5.0,
+    completedJobs: 0,
+    status: "offline",
+    serviceArea: "深圳",
+    merchantId: "M001", // 通过 NANSHAN01 邀请码入驻
+    joinSource: "invite_code", // [任务 4] 邀请码入驻
+  },
 ] as const;
 
 // ============================================================
@@ -318,6 +621,7 @@ const USERS = [
     password: "admin123",
     role: "admin",
     workerId: null,
+    merchantId: null as string | null,
   },
   // 2 customer — 演示查询用 customer1 / customer2
   {
@@ -326,6 +630,7 @@ const USERS = [
     password: "customer123",
     role: "customer",
     workerId: null,
+    merchantId: null as string | null,
   },
   {
     name: "customer2",
@@ -333,6 +638,7 @@ const USERS = [
     password: "customer123",
     role: "customer",
     workerId: null,
+    merchantId: null as string | null,
   },
   // 4 worker — 各自绑到一个 master
   {
@@ -341,6 +647,7 @@ const USERS = [
     password: "worker123",
     role: "worker",
     workerId: "T001",
+    merchantId: null as string | null,
   },
   {
     name: "worker2",
@@ -348,6 +655,7 @@ const USERS = [
     password: "worker123",
     role: "worker",
     workerId: "T002",
+    merchantId: null as string | null,
   },
   {
     name: "worker3",
@@ -355,6 +663,7 @@ const USERS = [
     password: "worker123",
     role: "worker",
     workerId: "T003",
+    merchantId: null as string | null,
   },
   {
     name: "worker4",
@@ -362,6 +671,26 @@ const USERS = [
     password: "worker123",
     role: "worker",
     workerId: "T004",
+    merchantId: null as string | null,
+  },
+  // [任务 18] 2 merchant — 各自绑到一个 merchant（M001 / M002）
+  // - 演示登录：merchant1 / merchant123（绑 M001）merchant2 / merchant123（绑 M002）
+  // - 注意：M003 (广州天河) 故意不建账号 — 用来演示"未被任何账号绑定的商家"
+  {
+    name: "merchant1",
+    phone: "13800000010",
+    password: "merchant123",
+    role: "merchant",
+    workerId: null,
+    merchantId: "M001" as string | null,
+  },
+  {
+    name: "merchant2",
+    phone: "13800000020",
+    password: "merchant123",
+    role: "merchant",
+    workerId: null,
+    merchantId: "M002" as string | null,
   },
 ] as const;
 
@@ -382,6 +711,7 @@ const ORDERS = [
     scheduledAt: "2026-06-29T10:00:00",
     amount: 268,
     status: "pending",
+    payStatus: "paid", // 演示「待派单」
   },
   {
     id: "O20260629002",
@@ -393,7 +723,12 @@ const ORDERS = [
     scheduledAt: "2026-06-29T14:00:00",
     amount: 128,
     status: "pending",
+    payStatus: "unpaid", // 演示「待支付」 — customer 详情页可点支付
   },
+  // [任务 4-0] 演示 failureCode 注释：
+  // - O20260629003 / O20260630005 → area_no_master（M003 status=inactive，旗下 0 师傅进推荐）
+  // - O20260630002 → area_no_merchant（PA004 宝安西乡无商家覆盖）
+  // - O20260630004 → no_skill_matched（SKU LOCKSMITH 无师傅掌握「开锁」技能）
   {
     id: "O20260629003",
     customerName: "刘建国",
@@ -404,6 +739,7 @@ const ORDERS = [
     scheduledAt: "2026-06-29T16:30:00",
     amount: 180,
     status: "pending",
+    payStatus: "paid", // 演示「待派单」
   },
   {
     id: "O20260630001",
@@ -415,6 +751,7 @@ const ORDERS = [
     scheduledAt: "2026-06-30T09:00:00",
     amount: 158,
     status: "pending",
+    payStatus: "paid", // customer1 演示订单 — 已支付,演示取消
     remark: "客户要求戴鞋套",
   },
   {
@@ -427,6 +764,7 @@ const ORDERS = [
     scheduledAt: "2026-06-30T11:00:00",
     amount: 168,
     status: "pending",
+    payStatus: "unpaid", // 演示「待支付」 — 客户详情页可演示支付流程
   },
   {
     id: "O20260630003",
@@ -438,6 +776,7 @@ const ORDERS = [
     scheduledAt: "2026-06-30T14:00:00",
     amount: 120,
     status: "pending",
+    payStatus: "paid", // 演示「待派单」
   },
   // 演示「暂无推荐师傅」 — 开锁换锁 SKU 没人会
   {
@@ -450,6 +789,7 @@ const ORDERS = [
     scheduledAt: "2026-06-30T15:00:00",
     amount: 199,
     status: "pending",
+    payStatus: "paid", // 演示「待派单」 + 无候选师傅
     remark: "钥匙锁家里了，需要紧急开锁",
   },
   // 演示「暂无推荐师傅」 — 用 REPAIR-DISABLED 不可用的 SKU
@@ -463,6 +803,7 @@ const ORDERS = [
     scheduledAt: "2026-06-30T17:00:00",
     amount: 199,
     status: "pending",
+    payStatus: "paid", // 演示「待派单」 + 无候选师傅
   },
   // ============ assigned × 4 ============
   {
@@ -475,6 +816,7 @@ const ORDERS = [
     scheduledAt: "2026-06-28T10:00:00",
     amount: 158,
     status: "assigned",
+    payStatus: "paid", // 已支付后派单
     remark: "阿姨带吸尘器",
   },
   {
@@ -487,6 +829,7 @@ const ORDERS = [
     scheduledAt: "2026-06-28T14:00:00",
     amount: 128,
     status: "assigned",
+    payStatus: "paid",
   },
   {
     id: "O20260628003",
@@ -498,6 +841,7 @@ const ORDERS = [
     scheduledAt: "2026-06-28T15:30:00",
     amount: 180,
     status: "assigned",
+    payStatus: "paid",
     internalRemark: "VIP 客户优先",
   },
   {
@@ -510,6 +854,7 @@ const ORDERS = [
     scheduledAt: "2026-06-28T17:00:00",
     amount: 120,
     status: "assigned",
+    payStatus: "paid",
     remark: "冰箱不制冷",
   },
   // ============ in_service × 4 ============
@@ -523,6 +868,7 @@ const ORDERS = [
     scheduledAt: "2026-06-29T09:00:00",
     amount: 268,
     status: "in_service",
+    payStatus: "paid",
   },
   {
     id: "O20260629012",
@@ -534,6 +880,7 @@ const ORDERS = [
     scheduledAt: "2026-06-29T11:00:00",
     amount: 128,
     status: "in_service",
+    payStatus: "paid",
   },
   {
     id: "O20260629013",
@@ -545,6 +892,7 @@ const ORDERS = [
     scheduledAt: "2026-06-29T13:30:00",
     amount: 180,
     status: "in_service",
+    payStatus: "paid",
   },
   {
     id: "O20260629014",
@@ -556,6 +904,7 @@ const ORDERS = [
     scheduledAt: "2026-06-29T15:00:00",
     amount: 120,
     status: "in_service",
+    payStatus: "paid",
   },
   // ============ completed × 3 ============
   // 带 serviceSummary（v0.7.6 业务扩展）
@@ -569,6 +918,7 @@ const ORDERS = [
     scheduledAt: "2026-06-27T10:00:00",
     amount: 268,
     status: "completed",
+    payStatus: "paid",
     serviceSummary: "厨房油烟机已深度清洗，卫生间瓷砖已除霉，客户验收满意",
   },
   {
@@ -581,6 +931,7 @@ const ORDERS = [
     scheduledAt: "2026-06-27T14:00:00",
     amount: 128,
     status: "completed",
+    payStatus: "paid",
     serviceSummary: "空调滤网清洗完毕，制冷效果恢复，已测试 30 分钟正常",
     internalRemark: "VIP 客户，2 个月后回访",
   },
@@ -594,6 +945,7 @@ const ORDERS = [
     scheduledAt: "2026-06-26T15:00:00",
     amount: 120,
     status: "completed",
+    payStatus: "paid",
     serviceSummary: "冰箱压缩机启动器更换，运行正常，已教客户使用",
   },
   // ============ cancelled × 1 ============
@@ -608,12 +960,17 @@ const ORDERS = [
     scheduledAt: "2026-06-26T09:00:00",
     amount: 158,
     status: "cancelled",
+    payStatus: "paid", // 演示「支付后取消」
     cancelReason: "客户临时有事取消",
     canceledAt: "2026-06-26T08:00:00",
   },
 ] as const;
 
-async function main() {
+/**
+ * [v1.0] seed.ts 调此函数复用演示数据灌库 — 主流程。
+ * 末尾自执行块（main().catch()）移到 seed-demo.ts 末尾。
+ */
+export async function demoMain() {
   console.log("🌱 开始 seed:demo — 一键重置完整演示数据");
 
   // [v0.9.9] 生产保护（演示期项目必加）
@@ -623,9 +980,7 @@ async function main() {
   // 0. 清表（按依赖倒序）
   // ============================================================
   await clearAll();
-  console.log(
-    "  ✓ 清空旧数据（ActivityLog → Order → DispatchRule → User → Master → ServiceSku → ServiceCategory）",
-  );
+  console.log("  ✓ 清空旧数据（按外键依赖倒序）");
 
   // ============================================================
   // 1. ServiceCategory × 3
@@ -692,7 +1047,7 @@ async function main() {
   console.log(`  ✓ ServiceSku × ${skuRecords.length}`);
 
   // ============================================================
-  // 3. Master × 4
+  // 3. Master × 5
   // ============================================================
   const masterRecords = [];
   for (const m of MASTERS) {
@@ -704,15 +1059,16 @@ async function main() {
         skills: JSON.stringify(m.skills),
         rating: m.rating,
         completedJobs: m.completedJobs,
-        status: "available", // demo seed 全部 available — 让 dashboard 推荐数对得上
+        status: "status" in m ? m.status : "available",
         serviceArea: m.serviceArea,
         // [任务 2] 师傅必须归属商家 — FK merchantId
         merchant: { connect: { id: m.merchantId } },
+        joinSource: "joinSource" in m ? m.joinSource : "admin_created",
       },
     });
     masterRecords.push(rec);
   }
-  console.log(`  ✓ Master × ${masterRecords.length}（4 师傅全 available）`);
+  console.log(`  ✓ Master × ${masterRecords.length}（含 1 个 invite_code）`);
 
   // ============================================================
   // 4. User × 7（1 admin + 2 customer + 4 worker）
@@ -725,12 +1081,38 @@ async function main() {
         password: await bcrypt.hash(u.password, BCRYPT_ROUNDS),
         role: u.role,
         workerId: u.workerId,
+        merchantId: u.merchantId,
       },
     });
   }
   console.log(
-    `  ✓ User × ${USERS.length}（admin × 1 / customer × 2 / worker × 4，密码已 bcrypt 哈希）`,
+    `  ✓ User × ${USERS.length}（admin × 1 / customer × 2 / worker × 4 / merchant × 2，密码已 bcrypt 哈希）`,
   );
+
+  // ============================================================
+  // 4.6. [任务 5] 分成策略 — 每个商家 1 条
+  // ============================================================
+  for (const m of MERCHANTS) {
+    // M001 10/20/70, M002 5/15/80, M003 8/18/74（之和都 = 1）
+    const rates: Record<string, [number, number, number]> = {
+      M001: [0.1, 0.2, 0.7],
+      M002: [0.05, 0.15, 0.8],
+      M003: [0.08, 0.18, 0.74],
+    };
+    const [p, mc, w] = rates[m.id] ?? [0.1, 0.2, 0.7];
+    await prisma.commissionStrategy.create({
+      data: {
+        merchantId: m.id,
+        name: "默认策略",
+        strategyType: "percentage",
+        platformRate: p,
+        merchantRate: mc,
+        workerRate: w,
+        enabled: true,
+      },
+    });
+  }
+  console.log(`  ✓ CommissionStrategy × ${MERCHANTS.length}`);
 
   // ============================================================
   // 5. Order × 20
@@ -750,9 +1132,14 @@ async function main() {
           ? (MASTERS.find((m) => m.id === o.masterId)?.name ?? null)
           : null,
         address: o.address,
+        ...parseSeedAddress(o.address),
         scheduledAt: new Date(o.scheduledAt),
         amount: Math.round(o.amount * 100),
         status: o.status,
+        // [支付] 演示订单 payStatus — pending 大部分 paid(待派单),2 笔 unpaid(待支付)
+        // 兜底: 老 data (无 payStatus 字段) 默认 unpaid
+        payStatus: o.payStatus ?? "unpaid",
+        paidAt: o.payStatus === "paid" ? new Date(o.scheduledAt) : null,
         remark: "remark" in o ? o.remark : null,
         internalRemark: "internalRemark" in o ? o.internalRemark : null,
         serviceSummary: "serviceSummary" in o ? o.serviceSummary : null,
@@ -763,6 +1150,11 @@ async function main() {
   }
   console.log(
     `  ✓ Order × ${ORDERS.length}（pending × 8 / assigned × 4 / in_service × 4 / completed × 3 / cancelled × 1）`,
+  );
+
+  const settlementCounts = await seedSettlementPreviewsAndSummaries();
+  console.log(
+    `  ✓ SettlementPreview × ${settlementCounts.settlementPreviews} / MerchantSettlement × ${settlementCounts.merchantSettlements}`,
   );
 
   // ============================================================
@@ -989,6 +1381,69 @@ async function main() {
   );
 
   // ============================================================
+  // 7.5. [任务 14] 财务流水 — 按已存在业务事件自动生成
+  // - order_commission: 所有 confirmed/archived MerchantSettlement
+  // - withdraw: 所有 approved WithdrawRequest
+  // - payout: 所有 PayoutRecord
+  // ============================================================
+  const allConfirmedSettlements = await prisma.merchantSettlement.findMany({
+    where: { status: { in: ["confirmed", "archived"] } },
+  });
+  let ledgerCount = 0;
+  for (const s of allConfirmedSettlements) {
+    if (s.merchantIncome <= 0) continue;
+    const yuan = (s.merchantIncome / 100).toFixed(2);
+    await prisma.financeLedger.create({
+      data: {
+        merchantId: s.merchantId,
+        type: "order_commission",
+        direction: "out",
+        sourceId: s.id,
+        amount: yuan as unknown as Prisma.Decimal,
+        remark: `结算汇总结算 ${s.period}`,
+      },
+    });
+    ledgerCount++;
+  }
+
+  const approvedWithdraws = await prisma.withdrawRequest.findMany({
+    where: { status: "approved" },
+  });
+  for (const w of approvedWithdraws) {
+    if (w.amount <= 0) continue;
+    const yuan = (w.amount / 100).toFixed(2);
+    await prisma.financeLedger.create({
+      data: {
+        merchantId: w.merchantId,
+        type: "withdraw",
+        direction: "out",
+        sourceId: w.id,
+        amount: yuan as unknown as Prisma.Decimal,
+        remark: `提现申请 ${w.id.slice(0, 12)}`,
+      },
+    });
+    ledgerCount++;
+  }
+
+  const allPayouts = await prisma.payoutRecord.findMany();
+  for (const p of allPayouts) {
+    if (p.amount <= 0) continue;
+    const yuan = (p.amount / 100).toFixed(2);
+    await prisma.financeLedger.create({
+      data: {
+        merchantId: p.merchantId,
+        type: "payout",
+        direction: "out",
+        sourceId: p.id,
+        amount: yuan as unknown as Prisma.Decimal,
+        remark: `线下打款 ${p.id.slice(0, 12)}`,
+      },
+    });
+    ledgerCount++;
+  }
+  console.log(`  ✓ FinanceLedger × ${ledgerCount}（事件触发自动记账）`);
+
+  // ============================================================
   // 8. 校验
   // ============================================================
   const counts = {
@@ -1001,6 +1456,12 @@ async function main() {
     users: await prisma.user.count(),
     orders: await prisma.order.count(),
     rules: await prisma.dispatchRule.count(),
+    commissionStrategies: await prisma.commissionStrategy.count(), // [任务 5]
+    settlementPreviews: await prisma.settlementPreview.count(), // [任务 6]
+    merchantSettlements: await prisma.merchantSettlement.count(), // [任务 7]
+    payoutRecords: await prisma.payoutRecord.count(), // [任务 12]
+    withdrawRequests: await prisma.withdrawRequest.count(), // [任务 13]
+    financeLedgers: await prisma.financeLedger.count(), // [任务 14]
     activityLogs: await prisma.activityLog.count(),
   };
   console.log("📊 当前数据：", counts);
@@ -1018,13 +1479,21 @@ async function main() {
   if (
     counts.categories !== 3 ||
     counts.skus !== 8 ||
-    counts.masters !== 4 ||
-    counts.users !== 7 ||
+    // [任务 4] 4 师傅 + 1 个 T005 林师傅（invite_code 入驻）= 5
+    counts.masters !== 5 ||
+    // [任务 18] 7 = 1 admin + 2 customer + 4 worker（merchant 角色单独 demo，不进"基础 7"）
+    // merchant1/merchant2 是商家账号（在 USERS 里但不在基础 7 的白名单分类）
+    counts.users !== 9 ||
     counts.orders !== 20 ||
-    counts.rules !== 8
+    counts.rules !== 8 ||
+    // [任务 5] 3 个分成策略（每个商家 1 条）
+    counts.commissionStrategies !== 3 ||
+    counts.settlementPreviews !== settlementCounts.settlementPreviews ||
+    counts.merchantSettlements !== settlementCounts.merchantSettlements
   ) {
     throw new Error(
-      `seed:demo 后行数对不上（期望 categories=3 / skus=8 / masters=4 / users=7 / orders=20 / rules=8）`,
+      // [任务 18] users 7 → 9（+ 2 merchant）。其他数字不动。
+      "seed:demo 后行数对不上（期望 categories=3 / skus=8 / masters=5 / users=9 / orders=20 / rules=8 / commissionStrategies=3 / settlementPreviews=3 / merchantSettlements=3）",
     );
   }
 
@@ -1041,11 +1510,15 @@ async function main() {
   console.log("         worker4 / worker123 → 孙师傅（T004）");
 }
 
-main()
-  .catch((e) => {
-    console.error("❌ seed:demo 失败：", e);
-    process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+// [v1.0] 仅当作为 CLI 跑时自执行（被 seed.ts import 时不执行）
+import { fileURLToPath } from "node:url";
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  demoMain()
+    .catch((e) => {
+      console.error("❌ seed:demo 失败：", e);
+      process.exit(1);
+    })
+    .finally(async () => {
+      await prisma.$disconnect();
+    });
+}

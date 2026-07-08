@@ -124,8 +124,13 @@ export default async function CustomerOrdersPage() {
                 }}
               >
                 <div style={{ fontSize: 13, color: "#6b7280" }}>{o.id}</div>
+                {/* [任务 X] pending + unpaid → "待支付",其他按 status */}
                 <StatusBadge
-                  label={ORDER_STATUS_LABEL[o.status]}
+                  label={
+                    o.status === "pending" && o.payStatus === "unpaid"
+                      ? "待支付"
+                      : ORDER_STATUS_LABEL[o.status]
+                  }
                   tone={ORDER_TONE[o.status]}
                 />
               </div>

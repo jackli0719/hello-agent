@@ -9,15 +9,18 @@ import { listMasters } from "@/src/lib/repos/masters";
 import { listEnabledServices } from "@/src/lib/repos/services";
 import { listRules } from "@/src/lib/dispatch-rules";
 import { listRecentActivityLogs } from "@/src/lib/activity-log";
+import { countAfterSalesByStatus } from "@/src/lib/after-sales";
 
 export default async function DashboardPage() {
-  const [counts, masters, services, rules, recentLogs] = await Promise.all([
-    countOrdersByStatus(),
-    listMasters(),
-    listEnabledServices(),
-    listRules(),
-    listRecentActivityLogs(20),
-  ]);
+  const [counts, masters, services, rules, recentLogs, afterSalesCounts] =
+    await Promise.all([
+      countOrdersByStatus(),
+      listMasters(),
+      listEnabledServices(),
+      listRules(),
+      listRecentActivityLogs(20),
+      countAfterSalesByStatus(),
+    ]);
 
   const availableTechs = masters.filter((m) => m.status === "available").length;
   const enabledRules = rules.filter((r) => r.enabled).length;
@@ -52,6 +55,20 @@ export default async function DashboardPage() {
         value: rules.length,
         href: "/dispatch-rules",
         hint: `${enabledRules} 启用`,
+      },
+      // [任务 21] 售后工单 — pending 高亮，引导 admin 处理
+      {
+        label: "售后工单（待处理）",
+        value: afterSalesCounts.pending,
+        href: "/admin/after-sales?status=pending",
+        hint: `共 ${afterSalesCounts.all} 笔`,
+      },
+      // [任务 22] 数据看板 — 6 指标（GMV / 订单量 / 完单率 / 退款率 / 商家收入 / 平台抽成）
+      {
+        label: "数据看板",
+        value: 6,
+        href: "/admin/metrics?window=all",
+        hint: "GMV/订单量/完单率等",
       },
     ];
 

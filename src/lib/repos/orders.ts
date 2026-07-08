@@ -147,6 +147,10 @@ export class AssignOrderError extends Error {
   constructor(
     message: string,
     readonly reason: string,
+    // [任务 20] 失败原因 code — 从 dispatch.ts 的 failureCode 透传
+    // 让上层（auto-dispatch.ts）能精确分类到 AutoDispatchFailureCode
+    // 不破坏既有调用方（保持 optional 兼容）
+    readonly failureCode?: string,
   ) {
     super(message);
     this.name = "AssignOrderError";
@@ -219,6 +223,7 @@ export async function releaseMaster(
  * 失败情形（抛 AssignOrderError）：
  * - 订单不存在
  * - 订单当前不是 pending（已派单 / 服务中 / 已完成 / 已取消）
+ * - 订单未支付（payStatus !== "paid"）— [任务 20] 自动派单前必须 paid
  * - 没有任何合适师傅（沿用 matchTechnician 的所有失败分支）
  */
 export async function assignOrder(orderId: string): Promise<AssignOrderResult> {
@@ -231,6 +236,16 @@ export async function assignOrder(orderId: string): Promise<AssignOrderResult> {
     throw new AssignOrderError(
       "不可重复派单",
       `订单当前状态为「${order.status}」，不可重复派单`,
+    );
+  }
+
+  // [任务 20] payStatus 守门 — 未支付订单不允许自动派单
+  // 之前 src/lib/orders.ts:assignOrder(orderId, masterId) 有此守门，
+  // repos/orders.ts:assignOrder(orderId) 缺 — 补上保持两条路径一致
+  if (order.payStatus !== "paid") {
+    throw new AssignOrderError(
+      "未支付",
+      `订单未支付（payStatus=${order.payStatus}），请先完成支付后再派单`,
     );
   }
 
@@ -286,7 +301,18 @@ export async function assignOrder(orderId: string): Promise<AssignOrderResult> {
     spec: parseRuleJson(r.ruleJson) ?? { match: {}, requiredSkills: [] },
   }));
   const recommendation = recommendMastersForOrder({
-    order: { skuId, categoryId, address: order.address },
+    order: {
+      skuId,
+      categoryId,
+      // [任务 20] 4 级地址字段也传 — 让 dispatch.ts 走精确 PlatformArea 匹配
+      // 旧 fallback（仅 address 模糊）保留；新订单都有 4 级，精确优先
+      province: order.province,
+      city: order.city,
+      district: order.district,
+      street: order.street,
+      addressDetail: order.addressDetail,
+      address: order.address,
+    },
     rules,
     masters,
     platformAreas: platformAreaRows,
@@ -294,9 +320,11 @@ export async function assignOrder(orderId: string): Promise<AssignOrderResult> {
   });
   const topCandidate = recommendation.candidates[0];
   if (!topCandidate) {
+    // [任务 20] 透传 failureCode — 让 auto-dispatch.ts 精确分类
     throw new AssignOrderError(
       "无可用师傅",
       recommendation.reason || "没有掌握所需技能的空闲师傅",
+      recommendation.failureCode,
     );
   }
 

@@ -11,7 +11,7 @@ import {
   type DispatchRuleRow,
   type RecommendationResult,
 } from "@/lib/dispatch";
-import type { Order, OrderStatus, Technician } from "@/src/types";
+import type { Order, OrderStatus, PayStatus, Technician } from "@/src/types";
 
 // ---------- 类型 ----------
 export interface OrderListItem {
@@ -24,6 +24,12 @@ export interface OrderListItem {
   categoryName: string | null;
   technicianName: string | null;
   address: string;
+  // [任务 3] 4 级地址 + 详细
+  province: string;
+  city: string;
+  district: string;
+  street: string;
+  addressDetail: string;
   scheduledAt: string; // ISO 本地时区
   amountYuan: number;
   status: OrderStatus;
@@ -41,6 +47,9 @@ export interface OrderListItem {
   cancelReason: string | null;
   /** 取消时间 */
   canceledAt: string | null;
+  // [任务 X] 支付状态
+  payStatus: import("@/src/types").PayStatus;
+  paidAt: string | null;
 }
 
 export interface OrdersPageData {
@@ -99,6 +108,7 @@ function toDomainMaster(row: {
   status: string;
   serviceArea: string;
   merchantId: string;
+  merchant?: { id: string; name: string; status: string } | null;
 }): Technician {
   let skills: string[] = [];
   try {
@@ -118,6 +128,8 @@ function toDomainMaster(row: {
     status: row.status as Technician["status"],
     serviceArea: row.serviceArea,
     merchantId: row.merchantId,
+    // [任务 3] 给 Technician 加 merchantName（dispatch.ts 透传）
+    merchantName: row.merchant?.name ?? undefined,
   };
 }
 
@@ -234,7 +246,16 @@ export async function listOrdersForPage(
         serviceSummary: true, // [v0.7.6]
         cancelReason: true, // [v0.7.9]
         canceledAt: true, // [v0.7.9]
+        // [任务 X] 支付状态 + 支付时间
+        payStatus: true,
+        paidAt: true,
         address: true,
+        // [任务 3] 4 级地址 — 推荐走精确匹配
+        province: true,
+        city: true,
+        district: true,
+        street: true,
+        addressDetail: true,
         scheduledAt: true,
         amount: true,
         status: true,
@@ -268,6 +289,10 @@ export async function listOrdersForPage(
         status: true,
         serviceArea: true,
         merchantId: true,
+        // [任务 3] 推荐结果展示师傅所属商家
+        merchant: {
+          select: { id: true, name: true, status: true },
+        },
       },
     }),
     prisma.platformArea.findMany({
@@ -311,7 +336,17 @@ export async function listOrdersForPage(
     const recommendation =
       r.status === "pending"
         ? recommendMastersForOrder({
-            order: { skuId, categoryId, address: r.address },
+            order: {
+              skuId,
+              categoryId,
+              // [任务 3] 4 级字段精确匹配；旧订单空时 dispatch.ts fallback 模糊
+              province: r.province,
+              city: r.city,
+              district: r.district,
+              street: r.street,
+              address: r.address,
+              addressDetail: r.addressDetail,
+            },
             rules,
             masters,
             platformAreas: platformAreaRows,
@@ -329,6 +364,12 @@ export async function listOrdersForPage(
       categoryName,
       technicianName: r.masterName,
       address: r.address,
+      // [任务 3] 4 级地址
+      province: r.province,
+      city: r.city,
+      district: r.district,
+      street: r.street,
+      addressDetail: r.addressDetail,
       scheduledAt: toLocalISOString(r.scheduledAt),
       amountYuan: r.amount / 100,
       status: r.status as OrderStatus,
@@ -341,8 +382,153 @@ export async function listOrdersForPage(
       // [v0.7.9]
       cancelReason: r.cancelReason,
       canceledAt: r.canceledAt ? toLocalISOString(r.canceledAt) : null,
+      // [任务 X] 支付状态
+      payStatus: r.payStatus as PayStatus,
+      paidAt: r.paidAt ? toLocalISOString(r.paidAt) : null,
     };
   });
 
   return { orders, totalCount };
+}
+
+// ============================================================
+// 商家可见订单查询 — TODO 后续商家端任务
+// ============================================================
+// 任务 3 边界 = 只做派单区域过滤（dispatch.ts + 下单页 + 4 级地址）
+// 这个函数超出当前任务边界 — 是商家端前置接口，本阶段没有 /merchant/* 页面
+// 暂留是因为 verify-dispatch.ts 的 "附加场景" 用它断言 4 级地址 → 商家覆盖
+// 后续任务（商家端 / 邀请码 / 商家后台）会真正用上
+// 保留位置：src/lib/queries.ts:getOrdersVisibleToMerchant
+// ============================================================
+
+/**
+ * 返回某商家可见的所有订单（基于商家绑定的合作区域）
+ *
+ * ⚠️ TODO 后续任务（商家端）：本阶段没有 /merchant/* 页面调用此函数。
+ * 任务 3 边界 = 只做派单区域过滤。函数已实现但**没有 UI 入口**。
+ * 验证入口：scripts/verify-dispatch.ts 的"附加场景"用此函数断言
+ * "订单 4 级地址 → 商家覆盖区域"映射。
+ *
+ * 逻辑：
+ * 1. 查 merchant 的 enabled MerchantArea → 拿到 platformAreaIds
+ * 2. 关联 enabled PlatformArea
+ * 3. 查 Order.province/city/district/street 命中这些 PlatformArea 的所有订单
+ *
+ * 注意：
+ * - 商家 status=active 已被 prisma 隐式约束（MerchantArea 关联的 merchant 必须 active 才能查）
+ *   但这里再做一次 merchant.status 防御性检查
+ * - 用 4 级字段精确匹配（与 recommendMastersForOrder 一致）
+ * - 不返回 cancelled 订单（业务上商家不需要看自己取消的）
+ *   — 不，**返回所有状态**让调用方自己过滤（更灵活）
+ */
+export async function getOrdersVisibleToMerchant(merchantId: string) {
+  if (!merchantId) {
+    return { orders: [], totalCount: 0 };
+  }
+
+  // 1. 商家存在 + active 校验
+  const merchant = await prisma.merchant.findUnique({
+    where: { id: merchantId },
+    select: { id: true, status: true },
+  });
+  if (!merchant || merchant.status !== "active") {
+    return { orders: [], totalCount: 0 };
+  }
+
+  // 2. 商家 enabled MerchantArea
+  const merchantAreas = await prisma.merchantArea.findMany({
+    where: { merchantId, enabled: true },
+    select: { platformAreaId: true },
+  });
+  if (merchantAreas.length === 0) {
+    return { orders: [], totalCount: 0 };
+  }
+
+  // 3. enabled PlatformArea（防御性：检查 platformArea.enabled）
+  const platformAreas = await prisma.platformArea.findMany({
+    where: {
+      id: { in: merchantAreas.map((ma) => ma.platformAreaId) },
+      enabled: true,
+    },
+    select: {
+      id: true,
+      province: true,
+      city: true,
+      district: true,
+      street: true,
+    },
+  });
+  if (platformAreas.length === 0) {
+    return { orders: [], totalCount: 0 };
+  }
+
+  // 4. 查订单 — 4 级地址命中任一 platformArea
+  // Prisma 用 OR 组合每条 platformArea 的 4 字段精确匹配
+  // 注意：旧订单（4 级字段为空）会落不到任何 platformArea — 业务上需要商家主动迁移
+  // [任务 X] 支付守门: 商家只看到已支付订单 — 未支付订单应在客户侧完成支付
+  //          商家看到「待派单」= status=pending + payStatus=paid,业务上可派
+  //          过滤 cancelled / refunded 一并完成(避免商家看脏数据)
+  const orders = await prisma.order.findMany({
+    where: {
+      AND: [
+        {
+          OR: platformAreas.map((pa) => ({
+            province: pa.province,
+            city: pa.city,
+            district: pa.district,
+            street: pa.street,
+          })),
+        },
+        {
+          payStatus: { in: ["paid"] },
+          status: { in: ["pending", "assigned", "in_service", "completed"] },
+        },
+      ],
+    },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      customerName: true,
+      customerPhone: true,
+      serviceName: true,
+      serviceSkuId: true,
+      masterId: true,
+      masterName: true,
+      address: true,
+      province: true,
+      city: true,
+      district: true,
+      street: true,
+      addressDetail: true,
+      scheduledAt: true,
+      amount: true,
+      status: true,
+      createdAt: true,
+      remark: true,
+    },
+  });
+
+  return {
+    orders: orders.map((o) => ({
+      id: o.id,
+      customerName: o.customerName,
+      customerPhone: o.customerPhone,
+      serviceName: o.serviceName,
+      serviceSkuId: o.serviceSkuId,
+      masterId: o.masterId,
+      masterName: o.masterName,
+      address: o.address,
+      province: o.province,
+      city: o.city,
+      district: o.district,
+      street: o.street,
+      addressDetail: o.addressDetail,
+      scheduledAt: toLocalISOString(o.scheduledAt),
+      amountYuan: o.amount / 100,
+      status: o.status as OrderStatus,
+      createdAt: toLocalISOString(o.createdAt),
+      remark: o.remark,
+    })),
+    totalCount: orders.length,
+  };
 }

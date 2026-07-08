@@ -17,6 +17,9 @@ import { prisma } from "@/src/lib/db";
 import { normalizeCode } from "@/src/lib/codes";
 import { logInfo, logError } from "@/src/lib/logger";
 import { incrementCounter, METRIC } from "@/src/lib/metrics";
+import { createActivityLog } from "@/src/lib/activity-log";
+import { dispatchOrderNotifications } from "@/src/lib/notifications";
+import { tryAutoDispatch } from "@/src/lib/auto-dispatch";
 import {
   validateAddress,
   validateCancelReason,
@@ -26,10 +29,26 @@ import {
   trimServiceSummary,
 } from "@/src/lib/validation";
 
+// [任务 4-0] 把平台区域 4 级字段拼成 "省/市/区县/街道" 字符串
+// 复用 lib/dispatch.ts:formatPlatformArea（演示期不导出，复制粘贴避免循环依赖）
+function formatMatchedArea(area: {
+  province: string;
+  city: string;
+  district: string;
+  street: string;
+}): string {
+  return `${area.province}/${area.city}/${area.district}/${area.street}`;
+}
+
 export type OrderField =
   | "customerName"
   | "customerPhone"
   | "address"
+  | "province"
+  | "city"
+  | "district"
+  | "street"
+  | "addressDetail"
   | "skuCode"
   | "categoryCode"
   | "amount"
@@ -40,6 +59,13 @@ export interface CreateOrderInput {
   customerName: string;
   customerPhone: string;
   address: string;
+  // [任务 3] 4 级地址 + 详细 — 派单精确匹配必用
+  // 测试兼容：optional（默认 ""），下单路径（customer + 后台）显式传
+  province?: string;
+  city?: string;
+  district?: string;
+  street?: string;
+  addressDetail?: string;
   skuCode: string;
   // 可选 — 前端表单会传，服务端用来跟 skuCode 做「配对校验」
   // （防止客户端被改包后塞一个 skuCode 不属于 categoryCode 的组合）
@@ -70,9 +96,35 @@ export function validateCreateOrderInput(
     return { ok: false, error: phoneR.error, field: "customerPhone" };
   const customerPhone = input.customerPhone!.trim();
 
-  const addrR = validateAddress(input.address);
+  // [任务 3] 4 级地址校验 — 先于旧 address 校验（address 现在由 4 级 + detail 拼出，不要求调用方传）
+  const province = (input.province ?? "").trim();
+  if (!province) {
+    return { ok: false, error: "请填写省", field: "province" };
+  }
+  const city = (input.city ?? "").trim();
+  if (!city) {
+    return { ok: false, error: "请填写市", field: "city" };
+  }
+  const district = (input.district ?? "").trim();
+  if (!district) {
+    return { ok: false, error: "请填写区县", field: "district" };
+  }
+  const street = (input.street ?? "").trim();
+  if (!street) {
+    return { ok: false, error: "请填写街道 / 乡镇", field: "street" };
+  }
+  const addressDetail = (input.addressDetail ?? "").trim();
+  if (!addressDetail) {
+    return { ok: false, error: "请填写详细地址", field: "addressDetail" };
+  }
+
+  // [P1-2 修] 旧 address 字段 = 4 级 + detail 拼接（service 层统一拼，不要求调用方传）
+  // 旧校验（validateAddress）保留作为兜底：调用方如果传了旧 address 但不合法，仍报错
+  const addrR = validateAddress(input.address ?? "");
   if (!addrR.ok) return { ok: false, error: addrR.error, field: "address" };
-  const address = input.address!.trim();
+  const address =
+    input.address?.trim() ||
+    [province, city, district, street, addressDetail].join("");
 
   const skuCodeRaw = (input.skuCode ?? "").trim();
   if (!skuCodeRaw)
@@ -123,6 +175,11 @@ export function validateCreateOrderInput(
       customerName,
       customerPhone,
       address,
+      province,
+      city,
+      district,
+      street,
+      addressDetail,
       skuCode,
       categoryCode,
       amount: input.amount as number,
@@ -191,9 +248,17 @@ export async function createOrder(
           serviceSkuId: sku.id,
           serviceName: sku.name,
           address: input.address,
+          // [任务 3] 4 级地址
+          province: input.province,
+          city: input.city,
+          district: input.district,
+          street: input.street,
+          addressDetail: input.addressDetail,
           scheduledAt: input.scheduledAt,
           amount: Math.round(input.amount * 100),
           status: "pending",
+          // [支付] 默认 unpaid;模拟支付成功后由 payOrder 改 paid
+          payStatus: "unpaid",
           remark: input.remark ?? null,
         },
       });
@@ -266,6 +331,137 @@ export async function generateNextOrderId(
 // 派单
 // ============================================================
 
+// [支付] payOrder / PayOrderError — 模拟支付成功（演示期不接真实支付）
+//
+// 规则：
+// 1. 订单必须存在
+// 2. 订单 status 必须 === "pending"（已派单/已完成/已取消 不能再付）
+// 3. payStatus 必须 === "unpaid"（已支付/已退款 不能再付）
+// 4. 事务里改 payStatus=paid + paidAt=now
+// 5. 写 ActivityLog + 埋点
+//
+// 成功 → { ok: true, orderId }
+// 失败 → 分类返回，调用方按 category 决定 UI 展示
+
+export class PayOrderError extends Error {
+  constructor(
+    message: string,
+    readonly reason: string,
+  ) {
+    super(message);
+    this.name = "PayOrderError";
+  }
+}
+
+export type PayOrderResult =
+  | { ok: true; orderId: string; paidAt: Date }
+  | {
+      ok: false;
+      category: "validation" | "system";
+      error: string;
+    };
+
+export async function payOrder(orderId: string): Promise<PayOrderResult> {
+  // 1. 加载订单
+  const order = await prisma.order.findUnique({ where: { id: orderId } });
+  if (!order) {
+    return {
+      ok: false,
+      category: "validation",
+      error: `订单 ${orderId} 不存在`,
+    };
+  }
+
+  // 2. 订单 status 必须 pending
+  if (order.status !== "pending") {
+    return {
+      ok: false,
+      category: "validation",
+      error: `订单当前状态为「${order.status}」，不能支付`,
+    };
+  }
+
+  // 3. payStatus 必须 unpaid
+  if (order.payStatus !== "unpaid") {
+    return {
+      ok: false,
+      category: "validation",
+      error:
+        order.payStatus === "paid"
+          ? "订单已支付，无需重复支付"
+          : `订单支付状态为「${order.payStatus}」，不能支付`,
+    };
+  }
+
+  // 4. 事务：改 payStatus=paid + paidAt=now
+  //    乐观锁：updateMany 条件 where: { id, payStatus: "unpaid" } 防并发
+  const paidAt = new Date();
+  try {
+    await prisma.$transaction(async (tx) => {
+      const result = await tx.order.updateMany({
+        where: { id: orderId, payStatus: "unpaid" },
+        data: { payStatus: "paid", paidAt },
+      });
+      if (result.count === 0) {
+        // 并发场景：别人先付了
+        throw new PayOrderError(
+          "支付失败（订单状态已变更）",
+          "concurrent_change",
+        );
+      }
+
+      // 埋点 + ActivityLog
+      logInfo("order paid", { orderId, customerPhone: order.customerPhone });
+      incrementCounter(METRIC.ORDER_PAY_SUCCESS, { orderId });
+      await createActivityLog({
+        action: "order_paid",
+        targetType: "order",
+        targetId: orderId,
+        message: `订单 ${orderId} 已支付（模拟）`,
+        metadata: { paidAt: paidAt.toISOString() },
+        actorRole: "customer",
+        actorName: order.customerName,
+      });
+    });
+  } catch (e) {
+    if (e instanceof PayOrderError) {
+      return { ok: false, category: "validation", error: e.message };
+    }
+    logError("pay order failed", e, { orderId });
+    return {
+      ok: false,
+      category: "system",
+      error: "支付失败，请重试",
+    };
+  }
+
+  // [任务 19] 通知：支付成功 → customer/merchant 各 1 条
+  // masterId=null 时尚未派单，师傅不收（worker 节点）；dispatch 内部按 type 跳过 worker
+  await dispatchOrderNotifications(
+    { id: orderId, customerPhone: order.customerPhone, masterId: null },
+    "order_paid",
+    { amount: order.amount },
+  );
+
+  // [任务 20] 自动派单触发器：支付成功后 fire-and-forget 调 tryAutoDispatch
+  // 设计：
+  // - 不阻塞 payOrder 返回（try/catch 吞掉所有异常）
+  // - 失败时 tryAutoDispatch 自己写 ActivityLog（auto_dispatch_failed）
+  // - 成功时也写 ActivityLog（auto_dispatch_succeeded）+ assignOrder 内已有 order_assigned log
+  // - 关键：订单仍是 pending + paid 状态，admin 可手动重试（CLAUDE.md P0-0 决策 #1 双入口）
+  try {
+    await tryAutoDispatch(orderId);
+  } catch (e) {
+    // 兜底：tryAutoDispatch 自身已 try/catch，这里再兜一层（防御性）
+    logInfo("auto dispatch trigger swallowed error", {
+      orderId,
+      error: e instanceof Error ? e.message : String(e),
+    });
+  }
+
+  return { ok: true, orderId, paidAt };
+}
+
 export class AssignOrderError extends Error {
   constructor(
     message: string,
@@ -290,6 +486,9 @@ export type AssignOrderResult =
       // - "system"：DB 挂了之类，给「重试」按钮
       category: "validation" | "system";
       error: string;
+      // [任务 4-0] 推荐失败时透传 failureCode — admin UI 可看精确原因
+      // （area_no_platform_area / area_no_merchant / area_no_master / no_rule / no_skill_matched / distance_out_of_range）
+      failureCode?: string;
     };
 
 /**
@@ -337,6 +536,15 @@ export async function assignOrder(
       error: `订单当前状态为「${order.status}」，不能重复派单`,
     };
   }
+  // [支付] 任务 X: 守门 — 未支付订单不能派单
+  // payStatus === "unpaid" → 客户还没付款,即使状态是 pending 也不能派
+  if (order.payStatus !== "paid") {
+    return {
+      ok: false,
+      category: "validation",
+      error: `订单未支付（payStatus=${order.payStatus}），请先完成支付后再派单`,
+    };
+  }
   if (master.status !== "available") {
     return {
       ok: false,
@@ -350,12 +558,33 @@ export async function assignOrder(
   const recommendation = await computeRecommendationForOrder(order);
   const candidate = recommendation.candidates.find((c) => c.id === masterId);
   if (!candidate) {
+    // [任务 4-0] 错误文案按 failureCode 区分 — admin UI 看到精确原因
+    const failureCode = recommendation.failureCode;
+    const matchedAreaText = recommendation.matchedArea
+      ? formatMatchedArea(recommendation.matchedArea)
+      : "";
+    const areaNoMessage: Record<string, string> = {
+      area_no_platform_area: "当前区域暂未开放平台合作服务，请人工指派",
+      area_no_merchant: matchedAreaText
+        ? `平台区域「${matchedAreaText}」暂无启用商家覆盖`
+        : "平台区域暂无启用商家覆盖",
+      area_no_master: matchedAreaText
+        ? `平台区域「${matchedAreaText}」的商家下暂无师傅`
+        : "平台区域下的商家暂无师傅",
+      distance_out_of_range: matchedAreaText
+        ? `平台区域「${matchedAreaText}」内所有师傅距离均超出服务范围`
+        : "订单区域附近所有师傅距离均超出服务范围",
+    };
+    const reasonText =
+      areaNoMessage[failureCode ?? ""] ??
+      (recommendation.rule
+        ? `师傅「${master.name}」不符合规则「${recommendation.rule.name}」的要求`
+        : "订单没有匹配的派单规则");
     return {
       ok: false,
       category: "validation",
-      error: recommendation.rule
-        ? `师傅「${master.name}」不符合规则「${recommendation.rule.name}」的要求`
-        : `订单没有匹配的派单规则`,
+      error: reasonText,
+      failureCode,
     };
   }
 
@@ -414,6 +643,14 @@ export async function assignOrder(
     orderId,
     masterId: master.id,
   });
+
+  // [任务 19] 通知：派单成功 → customer/worker/merchant 三方各 1 条
+  await dispatchOrderNotifications(
+    { id: orderId, customerPhone: order.customerPhone, masterId: master.id },
+    "order_assigned",
+    { masterName: master.name, amount: order.amount },
+  );
+
   return {
     ok: true,
     orderId,
@@ -431,6 +668,11 @@ async function computeRecommendationForOrder(order: {
   serviceSkuId: string | null;
   status: string;
   address: string;
+  // [任务 3] 4 级地址 — 精确匹配 PlatformArea 必用
+  province: string;
+  city: string;
+  district: string;
+  street: string;
 }) {
   const { recommendMastersForOrder, parseRuleJson } =
     await import("@/lib/dispatch");
@@ -537,13 +779,63 @@ async function computeRecommendationForOrder(order: {
     },
   );
 
-  return recommendMastersForOrder({
-    order: { skuId: order.serviceSkuId, categoryId, address: order.address },
+  const result = recommendMastersForOrder({
+    order: {
+      skuId: order.serviceSkuId,
+      categoryId,
+      // [任务 3] 优先 4 级字段精确匹配；缺 4 级时 dispatch.ts fallback 到 address 模糊
+      province: order.province,
+      city: order.city,
+      district: order.district,
+      street: order.street,
+      address: order.address,
+    },
     rules,
     masters,
     platformAreas: platformAreaRows,
     merchantAreas: merchantAreaRows,
   });
+
+  // [任务 3] 推荐失败时写 activity log — 调用方传 orderId 进来
+  // 注意：computeRecommendationForOrder 不知道 orderId，由调用方（assignOrder / queries）负责写
+  // 这里只在 order 字段有 id 时写（assignOrder 路径）
+  if (result.failureCode && order.id) {
+    const actionMap: Record<string, string> = {
+      area_no_platform_area: "dispatch_area_no_platform_area",
+      area_no_merchant: "dispatch_area_no_merchant",
+      area_no_master: "dispatch_area_no_master",
+      no_rule: "dispatch_no_rule",
+      no_skill_matched: "dispatch_no_skill_matched",
+      merchant_inactive: "dispatch_merchant_inactive",
+    };
+    const action = actionMap[result.failureCode];
+    if (action) {
+      try {
+        await createActivityLog({
+          action,
+          targetType: "order",
+          targetId: order.id,
+          message: `派单推荐失败 [${result.failureCode}]: ${result.reason}`,
+          metadata: {
+            failureCode: result.failureCode,
+            matchedArea: result.matchedArea
+              ? {
+                  id: result.matchedArea.id,
+                  province: result.matchedArea.province,
+                  city: result.matchedArea.city,
+                  district: result.matchedArea.district,
+                  street: result.matchedArea.street,
+                }
+              : null,
+          },
+        });
+      } catch {
+        // 写日志失败不阻塞主流程
+      }
+    }
+  }
+
+  return result;
 }
 
 // ============================================================
@@ -640,15 +932,18 @@ export async function transitionOrder(
       ? trimServiceSummary(serviceSummary).cleaned
       : "";
 
-  // 3. 事务：乐观锁改订单 + 视情况释放师傅 + 写 serviceSummary/cancelReason（原子性）
+  // 3. 事务：乐观锁改订单 + 视情况释放师傅 + 写 serviceSummary/cancelReason + 联动退款（原子性）
   try {
     await prisma.$transaction(async (tx) => {
       // [v0.7.8] serviceSummary 与 status 同事务写
+      // [任务 19] cancel 时如果订单已支付（payStatus=paid），联动改 payStatus=refunding→refunded
+      //           模拟退款（演示期不接通道）写在一行 updateMany 里 — 中间态过渡给真实通道留口子
       const data: {
         status: "in_service" | "completed" | "cancelled";
         serviceSummary?: string;
         cancelReason?: string;
         canceledAt?: Date;
+        payStatus?: "refunding" | "refunded";
       } = {
         status: nextStatus,
       };
@@ -660,6 +955,12 @@ export async function transitionOrder(
       if (nextStatus === "cancelled" && cancelReason && cancelReason.trim()) {
         data.cancelReason = cancelReason.trim();
         data.canceledAt = new Date();
+      }
+      // [任务 19] 取消 + 已支付 → 模拟退款（事务内一步到终态 refunded）
+      // 设计：演示期不接通道，refunding 是预留状态（真实通道要"先发起退款→等回调→成功再改 refunded"）
+      //       MVP 简化：cancel 联动后立即 refunded；refunding 状态在 DB 不会出现，但类型和过滤器已支持
+      if (nextStatus === "cancelled" && order.payStatus === "paid") {
+        data.payStatus = "refunded";
       }
       const result = await tx.order.updateMany({
         where: { id: orderId, status: order.status }, // CAS：只在状态没变时改
@@ -721,6 +1022,30 @@ export async function transitionOrder(
   incrementCounter(METRIC.ORDER_TRANSITION_SUCCESS(nextStatus), {
     from: order.status,
   });
+
+  // [任务 19] 通知：完成/取消节点 → 三方分发
+  // - in_service（开始服务）不发通知：演示期不打扰（用户场景下也基本是隐藏状态）
+  // - completed：customer/worker/merchant 三方都收
+  // - cancelled：customer/worker/merchant 三方都收（cancelReason 带进 content）
+  // - 取消 + 退款联动：refundOrder 也会发 order_refunded（业务上是 2 条通知，演示期 OK）
+  if (nextStatus === "completed" || nextStatus === "cancelled") {
+    const notifType: "order_completed" | "order_canceled" =
+      nextStatus === "completed" ? "order_completed" : "order_canceled";
+    await dispatchOrderNotifications(
+      {
+        id: orderId,
+        customerPhone: order.customerPhone,
+        masterId: order.masterId,
+      },
+      notifType,
+      {
+        masterName: order.masterName,
+        cancelReason:
+          nextStatus === "cancelled" ? (cancelReason ?? undefined) : undefined,
+      },
+    );
+  }
+
   return {
     ok: true,
     orderId,
@@ -740,3 +1065,142 @@ const ALLOWED_TRANSITIONS: Record<
   in_service: ["completed", "cancelled"],
   // completed / cancelled 不在表里 = 终态，无法再变
 };
+
+// ============================================================
+// [任务 19] 售后退款 — 完成/已取消订单走独立售后流程
+// ============================================================
+//
+// 业务规则（任务原文「已完成订单不可直接退款，走售后」）：
+// - 仅 completed + payStatus=paid 可走售后退款（cancelled 已在 cancel 时联动退款，无需重复）
+// - 事务内：payStatus=paid → refunding → refunded（演示期一步到终态；refunding 留给真实通道）
+// - 不动 status（status=completed 保持；售后是财务操作，不改业务状态）
+// - 不释放师傅（completed 流程里师傅已被 transitionOrder 释放；这里不动）
+// - 不写 cancelReason（不是 cancel）
+//
+// 不做：
+// - 不接真实支付通道（演示期 mock 立即成功）
+// - 不支持部分退款（amount=order.amount 全额）
+// - 不写 FinanceLedger（task 14 是按 settlement 走；售后退款是 order 级，与商家结算体系解耦）
+
+export class RefundOrderError extends Error {
+  constructor(
+    message: string,
+    readonly reason: string,
+  ) {
+    super(message);
+    this.name = "RefundOrderError";
+  }
+}
+
+export type RefundOrderResult =
+  | { ok: true; orderId: string }
+  | { ok: false; category: "validation" | "system"; error: string };
+
+/**
+ * 售后退款（completed 订单专属）。
+ *
+ * 规则：
+ * 1. 订单必须存在
+ * 2. 订单 status 必须 === "completed"（cancelled 走 cancel 联动，pending/assigned/in_service 不允许）
+ * 3. 订单 payStatus 必须 === "paid"（unpaid 不需要退；refunding/refunded 幂等拒绝）
+ * 4. 事务：改 payStatus=refunded + 写 ActivityLog
+ *    乐观锁 where: { id, payStatus: "paid" } 防并发
+ */
+export async function refundOrder(orderId: string): Promise<RefundOrderResult> {
+  // 1. 加载订单
+  const order = await prisma.order.findUnique({ where: { id: orderId } });
+  if (!order) {
+    return {
+      ok: false,
+      category: "validation",
+      error: `订单 ${orderId} 不存在`,
+    };
+  }
+
+  // 2. status 必须 completed
+  if (order.status !== "completed") {
+    return {
+      ok: false,
+      category: "validation",
+      error: `订单当前状态为「${order.status}」，仅已完成（completed）订单可走售后退款`,
+    };
+  }
+
+  // 3. payStatus 必须 paid
+  if (order.payStatus !== "paid") {
+    return {
+      ok: false,
+      category: "validation",
+      error:
+        order.payStatus === "unpaid"
+          ? "订单未支付，无需退款"
+          : order.payStatus === "refunding"
+            ? "退款处理中，请勿重复申请"
+            : "订单已退款，请勿重复申请",
+    };
+  }
+
+  // 4. 事务：乐观锁改 payStatus=refunded + ActivityLog
+  try {
+    await prisma.$transaction(async (tx) => {
+      const result = await tx.order.updateMany({
+        where: { id: orderId, payStatus: "paid" }, // 乐观锁：仅 payStatus=paid 时改
+        data: { payStatus: "refunded" },
+      });
+      if (result.count === 0) {
+        // 并发场景：别的退款流程已改了
+        throw new RefundOrderError(
+          "退款失败",
+          "订单支付状态已变更，请刷新后重试",
+        );
+      }
+      logInfo("order refunded", {
+        orderId,
+        customerPhone: order.customerPhone,
+        amount: order.amount,
+      });
+      incrementCounter(METRIC.ORDER_REFUND_SUCCESS, { orderId });
+      await createActivityLog({
+        action: "order_refunded",
+        targetType: "order",
+        targetId: orderId,
+        message: `订单 ${orderId} 已退款（售后）`,
+        metadata: {
+          amount: order.amount,
+          previousStatus: order.status,
+        },
+        actorRole: "system", // 售后是平台动作，不归属于具体用户
+        actorName: "售后系统",
+      });
+    });
+  } catch (e) {
+    if (e instanceof RefundOrderError) {
+      return { ok: false, category: "validation", error: e.reason };
+    }
+    logError("refund order failed", e, { orderId });
+    incrementCounter(METRIC.ORDER_REFUND_FAILED, { reason: "system" });
+    return {
+      ok: false,
+      category: "system",
+      error: e instanceof Error ? e.message : "退款失败",
+    };
+  }
+
+  // [任务 19] 通知：售后退款 → customer/merchant 各 1 条
+  // 师傅不收退款通知（演示期商家关心、师傅无需知道；用户决策）
+  // masterId 此时可能为 null（演示期师傅完成订单后已被 transitionOrder 释放，但 order.masterId 是快照）
+  await dispatchOrderNotifications(
+    {
+      id: orderId,
+      customerPhone: order.customerPhone,
+      masterId: order.masterId,
+    },
+    "order_refunded",
+    {
+      masterName: order.masterName,
+      amount: order.amount,
+    },
+  );
+
+  return { ok: true, orderId };
+}

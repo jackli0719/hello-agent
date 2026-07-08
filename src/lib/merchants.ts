@@ -16,7 +16,9 @@ export type MerchantField =
   | "city"
   | "district"
   | "street"
-  | "addressDetail";
+  | "addressDetail"
+  | "inviteCode"
+  | "inviteCodeEnabled";
 
 export interface CreateMerchantInput {
   name: string;
@@ -28,6 +30,10 @@ export interface CreateMerchantInput {
   district: string;
   street: string;
   addressDetail: string;
+  // [任务 4] 邀请码 — 不传时 createMerchant 自动生成 8 字符 base36
+  inviteCode?: string;
+  // 默认 true
+  inviteCodeEnabled?: boolean;
 }
 
 export interface UpdateMerchantInput extends CreateMerchantInput {
@@ -62,6 +68,12 @@ function validateMerchantInput(
     district: cleanText(input.district),
     street: cleanText(input.street),
     addressDetail: cleanText(input.addressDetail),
+    // [任务 4] 邀请码 — 不传则不写入（createMerchant 会自动生成；updateMerchant 不动）
+    inviteCode: input.inviteCode
+      ? cleanText(input.inviteCode).toUpperCase()
+      : undefined,
+    inviteCodeEnabled:
+      input.inviteCodeEnabled === undefined ? true : input.inviteCodeEnabled,
   };
 
   for (const [field, label, value, maxLength] of [
@@ -97,7 +109,11 @@ export async function listMerchants() {
   return prisma.merchant.findMany({
     include: {
       _count: {
-        select: { merchantAreas: true, masters: true },
+        select: {
+          merchantAreas: true,
+          masters: true,
+          commissionStrategies: true,
+        },
       },
     },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -121,12 +137,44 @@ export async function createMerchant(
     };
   }
 
+  // [任务 4] 邀请码生成 — 8 字符 base36（A-Z0-9，去掉易混淆 I/O/0/1）
+  // 如调用方没传则生成；传了则保留（seed/test 用）
+  const cleanedWithInvite = {
+    ...validated.cleaned,
+    inviteCode: validated.cleaned.inviteCode || generateInviteCode(),
+    inviteCodeEnabled: validated.cleaned.inviteCodeEnabled ?? true,
+  };
+
   try {
-    const row = await prisma.merchant.create({ data: validated.cleaned });
+    const row = await prisma.merchant.create({ data: cleanedWithInvite });
     return { ok: true, id: row.id };
-  } catch {
+  } catch (e) {
+    // 唯一约束冲突（inviteCode 重复）
+    if (
+      e instanceof Error &&
+      "code" in e &&
+      (e as { code?: string }).code === "P2002"
+    ) {
+      return {
+        ok: false,
+        category: "validation",
+        error: "邀请码已被使用，请换一个",
+        field: "inviteCode",
+      };
+    }
     return { ok: false, category: "system", error: "商家保存失败" };
   }
+}
+
+// [任务 4] 生成 8 字符 base36 邀请码 — 去掉易混淆字符 (I O 0 1)
+// 32^8 = 1.1T 组合空间，足够小项目用
+export function generateInviteCode(length = 8): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // 32 chars
+  let result = "";
+  for (let i = 0; i < length; i++) {
+    result += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return result;
 }
 
 export async function updateMerchant(
@@ -153,14 +201,41 @@ export async function updateMerchant(
   }
 
   try {
+    // [任务 4] updateMerchant 保留原 inviteCode — 不在 update 路径生成新的（避免误覆盖）
+    // 调用方显式传 inviteCode 时会覆盖（admin 重新生成场景；本阶段不做 UI）
+    const updateData = {
+      ...validated.cleaned,
+      inviteCode: rawInput.inviteCode || undefined,
+    };
     const row = await prisma.merchant.update({
       where: { id },
-      data: validated.cleaned,
+      data: updateData,
     });
     return { ok: true, id: row.id };
-  } catch {
+  } catch (e) {
+    if (
+      e instanceof Error &&
+      "code" in e &&
+      (e as { code?: string }).code === "P2002"
+    ) {
+      return {
+        ok: false,
+        category: "validation",
+        error: "邀请码已被使用，请换一个",
+        field: "inviteCode",
+      };
+    }
     return { ok: false, category: "system", error: "商家保存失败" };
   }
+}
+
+// [任务 4] 按 inviteCode 查商家 — /worker/join 用
+// 返回 null = 邀请码不存在；非 null = 商家（调用方负责 status/inviteCodeEnabled 校验）
+export async function findMerchantByInviteCode(inviteCode: string) {
+  if (!inviteCode) return null;
+  return prisma.merchant.findUnique({
+    where: { inviteCode: inviteCode.trim() },
+  });
 }
 
 // ============================================================

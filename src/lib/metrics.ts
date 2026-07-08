@@ -84,10 +84,24 @@ export function resetCounters(): void {
 export const METRIC = {
   ORDER_CREATE_SUCCESS: "order.create.success",
   ORDER_CREATE_FAILED: "order.create.failed",
+  // [支付] 模拟支付成功/失败 — 任务 X 演示闭环
+  ORDER_PAY_SUCCESS: "order.pay.success",
+  ORDER_PAY_FAILED: "order.pay.failed",
   ORDER_ASSIGN_SUCCESS: "order.assign.success",
   ORDER_ASSIGN_FAILED: "order.assign.failed",
   ORDER_TRANSITION_SUCCESS: (status: string) =>
     `order.transition.success.${status}`,
   ORDER_TRANSITION_FAILED: (status: string) =>
     `order.transition.failed.${status}`,
+  // [任务 19] 售后退款（completed 订单专属）
+  ORDER_REFUND_SUCCESS: "order.refund.success",
+  ORDER_REFUND_FAILED: "order.refund.failed",
+  // [任务 20] 自动派单
+  AUTO_DISPATCH_SUCCESS: "auto_dispatch.success",
+  AUTO_DISPATCH_FAILED: "auto_dispatch.failed",
+  // [任务 21] 售后工单
+  AFTER_SALES_CREATED: "after_sales.created",
+  AFTER_SALES_PROCESSING: "after_sales.processing",
+  AFTER_SALES_RESOLVED: "after_sales.resolved",
+  AFTER_SALES_REJECTED: "after_sales.rejected",
 } as const;

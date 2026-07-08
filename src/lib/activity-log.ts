@@ -10,7 +10,9 @@
 import { prisma } from "./db";
 import { getSession } from "./auth";
 
-export type ActivityRole = "admin" | "worker" | "customer" | "system";
+// [任务 19] merchant 角色加入 — 商家端取消订单时埋点
+export type ActivityRole =
+  "admin" | "worker" | "customer" | "merchant" | "system";
 
 export type ActivityTargetType =
   | "order"
@@ -20,7 +22,13 @@ export type ActivityTargetType =
   | "dispatchRule"
   | "platformArea"
   | "merchant"
-  | "merchantArea";
+  | "merchantArea"
+  | "commissionStrategy" // [任务 5] 分成策略
+  | "settlementPreview" // [任务 6] 结算预览
+  | "merchantSettlement" // [任务 7] 商家结算汇总
+  | "payoutRecord" // [任务 12] 线下打款记录
+  | "withdrawRequest" // [任务 13] 提现申请
+  | "workerWithdrawRequest"; // [任务 T2-1] 师傅提现申请
 
 export interface CreateActivityLogInput {
   action: string;
@@ -115,6 +123,7 @@ export const ACTIVITY_ACTIONS = [
   "order_completed",
   "order_canceled",
   "order_dispatch_canceled",
+  "order_refunded",
   "order_internal_remark_updated",
   "order_service_summary_added",
   "master_created",
@@ -123,6 +132,7 @@ export const ACTIVITY_ACTIONS = [
   "service_sku_updated",
   "dispatch_rule_created",
   "dispatch_rule_updated",
+  "auto_dispatch_failed",
 ] as const;
 export type ActivityAction = (typeof ACTIVITY_ACTIONS)[number];
 

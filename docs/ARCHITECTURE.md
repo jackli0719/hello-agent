@@ -143,7 +143,7 @@
 
 ## 4. 数据模型
 
-详见 `prisma/schema.prisma`（带完整注释）。下面是 6 张表的核心要点（**[v0.3.0]** 新增 `User` 表）：
+详见 `prisma/schema.prisma`（带完整注释）。下面是 8 张表的核心要点（**[v0.3.0]** 新增 `User`，**[v0.7.0]** 新增 `MerchantSettlement`，**[任务 17]** 新增 `WorkerSettlement`）：
 
 ### 4.1 关系图
 
@@ -162,6 +162,10 @@ ServiceCategory 1 ──── N ServiceSku
                         |categoryId)      │
                                           ▼
                                        User (admin / customer)
+
+Master 1 ──── N WorkerSettlement         Merchant 1 ──── N MerchantSettlement
+  ↑ [任务 17] 师傅维度收入汇总             ↑ [v0.7.0] 商家维度收入汇总
+  唯一约束 (workerId, period)              唯一约束 (merchantId, period) + 状态机 pending/confirmed/archived
 ```
 
 **[v0.3.0]** `User` 表新增：
@@ -169,16 +173,26 @@ ServiceCategory 1 ──── N ServiceSku
 - `User.workerId → Master.id`（role=worker 时一对一）
 - `Master.user → User?`（反向关系）
 
+**[任务 17]** `WorkerSettlement` 表新增：
+
+- `WorkerSettlement.workerId → Master.id`（Cascade）
+- 数据源：`SettlementPreview`（commission strategy 拆分后聚合）
+- **无状态机**：仅展示用，不走打款
+- 唯一约束 `(workerId, period)` — 同师傅同月只一条
+- 复用 `merchant-settlement.ts` 的 `formatPeriod` 实现
+
 ### 4.2 字段要点
 
-| 表                  | 关键字段                                                              | 设计决策                                                               |
-| ------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| **ServiceCategory** | `categoryCode`（业务编码）                                            | 大写字母+数字+连字符，应用层强制（`src/lib/codes.ts`）                 |
-| **ServiceSku**      | `basePrice`（分）、`durationMinutes`、`requiredSkills`（JSON 字符串） | 金额用「分」避浮点；时长写死 60 分钟按需求                             |
-| **Master**          | `skills`（JSON 字符串）、`status`、`serviceArea`（自由文本）          | `status` UI 不暴露（系统自动管）；`serviceArea` 字段已存但匹配逻辑没做 |
-| **Order**           | `id`（业务号 `O+YYYYMMDD+xxxx`）、`amount`（分）、`status`            | `serviceName`/`masterName` **冗余快照**，防止 SKU/师傅改名影响历史     |
-| **DispatchRule**    | `ruleJson`（JSON：`{match, requiredSkills}`）                         | UI 字段（skuCode/categoryCode）→ repo 层反查 ID 写入                   |
-| **[v0.3.0] User**   | `name`（unique）、`role`、`workerId?`、`phone?`                       | 密码明文存（# MVP）；三角色：admin/worker/customer                     |
+| 表                              | 关键字段                                                                                                       | 设计决策                                                               |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| **ServiceCategory**             | `categoryCode`（业务编码）                                                                                     | 大写字母+数字+连字符，应用层强制（`src/lib/codes.ts`）                 |
+| **ServiceSku**                  | `basePrice`（分）、`durationMinutes`、`requiredSkills`（JSON 字符串）                                          | 金额用「分」避浮点；时长写死 60 分钟按需求                             |
+| **Master**                      | `skills`（JSON 字符串）、`status`、`serviceArea`（自由文本）                                                   | `status` UI 不暴露（系统自动管）；`serviceArea` 字段已存但匹配逻辑没做 |
+| **Order**                       | `id`（业务号 `O+YYYYMMDD+xxxx`）、`amount`（分）、`status`                                                     | `serviceName`/`masterName` **冗余快照**，防止 SKU/师傅改名影响历史     |
+| **DispatchRule**                | `ruleJson`（JSON：`{match, requiredSkills}`）                                                                  | UI 字段（skuCode/categoryCode）→ repo 层反查 ID 写入                   |
+| **[v0.3.0] User**               | `name`（unique）、`role`、`workerId?`、`phone?`                                                                | 密码明文存（# MVP）；三角色：admin/worker/customer                     |
+| **[v0.7.0] MerchantSettlement** | `period`（YYYY-MM）、`totalOrderCount`、`totalAmount`、`platformFee`/`merchantIncome`/`workerIncome`、`status` | 三状态机：pending/confirmed/archived；走打款链路                       |
+| **[任务 17] WorkerSettlement**  | `period`、`orderCount`、`totalAmount`、`workerIncome`                                                          | 无状态机；仅展示；数据源 SettlementPreview                             |
 
 ### 4.3 核心约束
 

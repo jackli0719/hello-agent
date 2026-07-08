@@ -19,27 +19,53 @@ import { redirect } from "next/navigation";
 import { getOrderForCustomer } from "@/src/lib/customer";
 import { getCurrentUser } from "@/src/lib/auth";
 import { ensureCsrfCookie } from "@/src/lib/csrf";
-import { customerCancelOrderAction } from "@/app/orders/actions";
+import {
+  getLatestDispatchFailure,
+  describeFailureCode,
+} from "@/src/lib/auto-dispatch";
+import {
+  customerCancelOrderAction,
+  customerCreateAfterSalesAction,
+  customerRefundOrderAction,
+} from "@/app/orders/actions";
 import { CancelForm } from "@/components/CancelForm";
+import { RefundForm } from "@/components/RefundForm";
+import { PayForm } from "./PayForm";
+import { AfterSalesForm } from "./AfterSalesForm";
+import { AfterSalesCard } from "./AfterSalesCard";
 import { StatusBadge, ORDER_TONE } from "@/components/ui";
 import { ORDER_STATUS_LABEL } from "@/lib/mock-data";
-import type { OrderStatus } from "@/src/types";
+import type { OrderStatus, PayStatus } from "@/src/types";
 
 interface PageProps {
   params: Promise<{ id: string }>;
 }
 
 // 状态文案 — 按业务规则
-function statusHint(status: OrderStatus): string {
+// [任务 X + 任务 19] payStatus 区分: status=pending + payStatus=unpaid → 待支付
+//         status=pending + payStatus=paid   → 待派单
+//         status=cancelled + payStatus=refunded → 已取消已退款
+//         status=completed + payStatus=refunded → 已完成已退款
+function statusHint(status: OrderStatus, payStatus: PayStatus): string {
+  if (status === "pending" && payStatus === "unpaid") {
+    return "订单待支付 — 完成支付后将进入待派单";
+  }
+  // [任务 19] 已退款终态
+  if (status === "cancelled" && payStatus === "refunded") {
+    return "订单已取消 — 款项已退回";
+  }
+  if (status === "completed" && payStatus === "refunded") {
+    return "服务已完成 — 售后已退款";
+  }
   switch (status) {
     case "pending":
-      return "等待后台派单";
+      return "已支付,等待后台派单";
     case "assigned":
-      return "已派单，师傅即将联系您";
+      return "已派单,师傅即将联系您";
     case "in_service":
       return "师傅正在服务中";
     case "completed":
-      return "服务已完成";
+      return "服务已完成 — 如有问题可申请售后退款";
     case "cancelled":
       return "订单已取消";
   }
@@ -72,6 +98,13 @@ export default async function CustomerOrderDetailPage({ params }: PageProps) {
     // 订单不存在 / 不属于该 phone → 跳回列表
     redirect("/customer/orders?error=not_found");
   }
+
+  // [任务 20] 派单失败原因查询（仅 pending+paid 状态有意义）
+  // 与订单查并行做（独立查询，无依赖）
+  const dispatchFailure =
+    order.status === "pending" && order.payStatus === "paid"
+      ? await getLatestDispatchFailure(id)
+      : null;
 
   return (
     <div style={pageStyle}>
@@ -130,8 +163,38 @@ export default async function CustomerOrderDetailPage({ params }: PageProps) {
             marginBottom: 16,
           }}
         >
-          {statusHint(order.status)}
+          {statusHint(order.status, order.payStatus)}
         </div>
+
+        {/* [任务 20] 派单失败原因 — pending+paid 状态且有失败日志时显示 */}
+        {dispatchFailure ? (
+          <div
+            style={{
+              padding: "10px 14px",
+              background: "#fef2f2",
+              border: "1px solid #fecaca",
+              borderRadius: 6,
+              color: "#7f1d1d",
+              fontSize: 13,
+              marginBottom: 16,
+            }}
+          >
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>
+              ⚠ 暂时无法自动派单
+            </div>
+            <div>{describeFailureCode(dispatchFailure.failureCode)}</div>
+            <div
+              style={{
+                color: "#9ca3af",
+                fontSize: 11,
+                marginTop: 4,
+              }}
+            >
+              {formatDateTime(dispatchFailure.createdAt.toISOString())} ·
+              工作人员会尽快处理
+            </div>
+          </div>
+        ) : null}
 
         {/* 客户信息 */}
         <SectionTitle title="客户信息" />
@@ -177,10 +240,20 @@ export default async function CustomerOrderDetailPage({ params }: PageProps) {
         <SectionTitle title="时间信息" />
         <Field label="下单时间" value={formatDateTime(order.createdAt)} />
 
-        {/* [v0.7.9] 用户取消按钮 — 仅 pending 状态（业务规则 #10）*/}
+        {/* [v0.7.9] 用户取消按钮 — 仅 pending 状态（业务规则 #10）
+            [任务 X] 支付按钮 — 仅 payStatus=unpaid 时显示
+            [任务 19] 售后退款 — 仅 completed + payStatus=paid 且无售后时显示
+            [任务 21] 售后工单 — 仅 completed 且未发起过售后时显示 */}
         {order.status === "pending" && (
           <div style={{ marginTop: 16 }}>
             <SectionTitle title="操作" />
+            {order.payStatus === "unpaid" ? (
+              <PayForm
+                orderId={order.id}
+                csrfToken={csrfToken}
+                amountYuan={order.amountYuan}
+              />
+            ) : null}
             <CancelForm
               orderId={order.id}
               formAction={customerCancelOrderAction}
@@ -189,6 +262,46 @@ export default async function CustomerOrderDetailPage({ params }: PageProps) {
             />
           </div>
         )}
+        {order.status === "completed" &&
+          order.payStatus !== "refunded" &&
+          !order.afterSalesStatus && (
+            <div style={{ marginTop: 16 }}>
+              <SectionTitle title="售后" />
+              {/* [任务 21] 售后工单（流程型）— 写「问题描述→admin 受理」 */}
+              <AfterSalesForm
+                orderId={order.id}
+                csrfToken={csrfToken}
+                formAction={customerCreateAfterSalesAction}
+              />
+              {/* [任务 19] 售后退款（财务型）— 已支付则可申请 */}
+              {order.payStatus === "paid" ? (
+                <div style={{ marginTop: 12 }}>
+                  <RefundForm
+                    orderId={order.id}
+                    formAction={customerRefundOrderAction}
+                    csrfToken={csrfToken}
+                    amountYuan={order.amountYuan}
+                    buttonLabel="直接申请退款"
+                  />
+                  <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 4 }}>
+                    如已沟通好可直接申请退款；否则请先发起售后工单。
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          )}
+        {/* [任务 21] 售后状态卡片 — 发起后展示 */}
+        {order.afterSalesStatus ? (
+          <div style={{ marginTop: 16 }}>
+            <SectionTitle title="售后进度" />
+            <AfterSalesCard
+              status={order.afterSalesStatus}
+              reason={order.afterSalesReason}
+              rejectReason={order.afterSalesRejectReason}
+              handledAt={order.afterSalesHandledAt}
+            />
+          </div>
+        ) : null}
       </section>
     </div>
   );

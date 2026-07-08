@@ -21,11 +21,28 @@ describe("isProtectedPath", () => {
     expect(isProtectedPath("/platform-areas/new")).toBe(true);
     expect(isProtectedPath("/merchants")).toBe(true);
     expect(isProtectedPath("/merchants/new")).toBe(true);
+    expect(isProtectedPath("/commission-strategies")).toBe(true);
+    expect(isProtectedPath("/commission-strategies/new")).toBe(true);
+    expect(isProtectedPath("/settlements")).toBe(true);
+    expect(isProtectedPath("/merchant-settlements")).toBe(true);
+    expect(isProtectedPath("/payout-records")).toBe(true); // [任务 12] 打款记录
+    expect(isProtectedPath("/withdraw-requests")).toBe(true); // [任务 13] 提现申请
+    expect(isProtectedPath("/master-withdraw-requests")).toBe(true); // [任务 T2-1] 师傅提现申请
+    expect(isProtectedPath("/finance-ledgers")).toBe(true); // [任务 14] 财务流水
     expect(isProtectedPath("/dispatch-rules")).toBe(true);
     expect(isProtectedPath("/dispatch-rules/new")).toBe(true);
+    expect(isProtectedPath("/activity-logs")).toBe(true);
     // [账号阶段] 新增的受保护路径
     expect(isProtectedPath("/worker")).toBe(true);
     expect(isProtectedPath("/customer/orders")).toBe(true);
+    // [任务 18] 商家端后台
+    expect(isProtectedPath("/merchant-admin")).toBe(true);
+    expect(isProtectedPath("/merchant-admin/orders")).toBe(true);
+    // [任务 21] 售后工单后台
+    expect(isProtectedPath("/admin/after-sales")).toBe(true);
+    expect(isProtectedPath("/admin/after-sales/O20260629001")).toBe(true);
+    // [任务 23] 风控预警后台
+    expect(isProtectedPath("/admin/risk-alerts")).toBe(true);
   });
 
   // # spec: 路由保护 — /login 即使满足前缀也排除（公开白名单）
@@ -57,19 +74,50 @@ describe("canAccess", () => {
     ["admin", "/platform-areas/new", true],
     ["admin", "/merchants", true],
     ["admin", "/merchants/new", true],
+    ["admin", "/commission-strategies", true],
+    ["admin", "/commission-strategies/new", true],
+    ["admin", "/settlements", true],
+    ["admin", "/merchant-settlements", true],
+    ["admin", "/payout-records", true], // [任务 12] 打款记录
+    ["admin", "/withdraw-requests", true], // [任务 13] 提现申请
+    ["admin", "/master-withdraw-requests", true], // [任务 T2-1] 师傅提现申请
+    ["admin", "/finance-ledgers", true], // [任务 14] 财务流水
     ["admin", "/dispatch-rules", true],
+    ["admin", "/activity-logs", true],
+    ["admin", "/merchant-admin", true], // [任务 18] admin 也能看
+    ["admin", "/admin/after-sales", true], // [任务 21] 售后工单后台
+    ["admin", "/admin/after-sales/O123", true],
+    ["admin", "/admin/risk-alerts", true], // [任务 23] 风控预警后台
     ["admin", "/worker", false], // 越权
     ["admin", "/customer/orders", false],
     // worker
     ["worker", "/worker", true],
     ["worker", "/worker/orders/abc", true],
     ["worker", "/dashboard", false], // 越权
+    ["worker", "/payout-records", false], // [任务 12] 越权
+    ["worker", "/withdraw-requests", false], // [任务 13] 越权
+    ["worker", "/master-withdraw-requests", true], // [任务 T2-1] 师傅可看自己申请
+    ["worker", "/finance-ledgers", false], // [任务 14] 越权
+    ["worker", "/merchant-admin", false], // [任务 18] 越权
     ["worker", "/customer/orders", false],
     // customer
     ["customer", "/customer", true],
     ["customer", "/customer/orders", true],
     ["customer", "/dashboard", false],
     ["customer", "/worker", false],
+    ["customer", "/merchant-admin", false], // [任务 18] 越权
+    // [任务 18] merchant 角色 — 只允许 /merchant-admin
+    ["merchant", "/merchant-admin", true],
+    ["merchant", "/merchant-admin/orders", true],
+    ["merchant", "/merchant-admin/masters", true],
+    ["merchant", "/admin/after-sales", false], // [任务 21] 商家不能进 admin 后台
+    ["merchant", "/admin/risk-alerts", false], // [任务 23] 商家不能进 admin 后台
+    ["merchant", "/dashboard", false], // 越权
+    ["merchant", "/orders", false],
+    ["merchant", "/masters", false],
+    ["merchant", "/withdraw-requests", false],
+    ["merchant", "/worker", false],
+    ["merchant", "/customer/orders", false],
   ];
   for (const [role, path, expected] of cases) {
     // # spec: 权限矩阵 — role 对 path 应等于 expected（上面表格定义）
@@ -83,10 +131,10 @@ describe("canAccess", () => {
 describe("authenticate", () => {
   // 重置用户（测试隔离）
   beforeEach(async () => {
-    // 保留 seed 创建的 3 个测试账号
+    // 保留 seed 创建的测试账号（admin + 4 worker + 2 customer + 2 merchant）
     await prisma.user.deleteMany({
       where: {
-        name: { notIn: ["admin", "worker1", "customer1"] },
+        name: { notIn: ["admin", "worker1", "customer1", "merchant1"] },
       },
     });
   });
@@ -121,5 +169,13 @@ describe("authenticate", () => {
     const u = await authenticate("worker1", "worker123");
     expect(u?.role).toBe("worker");
     expect(u?.workerId).toBeTruthy();
+  });
+
+  // # spec: merchant 账号登录 → merchantId 绑定到 Merchant.id
+  it("merchant1 登录 → 返回 merchantId", async () => {
+    const u = await authenticate("merchant1", "merchant123");
+    expect(u?.role).toBe("merchant");
+    expect(u?.merchantId).toBeTruthy();
+    expect(u?.workerId).toBeNull();
   });
 });

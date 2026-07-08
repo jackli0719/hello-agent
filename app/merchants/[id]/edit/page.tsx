@@ -13,6 +13,7 @@ import {
   listMerchantAreas,
 } from "@/src/lib/merchants";
 import { ensureCsrfCookie } from "@/src/lib/csrf";
+import { listCommissionStrategies } from "@/src/lib/commission";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -73,11 +74,13 @@ export default async function EditMerchantPage({
     searchParams,
     ensureCsrfCookie(),
   ]);
-  const [merchant, merchantAreas, availableAreas] = await Promise.all([
-    getMerchant(id),
-    listMerchantAreas(id),
-    listAvailablePlatformAreas(id),
-  ]);
+  const [merchant, merchantAreas, availableAreas, commissionStrategies] =
+    await Promise.all([
+      getMerchant(id),
+      listMerchantAreas(id),
+      listAvailablePlatformAreas(id),
+      listCommissionStrategies(id),
+    ]);
   if (!merchant) notFound();
 
   return (
@@ -162,6 +165,61 @@ export default async function EditMerchantPage({
               <option value="inactive">inactive</option>
             </select>
           </label>
+
+          {/* [任务 4] 邀请码展示 + 启用开关 */}
+          <div>
+            <label
+              style={{
+                display: "block",
+                fontSize: 13,
+                color: "#374151",
+                fontWeight: 500,
+                marginBottom: 6,
+              }}
+            >
+              邀请码{" "}
+              <span style={{ color: "#6b7280", fontSize: 12, fontWeight: 400 }}>
+                （师傅 /worker/join 入驻用）
+              </span>
+            </label>
+            <input
+              type="text"
+              value={merchant.inviteCode}
+              readOnly
+              style={{
+                ...inputStyle,
+                fontFamily: "monospace",
+                letterSpacing: 1,
+                background: "#f3f4f6",
+                color: "#374151",
+              }}
+            />
+          </div>
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 14,
+            }}
+          >
+            <input
+              type="checkbox"
+              name="inviteCodeEnabled"
+              value="true"
+              defaultChecked={merchant.inviteCodeEnabled}
+              style={{ width: 16, height: 16 }}
+            />
+            <span
+              style={{
+                fontSize: 13,
+                color: "#374151",
+                fontWeight: 500,
+              }}
+            >
+              邀请码启用（禁用后师傅无法通过此码入驻）
+            </span>
+          </label>
           <Field
             label="省"
             name="province"
@@ -213,6 +271,21 @@ export default async function EditMerchantPage({
 
       <section style={{ ...card, maxWidth: 920 }}>
         <h2 style={{ fontSize: 18, margin: "0 0 14px 0" }}>合作区域绑定</h2>
+        {/* 风险 #3: 商家已停用时,绑定按钮置灰 + tooltip */}
+        {merchant.status !== "active" && (
+          <div
+            style={{
+              padding: "8px 12px",
+              background: "#fef3c7",
+              color: "#92400e",
+              borderRadius: 6,
+              fontSize: 13,
+              marginBottom: 12,
+            }}
+          >
+            商家已停用,不能绑定新合作区域(已绑定区域仍可启用/停用)
+          </div>
+        )}
         <form
           action={bindMerchantAreaAction}
           style={{
@@ -227,7 +300,9 @@ export default async function EditMerchantPage({
           <select
             name="platformAreaId"
             required
-            disabled={availableAreas.length === 0}
+            disabled={
+              availableAreas.length === 0 || merchant.status !== "active"
+            }
             style={{ ...inputStyle, maxWidth: 460 }}
             defaultValue=""
           >
@@ -240,16 +315,31 @@ export default async function EditMerchantPage({
           </select>
           <button
             type="submit"
-            disabled={availableAreas.length === 0}
+            disabled={
+              availableAreas.length === 0 || merchant.status !== "active"
+            }
+            title={
+              merchant.status !== "active"
+                ? "商家已停用,不能绑定新合作区域"
+                : availableAreas.length === 0
+                  ? "暂无可绑定的平台合作区域"
+                  : ""
+            }
             style={{
               padding: "9px 18px",
-              background: availableAreas.length === 0 ? "#9ca3af" : "#2563eb",
+              background:
+                availableAreas.length === 0 || merchant.status !== "active"
+                  ? "#9ca3af"
+                  : "#2563eb",
               color: "#fff",
               border: "none",
               borderRadius: 6,
               fontSize: 14,
               fontWeight: 500,
-              cursor: availableAreas.length === 0 ? "not-allowed" : "pointer",
+              cursor:
+                availableAreas.length === 0 || merchant.status !== "active"
+                  ? "not-allowed"
+                  : "pointer",
             }}
           >
             绑定区域
@@ -315,6 +405,84 @@ export default async function EditMerchantPage({
                   </td>
                 </tr>
               ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+
+      {/* [任务 5] 分成策略模块 */}
+      <section style={{ ...card, maxWidth: 920, marginTop: 24 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 14,
+          }}
+        >
+          <h2 style={{ fontSize: 18, margin: 0 }}>分成策略</h2>
+          <Link
+            href={`/commission-strategies/new?merchantId=${merchant.id}`}
+            style={{
+              padding: "6px 14px",
+              background: "#2563eb",
+              color: "#fff",
+              borderRadius: 6,
+              fontSize: 13,
+              fontWeight: 500,
+              textDecoration: "none",
+            }}
+          >
+            + 新增策略
+          </Link>
+        </div>
+        {commissionStrategies.length === 0 ? (
+          <div style={{ color: "#9ca3af", fontSize: 14 }}>暂无分成策略</div>
+        ) : (
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                <th style={th}>策略名</th>
+                <th style={th}>类型</th>
+                <th style={th}>规则</th>
+                <th style={th}>状态</th>
+                <th style={th}>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {commissionStrategies.map((s) => {
+                const rule =
+                  s.strategyType === "percentage"
+                    ? `平台 ${(s.platformRate * 100).toFixed(0)}% / 商家 ${(s.merchantRate * 100).toFixed(0)}% / 师傅 ${(s.workerRate * 100).toFixed(0)}%`
+                    : `平台 ¥${(s.fixedPlatformAmount / 100).toFixed(2)} / 商家 ¥${(s.fixedMerchantAmount / 100).toFixed(2)} / 师傅 ¥${(s.fixedWorkerAmount / 100).toFixed(2)}`;
+                return (
+                  <tr key={s.id}>
+                    <td style={td}>{s.name}</td>
+                    <td style={td}>
+                      {s.strategyType === "percentage" ? "按比例" : "固定金额"}
+                    </td>
+                    <td style={{ ...td, fontSize: 12 }}>{rule}</td>
+                    <td style={td}>
+                      <StatusBadge
+                        label={s.enabled ? "启用" : "停用"}
+                        tone={s.enabled ? "green" : "gray"}
+                      />
+                    </td>
+                    <td style={td}>
+                      <Link
+                        href={`/commission-strategies/${s.id}/edit`}
+                        style={{
+                          color: "#2563eb",
+                          fontSize: 13,
+                          textDecoration: "none",
+                        }}
+                      >
+                        编辑
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}

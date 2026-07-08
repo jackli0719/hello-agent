@@ -1,5 +1,9 @@
 // transitionOrder 端到端测试 — 走真实 SQLite。
 // 覆盖：合法流转、非法流转、取消时释放师傅、并发兜底。
+//
+// [v0.10.0] 本测试集不验"商家过滤"——transitionOrder 不查商家，
+// 只动 status + master 释放。商家过滤在 lib/dispatch.test.ts 覆盖。
+// 详见 docs/TEST-CHANGELOG.md v0.10.0 段。
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { transitionOrder } from "./orders";
@@ -23,10 +27,12 @@ async function resetOrder(
   status: string,
   masterId: string | null,
   masterName: string | null,
+  // [v1.0] 默认 "paid" 与 demo 灌的一致；测试要 unpaid 的传 "unpaid"
+  payStatus: string = "paid",
 ) {
   await prisma.order.update({
     where: { id },
-    data: { status, masterId, masterName },
+    data: { status, masterId, masterName, payStatus },
   });
 }
 

@@ -10,7 +10,13 @@ import {
 } from "@/src/lib/validation";
 
 export type MasterField =
-  "name" | "phone" | "skills" | "rating" | "serviceArea" | "merchantId"; // [任务 2] 商家必填
+  | "name"
+  | "phone"
+  | "skills"
+  | "rating"
+  | "serviceArea"
+  | "merchantId"
+  | "joinSource"; // [任务 4] 入驻来源
 
 export interface CreateMasterInput {
   name: string;
@@ -18,6 +24,8 @@ export interface CreateMasterInput {
   skills: string[]; // 数组，内部会 JSON.stringify
   rating: number;
   serviceArea: string;
+  // [任务 4] 入驻来源：admin_created（默认）/ invite_code
+  joinSource?: "admin_created" | "invite_code";
   // [任务 2] 师傅必须归属一个商家 — 平台合作模式必填
   merchantId: string;
   // 注意：available/status 不在表单字段里 — 由系统（派单/释放）自动管理
@@ -197,6 +205,8 @@ export async function createMaster(
         // 新师傅默认 available — status 由后续派单/释放自动管
         status: "available",
         serviceArea: c.serviceArea,
+        // [任务 4] 入驻来源 — 默认 admin_created（/worker/join 走自定义路径不走这里）
+        joinSource: c.joinSource ?? "admin_created",
         // [任务 2] 师傅归属商家 — FK merchantId（validated.cleaned 必填）
         merchant: { connect: { id: c.merchantId } },
       },

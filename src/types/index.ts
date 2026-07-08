@@ -11,6 +11,15 @@ export type OrderStatus =
   | "completed" // 已完成
   | "cancelled"; // 已取消
 
+// [任务 X + 任务 19] 支付状态 — 模拟支付（演示期）
+// unpaid    = 下单后未付, status=pending + payStatus=unpaid = 待支付
+// paid      = 模拟支付成功, status=pending + payStatus=paid   = 待派单
+// refunding = 退款处理中（任务 19 加中间态）— status=cancelled + payStatus=refunding
+//            事务内两步走: cancel 时先 refunding（写财务）→ 完成后 refunded
+// refunded  = 已退款（任务 19 终态）— status=cancelled + payStatus=refunded
+// 演示期不接真实通道，模拟退款事务内立即 refunded；refunding 是为真实通道留的口子
+export type PayStatus = "unpaid" | "paid" | "refunding" | "refunded";
+
 export type TechnicianStatus = "available" | "busy" | "offline";
 
 export interface Order {

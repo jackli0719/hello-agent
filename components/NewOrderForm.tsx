@@ -197,22 +197,72 @@ export function NewOrderForm({ categories, skus }: Props) {
       </div>
 
       <div>
-        <label style={labelStyle} htmlFor="address">
-          服务地址 <span style={{ color: "#b91c1c" }}>*</span>
+        <label style={labelStyle}>
+          服务区域（4 级必填） <span style={{ color: "#b91c1c" }}>*</span>
+        </label>
+        <div
+          style={{ display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr" }}
+        >
+          <input
+            name="province"
+            type="text"
+            maxLength={50}
+            placeholder="省（如：广东省）"
+            style={inputStyle}
+            required
+          />
+          <input
+            name="city"
+            type="text"
+            maxLength={50}
+            placeholder="市（如：深圳市）"
+            style={inputStyle}
+            required
+          />
+          <input
+            name="district"
+            type="text"
+            maxLength={50}
+            placeholder="区县（如：南山区）"
+            style={inputStyle}
+            required
+          />
+          <input
+            name="street"
+            type="text"
+            maxLength={50}
+            placeholder="街道 / 乡镇（如：粤海街道）"
+            style={inputStyle}
+            required
+          />
+        </div>
+        {result &&
+          "field" in result &&
+          ["province", "city", "district", "street"].includes(
+            result.field ?? "",
+          ) && <div style={errorStyle}>{result.error}</div>}
+      </div>
+
+      <div>
+        <label style={labelStyle} htmlFor="addressDetail">
+          详细地址 <span style={{ color: "#b91c1c" }}>*</span>
         </label>
         <input
-          id="address"
-          name="address"
+          id="addressDetail"
+          name="addressDetail"
           type="text"
           maxLength={200}
-          placeholder="例：上海市浦东新区世纪大道 100 号"
+          placeholder="例：科技园 1 号楼 5 楼"
           style={inputStyle}
           required
         />
-        {result && "field" in result && result.field === "address" && (
+        {result && "field" in result && result.field === "addressDetail" && (
           <div style={errorStyle}>{result.error}</div>
         )}
       </div>
+
+      {/* 旧 address 字段保留作展示冗余（service 会拼 4 级 + detail） */}
+      <input type="hidden" name="address" value="" />
 
       <div style={{ display: "grid", gap: 16, gridTemplateColumns: "1fr 1fr" }}>
         <div>

@@ -6,12 +6,19 @@ import {
   assignOrder,
   createOrder,
   transitionOrder,
+  refundOrder,
   type AssignOrderResult,
   type CreateOrderResult,
   type TransitionOrderResult,
+  type RefundOrderResult,
 } from "@/src/lib/orders";
 import { releaseMaster, ReleaseOrderError } from "@/src/lib/repos/orders";
 import { createActivityLog } from "@/src/lib/activity-log";
+import { prisma } from "@/src/lib/db";
+import {
+  tryAutoDispatch,
+  type AutoDispatchResult,
+} from "@/src/lib/auto-dispatch";
 import {
   CSRF_FORM_FIELD,
   verifyCsrfOrigin,
@@ -41,6 +48,9 @@ export type TransitionActionResult =
   | Exclude<TransitionOrderResult, { ok: true }>
   | { ok: true; orderId: string; nextStatus: string };
 
+// [任务 19] 退款 action 返回值（与 src/lib/orders.ts 的 RefundOrderResult 一致）
+export type RefundActionResult = RefundOrderResult;
+
 /**
  * 新建订单 server action。
  * 接 FormData（前端 form action 直接传整个 form），调用 src/lib/orders.ts 的 createOrder。
@@ -69,7 +79,23 @@ export async function createOrderAction(
   const result = await createOrder({
     customerName: String(formData.get("customerName") ?? ""),
     customerPhone: String(formData.get("customerPhone") ?? ""),
-    address: String(formData.get("address") ?? ""),
+    // [任务 3] 4 级地址 — 拼成 address 展示冗余
+    address:
+      [
+        String(formData.get("province") ?? "").trim(),
+        String(formData.get("city") ?? "").trim(),
+        String(formData.get("district") ?? "").trim(),
+        String(formData.get("street") ?? "").trim(),
+        String(formData.get("addressDetail") ?? "").trim(),
+      ]
+        .filter(Boolean)
+        .join("") || String(formData.get("address") ?? ""),
+    // [任务 3] 4 级地址字段
+    province: String(formData.get("province") ?? ""),
+    city: String(formData.get("city") ?? ""),
+    district: String(formData.get("district") ?? ""),
+    street: String(formData.get("street") ?? ""),
+    addressDetail: String(formData.get("addressDetail") ?? ""),
     skuCode: String(formData.get("skuCode") ?? ""),
     // categoryCode 用于服务端配对校验（前端 select 联动时同步提交）
     categoryCode: String(formData.get("categoryCode") ?? "") || undefined,
@@ -599,4 +625,291 @@ export async function customerCancelOrderAction(
     cancelReason,
   );
   return result;
+}
+
+// ============================================================
+// [任务 19] 售后退款 — 仅 completed + payStatus=paid 可走
+// ============================================================
+
+/**
+ * [任务 19] 客户申请售后退款 — completed 订单发现问题后客户主动申请退款。
+ *
+ * 规则：
+ * - 订单必须属于当前 customer（user.phone === order.customerPhone）
+ * - 订单 status 必须 completed + payStatus=paid
+ * - 调 src/lib/orders.ts:refundOrder（事务 + 乐观锁）
+ */
+export async function customerRefundOrderAction(
+  formData: FormData,
+): Promise<RefundOrderResult> {
+  // 鉴权：customer 专属
+  const auth = await requireRole(["customer"]);
+  if (!auth.ok) {
+    return { ok: false, category: "validation", error: auth.error };
+  }
+  // CSRF 校验
+  const csrfToken = String(formData.get(CSRF_FORM_FIELD) ?? "");
+  if (!(await verifyCsrfToken(csrfToken))) {
+    return {
+      ok: false,
+      category: "validation",
+      error: "会话已过期，请刷新页面后重试",
+    };
+  }
+
+  const orderId = String(formData.get("orderId") ?? "").trim();
+  if (!orderId) {
+    return { ok: false, category: "validation", error: "缺少 orderId" };
+  }
+
+  // 越权防护：customer 只能退自己手机号下的订单
+  const { prisma } = await import("@/src/lib/db");
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: { status: true, payStatus: true, customerPhone: true },
+  });
+  if (!order) {
+    return {
+      ok: false,
+      category: "validation",
+      error: `订单 ${orderId} 不存在`,
+    };
+  }
+  if (!auth.user.phone || order.customerPhone !== auth.user.phone) {
+    return {
+      ok: false,
+      category: "validation",
+      error: "该订单不属于您",
+    };
+  }
+  if (order.status !== "completed" || order.payStatus !== "paid") {
+    return {
+      ok: false,
+      category: "validation",
+      error: `订单当前状态（status=${order.status}, payStatus=${order.payStatus}）不符合售后退款条件`,
+    };
+  }
+
+  const result = await refundOrder(orderId);
+  if (result.ok) {
+    try {
+      revalidatePath(`/customer/orders/${orderId}`);
+      revalidatePath("/customer/orders");
+      revalidatePath("/orders"); // 后台订单列表
+    } catch {
+      // 单测无 Next runtime
+    }
+  }
+  return result;
+}
+
+/**
+ * [任务 19] admin 代售后退款 — admin 是平台运维，演示期可代任何订单发起售后退款。
+ *
+ * 业务场景：客户来电要求退款 / 投诉处理 / 风控介入
+ * 规则：同 refundOrder — 仅 completed + payStatus=paid 可退
+ */
+export async function adminRefundOrderAction(
+  orderId: string,
+): Promise<RefundOrderResult> {
+  // 鉴权：admin 专属
+  const auth = await requireAdmin();
+  if (!auth.ok) {
+    return { ok: false, category: "validation", error: auth.error };
+  }
+  // CSRF：非 FormData action 用 Origin 头校验
+  const csrf = await verifyCsrfOrigin();
+  if (!csrf.ok) {
+    return { ok: false, category: "validation", error: csrf.error };
+  }
+
+  if (!orderId) {
+    return { ok: false, category: "validation", error: "缺少 orderId" };
+  }
+
+  const result = await refundOrder(orderId);
+  if (result.ok) {
+    // 写活动日志（admin 视角 — actorRole=admin，actorName=当前 admin）
+    const { getCurrentUser } = await import("@/src/lib/auth");
+    const admin = await getCurrentUser();
+    await createActivityLog({
+      action: "order_refunded",
+      targetType: "order",
+      targetId: orderId,
+      message: `管理员 ${admin?.name ?? ""} 为订单 ${orderId} 发起售后退款`,
+      metadata: { operator: admin?.name ?? "admin" },
+      actorId: admin?.id,
+      actorName: admin?.name ?? "admin",
+      actorRole: "admin",
+    });
+    try {
+      revalidatePath("/orders");
+    } catch {
+      // 单测无 Next runtime
+    }
+  }
+  return result;
+}
+
+// ============================================================
+// [任务 20] 手动重试自动派单 — admin 专属
+// ============================================================
+
+/**
+ * [任务 20] admin 手动触发自动派单。
+ *
+ * 业务场景（CLAUDE.md P0-0 决策 #1 — 双入口之一）：
+ * 1. 支付后 tryAutoDispatch 失败（如 area_no_merchant）→ 订单保持 pending + payStatus=paid
+ * 2. admin 在 /orders/[id] 看到"派单失败：当前区域暂无商家覆盖"
+ * 3. admin 联系商家开通区域 / 新增师傅 / 加规则 → 修复问题
+ * 4. admin 点"重新派单"按钮 → 调本 action → 再跑 tryAutoDispatch
+ *
+ * 规则：
+ * - 订单必须存在
+ * - 订单 status 必须 === "pending" + payStatus === "paid"（与 assignOrder 一致）
+ * - 调 src/lib/auto-dispatch.ts:tryAutoDispatch
+ * - CSRF：非 FormData action → verifyCsrfOrigin
+ */
+export type AutoDispatchActionResult =
+  | { ok: true; orderId: string; masterName: string }
+  | { ok: false; category: "validation" | "system"; error: string };
+
+export async function adminAutoDispatchAction(
+  orderId: string,
+): Promise<AutoDispatchActionResult> {
+  // 鉴权：admin 专属
+  const auth = await requireAdmin();
+  if (!auth.ok) {
+    return { ok: false, category: "validation", error: auth.error };
+  }
+  // CSRF：非 FormData action → Origin 头校验
+  const csrf = await verifyCsrfOrigin();
+  if (!csrf.ok) {
+    return { ok: false, category: "validation", error: csrf.error };
+  }
+
+  if (!orderId) {
+    return { ok: false, category: "validation", error: "缺少 orderId" };
+  }
+
+  // 前置校验：订单必须是 pending + paid
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: { status: true, payStatus: true },
+  });
+  if (!order) {
+    return {
+      ok: false,
+      category: "validation",
+      error: `订单 ${orderId} 不存在`,
+    };
+  }
+  if (order.status !== "pending" || order.payStatus !== "paid") {
+    return {
+      ok: false,
+      category: "validation",
+      error: `订单当前状态（status=${order.status}, payStatus=${order.payStatus}）不可自动派单`,
+    };
+  }
+
+  const result = await tryAutoDispatch(orderId);
+  if (result.ok) {
+    try {
+      revalidatePath("/orders");
+      revalidatePath(`/orders/${orderId}`);
+    } catch {
+      // 单测无 Next runtime
+    }
+    return { ok: true, orderId, masterName: result.masterName };
+  }
+  return {
+    ok: false,
+    category: "validation",
+    error: result.reason,
+  };
+}
+
+// ============================================================
+// [任务 21] 售后工单 — 客户发起
+// ============================================================
+
+/**
+ * [任务 21] 客户发起售后 — 仅 completed 订单可发起；只能操作自己的订单。
+ *
+ * 业务边界（与 [任务 19] customerRefundOrderAction 区分）：
+ * - refundOrder: 直接退钱（已支付 → 已退款）
+ * - createAfterSales: 发起问题单（admin 受理后处理，可能 resolved 也可能 rejected）
+ * 演示期：两者并存 — 客户可二选一（实际场景一般先售后沟通，处理人同意后才退款）
+ *
+ * 鉴权：customer 专属 + 越权防护（user.phone === order.customerPhone）
+ * CSRF：FormData → verifyCsrfToken
+ */
+export async function customerCreateAfterSalesAction(
+  formData: FormData,
+): Promise<
+  | { ok: true; orderId: string; afterSalesStatus: "pending" }
+  | { ok: false; category: "validation" | "system"; error: string }
+> {
+  // 鉴权
+  const auth = await requireRole(["customer"]);
+  if (!auth.ok) {
+    return { ok: false, category: "validation", error: auth.error };
+  }
+  // CSRF
+  const csrfToken = String(formData.get(CSRF_FORM_FIELD) ?? "");
+  if (!(await verifyCsrfToken(csrfToken))) {
+    return {
+      ok: false,
+      category: "validation",
+      error: "会话已过期，请刷新页面后重试",
+    };
+  }
+
+  const orderId = String(formData.get("orderId") ?? "").trim();
+  if (!orderId) {
+    return { ok: false, category: "validation", error: "缺少 orderId" };
+  }
+
+  // 越权防护：customer 只能对自己的订单发起售后
+  const { prisma } = await import("@/src/lib/db");
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: { customerPhone: true, status: true },
+  });
+  if (!order) {
+    return {
+      ok: false,
+      category: "validation",
+      error: `订单 ${orderId} 不存在`,
+    };
+  }
+  if (!auth.user.phone || order.customerPhone !== auth.user.phone) {
+    return { ok: false, category: "validation", error: "该订单不属于您" };
+  }
+  if (order.status !== "completed") {
+    return {
+      ok: false,
+      category: "validation",
+      error: `订单当前状态（status=${order.status}）不能发起售后`,
+    };
+  }
+
+  const reason = String(formData.get("reason") ?? "").trim();
+
+  // 调 after-sales 业务函数
+  const { createTicket } = await import("@/src/lib/after-sales");
+  const result = await createTicket(orderId, reason, {
+    id: auth.user.id,
+    name: auth.user.name,
+  });
+  if (!result.ok) {
+    return { ok: false, category: result.category, error: result.error };
+  }
+  try {
+    revalidatePath(`/customer/orders/${orderId}`);
+    revalidatePath("/customer/orders");
+  } catch {
+    /* 单测无 Next runtime */
+  }
+  return { ok: true, orderId, afterSalesStatus: "pending" };
 }

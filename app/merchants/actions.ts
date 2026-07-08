@@ -15,7 +15,11 @@ import {
   type UpdateMerchantInput,
 } from "@/src/lib/merchants";
 
-function merchantInput(formData: FormData): Partial<CreateMerchantInput> {
+// [P1-1 修] 拆 create / update 共用函数
+// 原因：/merchants/new 没 inviteCodeEnabled checkbox → FormData 没 key
+//       之前共用函数传 inviteCodeEnabled=false → 覆盖 createMerchant() 默认 true
+//       导致新商家默认禁用
+function baseMerchantInput(formData: FormData) {
   return {
     name: String(formData.get("name") ?? ""),
     contactName: String(formData.get("contactName") ?? ""),
@@ -26,6 +30,22 @@ function merchantInput(formData: FormData): Partial<CreateMerchantInput> {
     district: String(formData.get("district") ?? ""),
     street: String(formData.get("street") ?? ""),
     addressDetail: String(formData.get("addressDetail") ?? ""),
+  };
+}
+
+/** Create 路径：不传 inviteCodeEnabled — createMerchant() 默认 true */
+function createMerchantInput(formData: FormData): Partial<CreateMerchantInput> {
+  return baseMerchantInput(formData);
+}
+
+/** Update 路径：checkbox 必传（/merchants/[id]/edit 有这个 checkbox） */
+function updateMerchantInput(formData: FormData): Partial<UpdateMerchantInput> {
+  return {
+    ...baseMerchantInput(formData),
+    id: String(formData.get("id") ?? "").trim(),
+    // checkbox 不勾 = FormData 没 key → false
+    // checkbox 勾 = FormData["inviteCodeEnabled"] = "true" → true
+    inviteCodeEnabled: formData.get("inviteCodeEnabled") != null,
   };
 }
 
@@ -43,9 +63,29 @@ export async function createMerchantAction(formData: FormData) {
   const csrf = await requireCsrf(formData);
   if (!csrf.ok) redirect(merchantErrorUrl("/merchants/new", csrf));
 
-  const input = merchantInput(formData);
+  const input = createMerchantInput(formData);
   const result = await createMerchant(input);
   if (!result.ok) redirect(merchantErrorUrl("/merchants/new", result));
+
+  // [任务 4] 取新生成的 inviteCode 写日志
+  const { getMerchant } = await import("@/src/lib/merchants");
+  const created = await getMerchant(result.id);
+  if (created) {
+    try {
+      await createActivityLog({
+        action: "merchant_invite_code_generated",
+        targetType: "merchant",
+        targetId: result.id,
+        message: `商家 ${input.name} 生成邀请码 ${created.inviteCode}`,
+        metadata: {
+          inviteCode: created.inviteCode,
+          inviteCodeEnabled: created.inviteCodeEnabled,
+        },
+      });
+    } catch {
+      // 写日志失败不阻塞
+    }
+  }
 
   await createActivityLog({
     action: "merchant_created",
@@ -69,12 +109,37 @@ export async function updateMerchantAction(formData: FormData) {
   const csrf = await requireCsrf(formData);
   if (!csrf.ok) redirect(merchantErrorUrl(back, csrf));
 
-  const input: Partial<UpdateMerchantInput> = {
-    id,
-    ...merchantInput(formData),
-  };
+  // [任务 4] 检测 inviteCodeEnabled 变化 — 用于写 enabled/disabled 日志
+  const { getMerchant } = await import("@/src/lib/merchants");
+  const before = await getMerchant(id);
+  const input = updateMerchantInput(formData);
   const result = await updateMerchant(input);
   if (!result.ok) redirect(merchantErrorUrl(back, result));
+
+  // [任务 4] inviteCodeEnabled 变化时写日志
+  if (before && input.inviteCodeEnabled !== undefined) {
+    const beforeEnabled = before.inviteCodeEnabled;
+    const afterEnabled = input.inviteCodeEnabled;
+    if (beforeEnabled !== afterEnabled) {
+      try {
+        await createActivityLog({
+          action: afterEnabled
+            ? "merchant_invite_code_enabled"
+            : "merchant_invite_code_disabled",
+          targetType: "merchant",
+          targetId: result.id,
+          message: `商家 ${input.name} 邀请码 ${afterEnabled ? "启用" : "禁用"}（${before.inviteCode}）`,
+          metadata: {
+            inviteCode: before.inviteCode,
+            fromEnabled: beforeEnabled,
+            toEnabled: afterEnabled,
+          },
+        });
+      } catch {
+        // 写日志失败不阻塞
+      }
+    }
+  }
 
   await createActivityLog({
     action: "merchant_updated",

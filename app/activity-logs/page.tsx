@@ -59,6 +59,7 @@ const ACTION_LABEL: Record<ActivityAction, string> = {
   order_completed: "完成订单",
   order_canceled: "取消订单",
   order_dispatch_canceled: "取消派单",
+  order_refunded: "退款",
   order_internal_remark_updated: "改内部备注",
   order_service_summary_added: "填服务说明",
   master_created: "新增师傅",
@@ -67,6 +68,7 @@ const ACTION_LABEL: Record<ActivityAction, string> = {
   service_sku_updated: "更新 SKU",
   dispatch_rule_created: "新增规则",
   dispatch_rule_updated: "更新规则",
+  auto_dispatch_failed: "派单失败",
 };
 
 function formatDateTime(iso: Date | string) {

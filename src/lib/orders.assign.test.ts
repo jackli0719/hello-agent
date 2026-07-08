@@ -1,5 +1,12 @@
 // assignOrder 端到端测试 — 走真实 SQLite。
 // 测试用真实的订单号 + 师傅 ID 做隔离，每个测试在 afterEach 里 reset 状态。
+//
+// [v0.10.0] 本测试集不直接验"商家过滤"——assignOrder 走真实 DB，
+// 师傅 T001-T004 已经在 demo seed 里绑到商家 M001-M003，
+// 商家 status=active，所以旧 it() 间接走通了"active 商家"路径。
+// 但 "inactive 商家" / "MerchantArea 全部 enabled=false" 的负面路径
+// 覆盖在 lib/dispatch.test.ts 的 [v0.10.0] 新 it() 里（纯函数层）。
+// 详见 docs/TEST-CHANGELOG.md v0.10.0 段。
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { assignOrder } from "./orders";
@@ -25,10 +32,12 @@ async function resetOrder(
   status: string,
   masterId: string | null,
   masterName: string | null,
+  // [v1.0] 默认 "paid" 与 demo 灌的一致；测试要 unpaid 的传 "unpaid"
+  payStatus: string = "paid",
 ) {
   await prisma.order.update({
     where: { id },
-    data: { status, masterId, masterName },
+    data: { status, masterId, masterName, payStatus },
   });
 }
 
@@ -166,10 +175,19 @@ describe("assignOrder — 端到端", () => {
         customerPhone: "13900000000",
         serviceSkuId: sku.id,
         serviceName: sku.name,
-        address: "Test",
+        // [任务 4-0] 4 级地址填 PA001 区域（南山区粤海街道）— 让 area 匹配通过
+        //     落到技能不匹配分支（no_skill_matched），不是 area_no_platform_area
+        province: "广东省",
+        city: "深圳市",
+        district: "南山区",
+        street: "粤海街道",
+        address: "广东省深圳市南山区粤海街道1号",
+        addressDetail: "Test",
         scheduledAt: new Date(),
         amount: 10000,
         status: "pending",
+        // [任务 X] 必须设 paid 才能跳过守门,继续测「师傅不符合推荐规则」
+        payStatus: "paid",
       },
     });
     try {
@@ -232,5 +250,123 @@ describe("assignOrder — 端到端", () => {
     });
     expect(order?.masterId).toBe("T001");
     expect(order?.masterName).toBe("李师傅");
+  });
+});
+
+// [任务 4-0] 手工派单错误文案按 failureCode 区分 — admin UI 看到精确原因
+// 覆盖 3 种 failureCode：area_no_merchant / area_no_platform_area / no_skill_matched
+describe("assignOrder — failureCode 错误文案精确", () => {
+  // # spec: 手工派单遇到区域无商家覆盖时，error 文本含"暂无启用商家覆盖"+ failureCode 透传
+  it("area_no_merchant → 错误文案含「暂无启用商家覆盖」+ failureCode 透传", async () => {
+    // PA004 宝安区西乡街道 — demo seed 里 PlatformArea 存在但无商家覆盖
+    const testOrderId = "_test_assign_area_no_merchant";
+    await prisma.order.deleteMany({ where: { id: testOrderId } });
+    await prisma.order.create({
+      data: {
+        id: testOrderId,
+        customerName: "Test",
+        customerPhone: "13900000000",
+        serviceSkuId: (await prisma.serviceSku.findUnique({
+          where: { skuCode: "CLEAN-DAILY-2H" },
+        }))!.id,
+        serviceName: "日常保洁-2小时",
+        province: "广东省",
+        city: "深圳市",
+        district: "宝安区",
+        street: "西乡街道",
+        address: "广东省深圳市宝安区西乡街道1号",
+        addressDetail: "Test",
+        scheduledAt: new Date(),
+        amount: 10000,
+        status: "pending",
+        payStatus: "paid",
+      },
+    });
+    try {
+      const r = await assignOrder(testOrderId, "T001");
+      expect(r.ok).toBe(false);
+      if (r.ok) throw new Error("expected assignOrder to fail");
+      expect(r.category).toBe("validation");
+      expect(r.failureCode).toBe("area_no_merchant");
+      expect(r.error).toMatch(/暂无启用商家覆盖/);
+    } finally {
+      await prisma.order.deleteMany({ where: { id: testOrderId } });
+    }
+  });
+
+  // # spec: 区域完全没匹配到 PlatformArea 时，error 文本含"暂未开放平台合作服务"+ failureCode 透传
+  it("area_no_platform_area → 错误文案含「暂未开放平台合作服务」+ failureCode 透传", async () => {
+    const testOrderId = "_test_assign_area_no_platform";
+    await prisma.order.deleteMany({ where: { id: testOrderId } });
+    await prisma.order.create({
+      data: {
+        id: testOrderId,
+        customerName: "Test",
+        customerPhone: "13900000000",
+        serviceSkuId: (await prisma.serviceSku.findUnique({
+          where: { skuCode: "CLEAN-DAILY-2H" },
+        }))!.id,
+        serviceName: "日常保洁-2小时",
+        // 用一个不存在的区域（北京市朝阳区 — demo seed 没灌这条 PlatformArea）
+        province: "北京市",
+        city: "北京市",
+        district: "朝阳区",
+        street: "三里屯街道",
+        address: "北京市北京市朝阳区三里屯街道1号",
+        addressDetail: "Test",
+        scheduledAt: new Date(),
+        amount: 10000,
+        status: "pending",
+        payStatus: "paid",
+      },
+    });
+    try {
+      const r = await assignOrder(testOrderId, "T001");
+      expect(r.ok).toBe(false);
+      if (r.ok) throw new Error("expected assignOrder to fail");
+      expect(r.category).toBe("validation");
+      expect(r.failureCode).toBe("area_no_platform_area");
+      expect(r.error).toMatch(/暂未开放平台合作服务/);
+    } finally {
+      await prisma.order.deleteMany({ where: { id: testOrderId } });
+    }
+  });
+
+  // # spec: no_skill_matched 路径（区域 OK 但技能不匹配）— error 含"不符合规则"（保持原行为）
+  it("no_skill_matched → 错误文案含「不符合规则」+ failureCode 透传", async () => {
+    const testOrderId = "_test_assign_no_skill";
+    await prisma.order.deleteMany({ where: { id: testOrderId } });
+    await prisma.order.create({
+      data: {
+        id: testOrderId,
+        customerName: "Test",
+        customerPhone: "13900000000",
+        serviceSkuId: (await prisma.serviceSku.findUnique({
+          where: { skuCode: "APPLIANCE-AC-WALL" },
+        }))!.id,
+        serviceName: "空调维修",
+        // PA001 区域 — 区域 OK，但 T001 没"空调维修"技能
+        province: "广东省",
+        city: "深圳市",
+        district: "南山区",
+        street: "粤海街道",
+        address: "广东省深圳市南山区粤海街道1号",
+        addressDetail: "Test",
+        scheduledAt: new Date(),
+        amount: 10000,
+        status: "pending",
+        payStatus: "paid",
+      },
+    });
+    try {
+      const r = await assignOrder(testOrderId, "T001");
+      expect(r.ok).toBe(false);
+      if (r.ok) throw new Error("expected assignOrder to fail");
+      expect(r.category).toBe("validation");
+      expect(r.failureCode).toBe("no_skill_matched");
+      expect(r.error).toMatch(/不符合规则/);
+    } finally {
+      await prisma.order.deleteMany({ where: { id: testOrderId } });
+    }
   });
 });

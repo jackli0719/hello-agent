@@ -1,11 +1,13 @@
 import { OrderActions } from "@/components/OrderActions";
 import { InternalRemarkForm } from "@/components/InternalRemarkForm";
 import { AdminCancelButton } from "@/components/AdminCancelButton";
+import { AutoDispatchButton } from "@/components/AutoDispatchButton";
 import { StatusBadge, th, td, card, ORDER_TONE } from "@/components/ui";
 import { ORDER_STATUS_LABEL } from "@/lib/mock-data";
 import { listOrdersForPage, type OrderListItem } from "@/src/lib/queries";
 import { listEnabledServices } from "@/src/lib/repos/services";
 import { ensureCsrfCookie } from "@/src/lib/csrf";
+import { describeFailureCode } from "@/src/lib/auto-dispatch";
 import type { OrderStatus } from "@/src/types";
 import Link from "next/link";
 
@@ -23,6 +25,7 @@ interface PageProps {
   searchParams: Promise<{
     keyword?: string;
     status?: string;
+    payStatus?: string; // [任务 X] 支付状态过滤
     skuCode?: string;
     created?: string;
     page?: string;
@@ -48,6 +51,7 @@ function formatDateTime(iso: string) {
 function buildOrdersUrl(params: {
   keyword?: string;
   status?: string;
+  payStatus?: string; // [任务 X]
   skuCode?: string;
   dateFrom?: string;
   dateTo?: string;
@@ -63,6 +67,9 @@ function buildOrdersUrl(params: {
   if (params.dateField && params.dateField !== "createdAt")
     sp.set("dateField", params.dateField);
   if (params.status && params.status !== "all") sp.set("status", params.status);
+  // [任务 X] 支付状态
+  if (params.payStatus && params.payStatus !== "all")
+    sp.set("payStatus", params.payStatus);
   if (params.page && params.page !== "1") sp.set("page", params.page);
   // pageSize 总是写入（因为它改变会改变 page 总数；URL 必须显式）
   // [v0.7.0 任务] 默认 10（之前默认 20）
@@ -76,6 +83,7 @@ export default async function OrdersPage({ searchParams }: PageProps) {
   const {
     keyword = "",
     status = "all",
+    payStatus = "all", // [任务 X] 支付状态过滤
     skuCode = "",
     created,
     page = "1",
@@ -92,6 +100,13 @@ export default async function OrdersPage({ searchParams }: PageProps) {
     FILTERS.some((f) => f.value === status) ? status : "all"
   ) as "all" | OrderStatus;
   const statusFilter = validStatus;
+  // [任务 X + 任务 19] payStatus 校验
+  const validPayStatus = (
+    ["all", "unpaid", "paid", "refunding", "refunded"].includes(payStatus)
+      ? payStatus
+      : "all"
+  ) as "all" | "unpaid" | "paid" | "refunding" | "refunded";
+  const payStatusFilter = validPayStatus;
 
   // 时间字段校验
   const validDateField =
@@ -136,6 +151,9 @@ export default async function OrdersPage({ searchParams }: PageProps) {
   const kw = keyword.trim().toLowerCase();
   const filtered = allOrders.filter((o) => {
     if (statusFilter !== "all" && o.status !== statusFilter) return false;
+    // [任务 X] 支付状态过滤
+    if (payStatusFilter !== "all" && o.payStatus !== payStatusFilter)
+      return false;
     if (!kw) return true;
     return (
       o.id.toLowerCase().includes(kw) ||
@@ -162,6 +180,16 @@ export default async function OrdersPage({ searchParams }: PageProps) {
       completed: 0,
       cancelled: 0,
     } as Record<"all" | OrderStatus, number>,
+  );
+
+  // [任务 X + 任务 19] 支付状态计数 — 独立 chip 行
+  const payCounts = allOrders.reduce(
+    (acc, o) => {
+      acc.all++;
+      acc[o.payStatus]++;
+      return acc;
+    },
+    { all: 0, unpaid: 0, paid: 0, refunding: 0, refunded: 0 },
   );
 
   // 当前是否筛选中（决定「重置」按钮显示）
@@ -371,6 +399,7 @@ export default async function OrdersPage({ searchParams }: PageProps) {
             const href = buildOrdersUrl({
               keyword,
               status: f.value,
+              payStatus: payStatusFilter, // [任务 X] 保留 payStatus
               skuCode,
               dateFrom,
               dateTo,
@@ -393,6 +422,60 @@ export default async function OrdersPage({ searchParams }: PageProps) {
               >
                 {f.label}{" "}
                 <span style={{ opacity: 0.7 }}>({counts[f.value]})</span>
+              </Link>
+            );
+          })}
+        </div>
+
+        {/* [任务 X] 支付状态筛选 chips — 独立一行,与 status 平行 */}
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            marginBottom: 20,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          <span style={{ fontSize: 12, color: "#6b7280", marginRight: 4 }}>
+            支付状态:
+          </span>
+          {(
+            [
+              { v: "all", label: "全部" },
+              { v: "unpaid", label: "未支付" },
+              { v: "paid", label: "已支付" },
+              { v: "refunding", label: "退款中" },
+              { v: "refunded", label: "已退款" },
+            ] as const
+          ).map((p) => {
+            const active = payStatusFilter === p.v;
+            const href = buildOrdersUrl({
+              keyword,
+              status: statusFilter, // 保留 status
+              payStatus: p.v,
+              skuCode,
+              dateFrom,
+              dateTo,
+              dateField: validDateField,
+              page: "1",
+            });
+            return (
+              <Link
+                key={p.v}
+                href={href}
+                style={{
+                  padding: "4px 12px",
+                  borderRadius: 999,
+                  fontSize: 12,
+                  textDecoration: "none",
+                  background: active ? "#2563eb" : "#fff",
+                  color: active ? "#fff" : "#374151",
+                  border: active ? "1px solid #2563eb" : "1px solid #e5e7eb",
+                }}
+              >
+                {p.label}{" "}
+                <span style={{ opacity: 0.7 }}>({payCounts[p.v]})</span>
               </Link>
             );
           })}
@@ -456,13 +539,13 @@ export default async function OrdersPage({ searchParams }: PageProps) {
                   <th style={th}>订单号</th>
                   <th style={th}>客户 / 手机号</th>
                   <th style={th}>服务品类 / SKU</th>
-                  <th style={th}>地址</th>
+                  <th style={{ ...th, minWidth: 200 }}>4 级地址 / 详细</th>
                   <th style={th}>金额</th>
                   <th style={th}>已分配师傅</th>
                   <th style={th}>状态</th>
                   <th style={th}>创建时间</th>
                   <th style={{ ...th, minWidth: 260 }}>备注 / 内部备注</th>
-                  <th style={{ ...th, minWidth: 260 }}>推荐 / 命中规则</th>
+                  <th style={{ ...th, minWidth: 280 }}>推荐 / 命中规则</th>
                 </tr>
               </thead>
               <tbody>
@@ -481,16 +564,26 @@ export default async function OrdersPage({ searchParams }: PageProps) {
                         {o.categoryName ?? "未分类"}
                       </div>
                     </td>
-                    <td
-                      style={{
-                        ...td,
-                        maxWidth: 200,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {o.address}
+                    <td style={{ ...td, minWidth: 200 }}>
+                      {/* [任务 3] 4 级地址 + 详细 — 派单精确匹配字段 */}
+                      <div style={{ fontSize: 12, color: "#374151" }}>
+                        {[o.province, o.city, o.district, o.street]
+                          .filter(Boolean)
+                          .join(" / ") || (
+                          <span style={{ color: "#9ca3af" }}>未填 4 级</span>
+                        )}
+                      </div>
+                      {o.addressDetail && (
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: "#6b7280",
+                            marginTop: 2,
+                          }}
+                        >
+                          详细：{o.addressDetail}
+                        </div>
+                      )}
                     </td>
                     <td style={td}>¥{o.amountYuan.toFixed(2)}</td>
                     <td style={td}>
@@ -499,8 +592,13 @@ export default async function OrdersPage({ searchParams }: PageProps) {
                       )}
                     </td>
                     <td style={td}>
+                      {/* [任务 X] pending + unpaid → "待支付" 区分,避免后台误以为「待派单」 */}
                       <StatusBadge
-                        label={ORDER_STATUS_LABEL[o.status]}
+                        label={
+                          o.status === "pending" && o.payStatus === "unpaid"
+                            ? "待支付"
+                            : ORDER_STATUS_LABEL[o.status]
+                        }
                         tone={ORDER_TONE[o.status]}
                       />
                     </td>
@@ -648,6 +746,41 @@ function ActionCell({
 }) {
   const { recommendation } = order;
   const rule = recommendation.rule;
+  const matchedArea = recommendation.matchedArea;
+
+  // [任务 3] 匹配区域展示
+  const areaBlock = matchedArea ? (
+    <div
+      style={{
+        fontSize: 11,
+        color: "#166534",
+        background: "#f0fdf4",
+        padding: "2px 6px",
+        borderRadius: 3,
+        marginBottom: 4,
+        display: "inline-block",
+      }}
+    >
+      区域 {matchedArea.province}/{matchedArea.city}/{matchedArea.district}/
+      {matchedArea.street}
+    </div>
+  ) : null;
+
+  // [任务 3] 候选师傅所属商家
+  const candidateBlock =
+    recommendation.candidates.length > 0 ? (
+      <div style={{ fontSize: 11, marginTop: 4, color: "#374151" }}>
+        <div>候选（{recommendation.candidates.length}）：</div>
+        {recommendation.candidates.slice(0, 3).map((c) => (
+          <div key={c.id} style={{ marginTop: 2 }}>
+            • {c.name}（⭐{c.rating.toFixed(1)}）
+            {c.merchantName && (
+              <span style={{ color: "#6b7280" }}> · {c.merchantName}</span>
+            )}
+          </div>
+        ))}
+      </div>
+    ) : null;
 
   // [v0.7.9] cancelled 状态：展示取消信息 + 不可操作
   if (order.status === "cancelled") {
@@ -682,6 +815,7 @@ function ActionCell({
 
   // pending 状态：派单按钮列表（候选可能为空，OrderActions 自己处理）
   // assigned / in_service / completed：OrderActions 按 status 分发
+  // [任务 19] completed + paid 时 OrderActions 展示「售后退款」按钮
   if (order.status !== "pending") {
     return (
       <div>
@@ -690,6 +824,7 @@ function ActionCell({
           status={order.status}
           ruleName={null}
           candidates={[]}
+          payStatus={order.payStatus}
         />
         {canCancel && (
           <div style={{ marginTop: 6 }}>
@@ -708,8 +843,25 @@ function ActionCell({
   if (!rule) {
     return (
       <div style={{ fontSize: 12 }}>
-        <div style={{ color: "#b91c1c" }}>{recommendation.reason}</div>
+        {areaBlock}
+        <div style={{ color: "#b91c1c" }}>
+          {/* [任务 20] failureCode → 中文描述 */}
+          {recommendation.failureCode
+            ? describeFailureCode(
+                // dispatch.ts 的 failureCode 与 auto-dispatch.ts 的 AutoDispatchFailureCode 同名
+                recommendation.failureCode as Parameters<
+                  typeof describeFailureCode
+                >[0],
+              )
+            : "没有匹配的派单规则"}
+        </div>
         <div style={{ color: "#6b7280", marginTop: 2 }}>暂无可派单师傅</div>
+        {/* [任务 20] 手动重试入口（仅 paid 状态可触发，pending+paid） */}
+        {order.payStatus === "paid" ? (
+          <div style={{ marginTop: 8 }}>
+            <AutoDispatchButton orderId={order.id} />
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -718,6 +870,7 @@ function ActionCell({
   if (recommendation.candidates.length === 0) {
     return (
       <div style={{ fontSize: 12 }}>
+        {areaBlock}
         <div style={{ marginBottom: 4 }}>
           <span
             style={{
@@ -733,7 +886,16 @@ function ActionCell({
             命中规则：{rule.name}
           </span>
         </div>
-        <div style={{ color: "#b91c1c" }}>{recommendation.reason}</div>
+        <div style={{ color: "#b91c1c" }}>
+          {/* [任务 20] failureCode → 中文描述 */}
+          {recommendation.failureCode
+            ? describeFailureCode(
+                recommendation.failureCode as Parameters<
+                  typeof describeFailureCode
+                >[0],
+              )
+            : "暂无可用师傅"}
+        </div>
         <div style={{ color: "#6b7280", marginTop: 2 }}>暂无可派单师傅</div>
         <div style={{ marginTop: 8 }}>
           <OrderActions
@@ -741,19 +903,48 @@ function ActionCell({
             status={order.status}
             ruleName={null}
             candidates={[]}
+            payStatus={order.payStatus}
           />
         </div>
+        {/* [任务 20] 手动重试入口（仅 paid 状态） */}
+        {order.payStatus === "paid" ? (
+          <div style={{ marginTop: 6 }}>
+            <AutoDispatchButton orderId={order.id} />
+          </div>
+        ) : null}
       </div>
     );
   }
 
   // pending + 有候选：派单按钮列表 + 取消订单按钮
+  // [任务 X] 任务守门:未支付订单 payStatus=unpaid — OrderActions 内置「请先支付」红条
   return (
-    <OrderActions
-      orderId={order.id}
-      status={order.status}
-      ruleName={rule.name}
-      candidates={recommendation.candidates}
-    />
+    <div>
+      {areaBlock}
+      {/* [任务 X] 未支付订单红条提示 — UI 层提醒,服务端守门在 assignOrder 守 payStatus */}
+      {order.payStatus === "unpaid" ? (
+        <div
+          style={{
+            padding: "4px 8px",
+            background: "#fef2f2",
+            color: "#b91c1c",
+            border: "1px solid #fecaca",
+            borderRadius: 4,
+            fontSize: 11,
+            marginBottom: 6,
+          }}
+        >
+          ⚠ 未支付订单 — 服务端会拒绝派单,请通知客户先支付
+        </div>
+      ) : null}
+      <OrderActions
+        orderId={order.id}
+        status={order.status}
+        ruleName={rule.name}
+        candidates={recommendation.candidates}
+        payStatus={order.payStatus}
+      />
+      {candidateBlock}
+    </div>
   );
 }

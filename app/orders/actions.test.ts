@@ -124,6 +124,12 @@ const validOrder = {
   customerName: "测试客户",
   customerPhone: "13900001234",
   address: "上海市浦东新区世纪大道 100 号",
+  // [任务 3] 4 级地址必填
+  province: "上海市",
+  city: "上海市",
+  district: "浦东新区",
+  street: "世纪大道",
+  addressDetail: "100 号",
   skuCode: "CLEAN-DAILY-2H",
   categoryCode: "CLEAN",
   scheduledAt: "2026-06-26T10:00",
