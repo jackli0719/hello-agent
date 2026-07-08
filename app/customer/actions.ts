@@ -10,10 +10,16 @@
 //
 // # MVP: 金额默认走 SKU basePrice；预约时间默认明天 10:00。
 //   演示期没真实日历控件，后台仍可在订单详情编辑这两个字段。
+//
+// [v0.5.0] 修 ADR-013 A5 P0：已登录 customer 下单 phone 必须等于 user.phone
+//   防止「公开下单页 + customer1 账号 + 任何手机号」组合的隐私漏洞
+//   未登录场景：仍允许（按需求保留 /customer 公开下单）
 
 import { revalidatePath } from "next/cache";
 import { createOrder, type CreateOrderResult } from "@/src/lib/orders";
 import { getSkuBasePriceByCode } from "@/src/lib/customer";
+import { createActivityLog } from "@/src/lib/activity-log";
+import { getCurrentUser } from "@/src/lib/auth";
 
 export type CustomerCreateOrderResult = CreateOrderResult;
 
@@ -40,6 +46,18 @@ export async function customerCreateOrderAction(
   const skuCode = String(formData.get("skuCode") ?? "").trim();
   const customerPhone = String(formData.get("customerPhone") ?? "").trim();
 
+  // [v0.5.0] 修 A5：已登录 customer 时 phone 必须等于 user.phone
+  const currentUser = await getCurrentUser();
+  if (currentUser && currentUser.role === "customer" && currentUser.phone) {
+    if (customerPhone !== currentUser.phone) {
+      return {
+        ok: false,
+        error: `已登录账号绑定的手机号是 ${currentUser.phone}，请用该手机号下单`,
+        field: "customerPhone",
+      };
+    }
+  }
+
   // 自动金额：用户端没填 amount，用 SKU basePrice
   const basePrice = await getSkuBasePriceByCode(skuCode);
   if (basePrice === null) {
@@ -60,6 +78,20 @@ export async function customerCreateOrderAction(
   if (!result.ok) {
     return result;
   }
+
+  // 写操作日志（失败不影响主流程）
+  const customerName = String(formData.get("customerName") ?? "");
+  await createActivityLog({
+    action: "order_created",
+    targetType: "order",
+    targetId: result.orderId,
+    message: `客户 ${customerName}（手机 ${customerPhone}）创建了订单 ${result.orderId}`,
+    metadata: {
+      skuCode,
+      customerPhone,
+      amount: basePrice,
+    },
+  });
 
   // 刷新后台订单列表和 dashboard，让后台立刻看到
   try {

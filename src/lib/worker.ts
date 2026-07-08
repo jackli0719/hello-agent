@@ -72,7 +72,9 @@ export async function listWorkerOptions(): Promise<WorkerOption[]> {
  *
  * 排序：按预约时间升序（师傅端要按时间接单，最近的优先）
  */
-export async function listOrdersForMaster(masterId: string): Promise<WorkerOrder[]> {
+export async function listOrdersForMaster(
+  masterId: string,
+): Promise<WorkerOrder[]> {
   if (!masterId) return [];
   const rows = await prisma.order.findMany({
     where: {
@@ -134,6 +136,16 @@ export interface WorkerOrderDetail {
   masterId: string | null;
   masterName: string | null;
   masterPhone: string | null;
+  // [v0.7.6] 备注字段
+  /** 用户下单备注 */
+  remark: string | null;
+  /** 后台内部备注（师傅也可见 — 帮师傅了解后台要求） */
+  internalRemark: string | null;
+  /** 师傅完成订单时填的服务说明（completed 状态才有） */
+  serviceSummary: string | null;
+  // [v0.7.9] 取消字段（师傅端可见）
+  cancelReason: string | null;
+  canceledAt: string | null;
 }
 
 /**
@@ -167,6 +179,11 @@ export async function getOrderForWorker(
       createdAt: true,
       masterId: true,
       masterName: true,
+      remark: true, // [v0.7.6] 用户下单备注
+      internalRemark: true, // [v0.7.6] 后台内部备注
+      serviceSummary: true, // [v0.7.6] 师傅完成说明
+      cancelReason: true, // [v0.7.9]
+      canceledAt: true, // [v0.7.9]
       master: { select: { name: true, phone: true } },
       serviceSku: {
         select: {
@@ -197,5 +214,12 @@ export async function getOrderForWorker(
     masterId: row.masterId,
     masterName: row.masterName ?? row.master?.name ?? null,
     masterPhone: row.master?.phone ?? null,
+    // [v0.7.6] 备注字段
+    remark: row.remark,
+    internalRemark: row.internalRemark,
+    serviceSummary: row.serviceSummary,
+    // [v0.7.9]
+    cancelReason: row.cancelReason,
+    canceledAt: row.canceledAt ? row.canceledAt.toISOString() : null,
   };
 }

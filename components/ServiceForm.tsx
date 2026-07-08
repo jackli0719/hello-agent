@@ -27,8 +27,16 @@ const inputStyle: React.CSSProperties = {
   outline: "none",
   boxSizing: "border-box",
 };
-const helpStyle: React.CSSProperties = { fontSize: 11, color: "#9ca3af", marginTop: 4 };
-const errorStyle: React.CSSProperties = { fontSize: 12, color: "#b91c1c", marginTop: 4 };
+const helpStyle: React.CSSProperties = {
+  fontSize: 11,
+  color: "#9ca3af",
+  marginTop: 4,
+};
+const errorStyle: React.CSSProperties = {
+  fontSize: 12,
+  color: "#b91c1c",
+  marginTop: 4,
+};
 
 // ============================================================
 // 新增品类
@@ -38,7 +46,10 @@ export function NewCategoryForm() {
   const [isPending, startTransition] = useTransition();
   const [result, setResult] = useState<ServiceActionResult | null>(null);
 
-  function handleSubmit(formData: FormData) {
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    // [v0.9.1] 修 legacy bug：跟 NewOrderForm 同问题
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
     setResult(null);
     startTransition(async () => {
       const r = await createCategoryAction(formData);
@@ -49,7 +60,7 @@ export function NewCategoryForm() {
   const error = result && !result.ok ? result : null;
 
   return (
-    <form action={handleSubmit} style={{ display: "grid", gap: 16 }}>
+    <form onSubmit={handleSubmit} style={{ display: "grid", gap: 16 }}>
       <div>
         <label style={labelStyle} htmlFor="name">
           品类名称 <span style={{ color: "#b91c1c" }}>*</span>
@@ -79,7 +90,9 @@ export function NewCategoryForm() {
           style={inputStyle}
           required
         />
-        <div style={helpStyle}>只允许大写字母 / 数字 / 连字符，长度 2-32（应用层会自动转大写）</div>
+        <div style={helpStyle}>
+          只允许大写字母 / 数字 / 连字符，长度 2-32（应用层会自动转大写）
+        </div>
         {error?.field === "code" && <div style={errorStyle}>{error.error}</div>}
       </div>
 
@@ -98,7 +111,9 @@ export function NewCategoryForm() {
           }}
         >
           <input name="enabled" type="checkbox" defaultChecked />
-          <span style={{ fontSize: 14 }}>启用后该品类下的 SKU 才能在创建订单时显示</span>
+          <span style={{ fontSize: 14 }}>
+            启用后该品类下的 SKU 才能在创建订单时显示
+          </span>
         </label>
       </div>
 
@@ -138,7 +153,10 @@ export function NewSkuForm({ categories }: { categories: CategoryOption[] }) {
   const [isPending, startTransition] = useTransition();
   const [result, setResult] = useState<ServiceActionResult | null>(null);
 
-  function handleSubmit(formData: FormData) {
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    // [v0.9.1] 修 legacy bug
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
     setResult(null);
     startTransition(async () => {
       const r = await createSkuAction(formData);
@@ -149,7 +167,7 @@ export function NewSkuForm({ categories }: { categories: CategoryOption[] }) {
   const error = result && !result.ok ? result : null;
 
   return (
-    <form action={handleSubmit} style={{ display: "grid", gap: 16 }}>
+    <form onSubmit={handleSubmit} style={{ display: "grid", gap: 16 }}>
       <div>
         <label style={labelStyle} htmlFor="name">
           SKU 名称 <span style={{ color: "#b91c1c" }}>*</span>
@@ -179,7 +197,9 @@ export function NewSkuForm({ categories }: { categories: CategoryOption[] }) {
           style={inputStyle}
           required
         />
-        <div style={helpStyle}>只允许大写字母 / 数字 / 连字符，长度 2-32（应用层会自动转大写）</div>
+        <div style={helpStyle}>
+          只允许大写字母 / 数字 / 连字符，长度 2-32（应用层会自动转大写）
+        </div>
         {error?.field === "code" && <div style={errorStyle}>{error.error}</div>}
       </div>
 
@@ -187,7 +207,13 @@ export function NewSkuForm({ categories }: { categories: CategoryOption[] }) {
         <label style={labelStyle} htmlFor="categoryCode">
           所属品类 <span style={{ color: "#b91c1c" }}>*</span>
         </label>
-        <select id="categoryCode" name="categoryCode" style={inputStyle} required defaultValue="">
+        <select
+          id="categoryCode"
+          name="categoryCode"
+          style={inputStyle}
+          required
+          defaultValue=""
+        >
           <option value="" disabled>
             请选择品类
           </option>
@@ -197,7 +223,9 @@ export function NewSkuForm({ categories }: { categories: CategoryOption[] }) {
             </option>
           ))}
         </select>
-        {error?.field === "categoryCode" && <div style={errorStyle}>{error.error}</div>}
+        {error?.field === "categoryCode" && (
+          <div style={errorStyle}>{error.error}</div>
+        )}
       </div>
 
       <div>
@@ -215,7 +243,9 @@ export function NewSkuForm({ categories }: { categories: CategoryOption[] }) {
           required
         />
         <div style={helpStyle}>DB 存的是「分」，这里录入的是「元」</div>
-        {error?.field === "basePrice" && <div style={errorStyle}>{error.error}</div>}
+        {error?.field === "basePrice" && (
+          <div style={errorStyle}>{error.error}</div>
+        )}
       </div>
 
       <div>
@@ -233,7 +263,9 @@ export function NewSkuForm({ categories }: { categories: CategoryOption[] }) {
           留空表示「不参与自动派单」（如应急服务）。
           师傅必须掌握全部列出技能才能接这单。
         </div>
-        {error?.field === "requiredSkills" && <div style={errorStyle}>{error.error}</div>}
+        {error?.field === "requiredSkills" && (
+          <div style={errorStyle}>{error.error}</div>
+        )}
       </div>
 
       <div>
@@ -298,7 +330,10 @@ export function EditSkuForm({ initial }: { initial: EditSkuInitial }) {
   const [isPending, startTransition] = useTransition();
   const [result, setResult] = useState<ServiceActionResult | null>(null);
 
-  function handleSubmit(formData: FormData) {
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    // [v0.9.1] 修 legacy bug
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
     setResult(null);
     startTransition(async () => {
       const r = await updateSkuAction(formData);
@@ -309,14 +344,22 @@ export function EditSkuForm({ initial }: { initial: EditSkuInitial }) {
   const error = result && !result.ok ? result : null;
 
   return (
-    <form action={handleSubmit} style={{ display: "grid", gap: 16 }}>
+    <form onSubmit={handleSubmit} style={{ display: "grid", gap: 16 }}>
       <input type="hidden" name="id" value={initial.id} />
 
       {/* 只读字段：编码 + 类目 + 时长 — 展示但不让改（需求范围） */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+      <div
+        style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}
+      >
         <ReadonlyField label="SKU 编码" value={initial.skuCode} />
-        <ReadonlyField label="所属品类" value={`${initial.categoryName} (${initial.categoryCode})`} />
-        <ReadonlyField label="标准时长" value={`${initial.durationMinutes} 分钟`} />
+        <ReadonlyField
+          label="所属品类"
+          value={`${initial.categoryName} (${initial.categoryCode})`}
+        />
+        <ReadonlyField
+          label="标准时长"
+          value={`${initial.durationMinutes} 分钟`}
+        />
       </div>
 
       <div>
@@ -349,7 +392,9 @@ export function EditSkuForm({ initial }: { initial: EditSkuInitial }) {
           style={inputStyle}
           required
         />
-        {error?.field === "basePrice" && <div style={errorStyle}>{error.error}</div>}
+        {error?.field === "basePrice" && (
+          <div style={errorStyle}>{error.error}</div>
+        )}
       </div>
 
       <div>
@@ -365,10 +410,11 @@ export function EditSkuForm({ initial }: { initial: EditSkuInitial }) {
           style={inputStyle}
         />
         <div style={helpStyle}>
-          留空表示「不参与自动派单」。
-          师傅必须掌握全部列出技能才能接这单。
+          留空表示「不参与自动派单」。 师傅必须掌握全部列出技能才能接这单。
         </div>
-        {error?.field === "requiredSkills" && <div style={errorStyle}>{error.error}</div>}
+        {error?.field === "requiredSkills" && (
+          <div style={errorStyle}>{error.error}</div>
+        )}
       </div>
 
       <div>
@@ -385,7 +431,11 @@ export function EditSkuForm({ initial }: { initial: EditSkuInitial }) {
             cursor: "pointer",
           }}
         >
-          <input name="enabled" type="checkbox" defaultChecked={initial.enabled} />
+          <input
+            name="enabled"
+            type="checkbox"
+            defaultChecked={initial.enabled}
+          />
           <span style={{ fontSize: 14 }}>禁用后不会在创建订单时显示</span>
         </label>
       </div>
@@ -416,7 +466,13 @@ export function EditSkuForm({ initial }: { initial: EditSkuInitial }) {
 // 共享小组件
 // ============================================================
 
-function SubmitButton({ isPending, label }: { isPending: boolean; label: string }) {
+function SubmitButton({
+  isPending,
+  label,
+}: {
+  isPending: boolean;
+  label: string;
+}) {
   return (
     <button
       type="submit"

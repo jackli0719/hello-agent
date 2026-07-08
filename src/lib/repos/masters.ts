@@ -9,18 +9,21 @@ interface DbMasterRow {
   id: string;
   name: string;
   phone: string;
-  skills: string;        // JSON 字符串
+  skills: string; // JSON 字符串
   rating: number;
   completedJobs: number;
   status: string;
   serviceArea: string;
+  merchantId: string;
+  merchant: { name: string } | null;
 }
 
 function toTechnician(row: DbMasterRow): Technician {
   let skills: string[] = [];
   try {
     const parsed = JSON.parse(row.skills);
-    if (Array.isArray(parsed)) skills = parsed.filter((s) => typeof s === "string");
+    if (Array.isArray(parsed))
+      skills = parsed.filter((s) => typeof s === "string");
   } catch {
     // 坏数据：skills 留空，不抛
   }
@@ -33,6 +36,8 @@ function toTechnician(row: DbMasterRow): Technician {
     completedJobs: row.completedJobs,
     status: row.status as TechnicianStatus,
     serviceArea: row.serviceArea,
+    merchantId: row.merchantId,
+    merchantName: row.merchant?.name,
   };
 }
 
@@ -45,6 +50,8 @@ const masterSelect = {
   completedJobs: true,
   status: true,
   serviceArea: true,
+  merchantId: true,
+  merchant: { select: { name: true } },
 } satisfies import("@prisma/client").Prisma.MasterSelect;
 
 /** 列所有师傅 — 派单匹配函数用 */
@@ -55,6 +62,9 @@ export async function listMasters(): Promise<Technician[]> {
 
 /** 按 ID 取单个师傅 */
 export async function getMasterById(id: string): Promise<Technician | null> {
-  const row = await prisma.master.findUnique({ where: { id }, select: masterSelect });
+  const row = await prisma.master.findUnique({
+    where: { id },
+    select: masterSelect,
+  });
   return row ? toTechnician(row) : null;
 }

@@ -2,8 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { NewMasterForm } from "@/components/NewMasterForm";
 import { card } from "@/components/ui";
+import { ensureCsrfCookie } from "@/src/lib/csrf";
 import { prisma } from "@/src/lib/db";
-import { skillsToString } from "@/src/lib/masters";
+import { listActiveMerchants, skillsToString } from "@/src/lib/masters";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -12,14 +13,19 @@ interface PageProps {
 export default async function EditMasterPage({ params }: PageProps) {
   const { id } = await params;
 
-  const m = await prisma.master.findUnique({ where: { id } });
+  const [m, csrfToken, merchants] = await Promise.all([
+    prisma.master.findUnique({ where: { id } }),
+    ensureCsrfCookie(),
+    listActiveMerchants(),
+  ]);
   if (!m) notFound();
 
   // skills 是 JSON 字符串 → 数组 → 表单用的逗号分隔
   let skillsStr = "";
   try {
     const arr = JSON.parse(m.skills);
-    if (Array.isArray(arr)) skillsStr = skillsToString(arr.filter((s) => typeof s === "string"));
+    if (Array.isArray(arr))
+      skillsStr = skillsToString(arr.filter((s) => typeof s === "string"));
   } catch {
     // 坏数据留空
   }
@@ -37,11 +43,16 @@ export default async function EditMasterPage({ params }: PageProps) {
         }}
       >
         <div style={{ marginBottom: 12 }}>
-          <Link href="/masters" style={{ color: "#6b7280", fontSize: 13, textDecoration: "none" }}>
+          <Link
+            href="/masters"
+            style={{ color: "#6b7280", fontSize: 13, textDecoration: "none" }}
+          >
             ← 返回师傅列表
           </Link>
         </div>
-        <h1 style={{ fontSize: 24, margin: "0 0 4px 0" }}>编辑师傅：{m.name}</h1>
+        <h1 style={{ fontSize: 24, margin: "0 0 4px 0" }}>
+          编辑师傅：{m.name}
+        </h1>
         <p style={{ color: "#6b7280", margin: "0 0 20px 0", fontSize: 14 }}>
           ID：{m.id}（{m.completedJobs} 单已完成）
         </p>
@@ -57,7 +68,14 @@ export default async function EditMasterPage({ params }: PageProps) {
               rating: m.rating,
               status: m.status as "available" | "busy" | "offline",
               serviceArea: m.serviceArea,
+              merchantId: m.merchantId,
             }}
+            csrfToken={csrfToken}
+            merchantOptions={merchants.map((merchant) => ({
+              id: merchant.id,
+              name: merchant.name,
+              status: merchant.status,
+            }))}
           />
         </section>
       </main>

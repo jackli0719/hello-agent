@@ -15,12 +15,18 @@ export type DispatchActionResult =
  * - 找到最佳师傅 → 改订单 + 师傅状态（事务） → revalidate
  * - 任何一步失败 → 返回结构化错误，UI 处理
  */
-export async function dispatchOrderAction(orderId: string): Promise<DispatchActionResult> {
+export async function dispatchOrderAction(
+  orderId: string,
+): Promise<DispatchActionResult> {
   try {
     const { order, recommendation } = await assignOrder(orderId);
     const top = recommendation.candidates[0];
     if (!top) {
-      return { ok: false, category: "validation", error: recommendation.reason };
+      return {
+        ok: false,
+        category: "validation",
+        error: recommendation.reason,
+      };
     }
 
     try {

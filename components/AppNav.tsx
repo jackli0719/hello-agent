@@ -8,14 +8,27 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { logoutAction } from "@/app/login/actions";
 
-type AppPage = "dashboard" | "orders" | "services" | "masters" | "dispatch-rules";
+type AppPage =
+  | "dashboard"
+  | "orders"
+  | "services"
+  | "masters"
+  | "platform-areas"
+  | "merchants"
+  | "dispatch-rules"
+  | "metrics"
+  | "activity-logs";
 
 const ITEMS: { key: AppPage; label: string; href: string }[] = [
   { key: "dashboard", label: "Dashboard", href: "/dashboard" },
   { key: "orders", label: "订单管理", href: "/orders" },
   { key: "services", label: "服务管理", href: "/services" },
   { key: "masters", label: "师傅管理", href: "/masters" },
+  { key: "platform-areas", label: "平台合作区域", href: "/platform-areas" },
+  { key: "merchants", label: "商家管理", href: "/merchants" },
   { key: "dispatch-rules", label: "派单规则", href: "/dispatch-rules" },
+  { key: "activity-logs", label: "操作日志", href: "/activity-logs" }, // [v0.8.0]
+  { key: "metrics", label: "业务指标", href: "/admin/metrics" },
 ];
 
 function detectCurrent(pathname: string): AppPage | undefined {
@@ -23,11 +36,22 @@ function detectCurrent(pathname: string): AppPage | undefined {
   if (pathname.startsWith("/orders")) return "orders";
   if (pathname.startsWith("/services")) return "services";
   if (pathname.startsWith("/masters")) return "masters";
+  if (pathname.startsWith("/platform-areas")) return "platform-areas";
+  if (pathname.startsWith("/merchants")) return "merchants";
   if (pathname.startsWith("/dispatch-rules")) return "dispatch-rules";
+  if (pathname.startsWith("/activity-logs")) return "activity-logs";
+  if (pathname.startsWith("/admin")) return "metrics";
   return undefined;
 }
 
-export function AppNav({ isLoggedIn }: { isLoggedIn: boolean }) {
+export function AppNav({
+  isLoggedIn,
+  csrfToken,
+}: {
+  isLoggedIn: boolean;
+  /** RSC 阶段通过 ensureCsrfCookie 写入 cookie 的 token — [v0.7.3] 修 logout CSRF */
+  csrfToken: string;
+}) {
   const pathname = usePathname() ?? "";
 
   // /worker 是师傅端 H5，/customer 是用户端 H5，/ 是三端入口 landing —
@@ -91,6 +115,8 @@ export function AppNav({ isLoggedIn }: { isLoggedIn: boolean }) {
       {/* 退出按钮 — 已登录时显示，form action 调 logoutAction */}
       {isLoggedIn && (
         <form action={logoutAction} style={{ marginLeft: "auto" }}>
+          {/* [v0.7.3] CSRF token — layout RSC 阶段已写 cookie */}
+          <input type="hidden" name="_csrf" value={csrfToken} />
           <button
             type="submit"
             style={{

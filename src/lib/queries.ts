@@ -29,6 +29,18 @@ export interface OrderListItem {
   status: OrderStatus;
   createdAt: string; // ISO 本地时区
   recommendation: RecommendationResult;
+  // [v0.7.6] 备注字段
+  /** 用户下单备注 */
+  remark: string | null;
+  /** 后台内部备注（admin 写，user/worker 看） */
+  internalRemark: string | null;
+  /** 师傅完成说明 */
+  serviceSummary: string | null;
+  // [v0.7.9] 取消相关字段
+  /** 取消原因 */
+  cancelReason: string | null;
+  /** 取消时间 */
+  canceledAt: string | null;
 }
 
 export interface OrdersPageData {
@@ -86,11 +98,13 @@ function toDomainMaster(row: {
   completedJobs: number;
   status: string;
   serviceArea: string;
+  merchantId: string;
 }): Technician {
   let skills: string[] = [];
   try {
     const parsed = JSON.parse(row.skills);
-    if (Array.isArray(parsed)) skills = parsed.filter((s) => typeof s === "string");
+    if (Array.isArray(parsed))
+      skills = parsed.filter((s) => typeof s === "string");
   } catch {
     // 坏数据留空，不抛
   }
@@ -103,13 +117,20 @@ function toDomainMaster(row: {
     completedJobs: row.completedJobs,
     status: row.status as Technician["status"],
     serviceArea: row.serviceArea,
+    merchantId: row.merchantId,
   };
 }
 
 // DB DispatchRule → DispatchRuleRow
 // 返回 null 表示 ruleJson 坏了（parseRuleJson 失败）— 这种情况**不**给上游，
 // 而是直接 filter 掉，让坏规则彻底不参与匹配。
-function toRuleRow(row: { id: string; name: string; priority: number; enabled: boolean; ruleJson: string }): DispatchRuleRow | null {
+function toRuleRow(row: {
+  id: string;
+  name: string;
+  priority: number;
+  enabled: boolean;
+  ruleJson: string;
+}): DispatchRuleRow | null {
   const spec = parseRuleJson(row.ruleJson);
   if (spec === null) return null; // 坏数据
   return {
@@ -138,7 +159,7 @@ export interface OrderPageFilters {
   pageSize?: number;
 }
 
-const DEFAULT_PAGE_SIZE = 20;
+const DEFAULT_PAGE_SIZE = 10; // 任务要求：每页默认 10 条
 
 /**
  * 拉一页订单 + 全量派单规则 + 全量师傅，做服务端组装。
@@ -188,7 +209,14 @@ export async function listOrdersForPage(
     where[dateField] = dateWhere;
   }
 
-  const [orderRows, ruleRows, masterRows, totalCount] = await Promise.all([
+  const [
+    orderRows,
+    ruleRows,
+    masterRows,
+    platformAreaRows,
+    merchantAreaRows,
+    totalCount,
+  ] = await Promise.all([
     prisma.order.findMany({
       where: Object.keys(where).length > 0 ? where : undefined,
       orderBy: { createdAt: "desc" },
@@ -201,6 +229,11 @@ export async function listOrdersForPage(
         serviceSkuId: true,
         serviceName: true,
         masterName: true,
+        remark: true, // [v0.7.6]
+        internalRemark: true, // [v0.7.6]
+        serviceSummary: true, // [v0.7.6]
+        cancelReason: true, // [v0.7.9]
+        canceledAt: true, // [v0.7.9]
         address: true,
         scheduledAt: true,
         amount: true,
@@ -215,9 +248,50 @@ export async function listOrdersForPage(
         },
       },
     }),
-    prisma.dispatchRule.findMany({ select: { id: true, name: true, priority: true, enabled: true, ruleJson: true } }),
-    prisma.master.findMany({ select: { id: true, name: true, phone: true, skills: true, rating: true, completedJobs: true, status: true, serviceArea: true } }),
-    prisma.order.count({ where: Object.keys(where).length > 0 ? where : undefined }),
+    prisma.dispatchRule.findMany({
+      select: {
+        id: true,
+        name: true,
+        priority: true,
+        enabled: true,
+        ruleJson: true,
+      },
+    }),
+    prisma.master.findMany({
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+        skills: true,
+        rating: true,
+        completedJobs: true,
+        status: true,
+        serviceArea: true,
+        merchantId: true,
+      },
+    }),
+    prisma.platformArea.findMany({
+      where: { enabled: true },
+      select: {
+        id: true,
+        province: true,
+        city: true,
+        district: true,
+        street: true,
+        enabled: true,
+      },
+    }),
+    prisma.merchantArea.findMany({
+      where: { enabled: true, merchant: { status: "active" } },
+      select: {
+        merchantId: true,
+        platformAreaId: true,
+        enabled: true,
+      },
+    }),
+    prisma.order.count({
+      where: Object.keys(where).length > 0 ? where : undefined,
+    }),
   ]);
 
   // 坏数据：parseRuleJson 返回 null 的规则完全过滤掉
@@ -237,9 +311,11 @@ export async function listOrdersForPage(
     const recommendation =
       r.status === "pending"
         ? recommendMastersForOrder({
-            order: { skuId, categoryId },
+            order: { skuId, categoryId, address: r.address },
             rules,
             masters,
+            platformAreas: platformAreaRows,
+            merchantAreas: merchantAreaRows,
           })
         : { rule: null, candidates: [], reason: "—（非待派单状态）" };
 
@@ -258,6 +334,13 @@ export async function listOrdersForPage(
       status: r.status as OrderStatus,
       createdAt: toLocalISOString(r.createdAt),
       recommendation,
+      // [v0.7.6] 备注字段
+      remark: r.remark,
+      internalRemark: r.internalRemark,
+      serviceSummary: r.serviceSummary,
+      // [v0.7.9]
+      cancelReason: r.cancelReason,
+      canceledAt: r.canceledAt ? toLocalISOString(r.canceledAt) : null,
     };
   });
 

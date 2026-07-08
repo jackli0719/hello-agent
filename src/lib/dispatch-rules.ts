@@ -9,18 +9,28 @@ import { prisma } from "@/src/lib/db";
 import { normalizeCode, assertValidCode } from "@/src/lib/codes";
 import { parseSkillsString } from "@/src/lib/masters";
 import { parseRuleJson } from "@/lib/dispatch";
+import {
+  validateRulePriority,
+  validateSkillsNonEmpty,
+} from "@/src/lib/validation";
 
 // ============================================================
 // 类型
 // ============================================================
 
-export type DispatchRuleField = "name" | "categoryCode" | "skuCode" | "requiredSkills" | "priority" | "enabled";
+export type DispatchRuleField =
+  | "name"
+  | "categoryCode"
+  | "skuCode"
+  | "requiredSkills"
+  | "priority"
+  | "enabled";
 
 export interface CreateRuleInput {
   name: string;
-  categoryCode: string | null;  // 可空（skuCode 选了就走 SKU 精确，categoryCode 可空）
-  skuCode: string | null;       // 可空（categoryCode 选了就走类目兜底）
-  requiredSkills: string[];     // 数组
+  categoryCode: string | null; // 可空（skuCode 选了就走 SKU 精确，categoryCode 可空）
+  skuCode: string | null; // 可空（categoryCode 选了就走类目兜底）
+  requiredSkills: string[]; // 数组
   priority: number;
   enabled: boolean;
 }
@@ -44,10 +54,13 @@ export type DispatchRuleResult =
 
 export function validateRuleInput(
   input: Partial<CreateRuleInput>,
-): { ok: true; cleaned: CreateRuleInput } | { ok: false; error: string; field: DispatchRuleField } {
+):
+  | { ok: true; cleaned: CreateRuleInput }
+  | { ok: false; error: string; field: DispatchRuleField } {
   const name = (input.name ?? "").trim();
   if (!name) return { ok: false, error: "请填写规则名称", field: "name" };
-  if (name.length > 50) return { ok: false, error: "规则名称不能超过 50 个字符", field: "name" };
+  if (name.length > 50)
+    return { ok: false, error: "规则名称不能超过 50 个字符", field: "name" };
 
   // skuCode / categoryCode 至少有一个（不能两个都空 = 没意义的规则）
   // 也允许两个都填 = 兼容「同一条规则既 SKU 精确又类目兜底」
@@ -66,11 +79,16 @@ export function validateRuleInput(
   let skuCode: string | null = null;
   if (skuCodeRaw) {
     const normalized = normalizeCode(skuCodeRaw);
-    if (!normalized) return { ok: false, error: "SKU 编码格式不合法", field: "skuCode" };
+    if (!normalized)
+      return { ok: false, error: "SKU 编码格式不合法", field: "skuCode" };
     try {
       assertValidCode(normalized, "SKU 编码");
     } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : "SKU 编码格式不合法", field: "skuCode" };
+      return {
+        ok: false,
+        error: e instanceof Error ? e.message : "SKU 编码格式不合法",
+        field: "skuCode",
+      };
     }
     skuCode = normalized;
   }
@@ -78,11 +96,16 @@ export function validateRuleInput(
   let categoryCode: string | null = null;
   if (categoryCodeRaw) {
     const normalized = normalizeCode(categoryCodeRaw);
-    if (!normalized) return { ok: false, error: "品类编码格式不合法", field: "categoryCode" };
+    if (!normalized)
+      return { ok: false, error: "品类编码格式不合法", field: "categoryCode" };
     try {
       assertValidCode(normalized, "品类编码");
     } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : "品类编码格式不合法", field: "categoryCode" };
+      return {
+        ok: false,
+        error: e instanceof Error ? e.message : "品类编码格式不合法",
+        field: "categoryCode",
+      };
     }
     categoryCode = normalized;
   }
@@ -91,13 +114,22 @@ export function validateRuleInput(
     Array.isArray(input.requiredSkills) ? input.requiredSkills.join(",") : "",
   );
 
-  const priority = typeof input.priority === "number" ? input.priority : Number(input.priority);
-  if (Number.isNaN(priority)) return { ok: false, error: "优先级必须是数字", field: "priority" };
-  if (priority < 0 || priority > 10_000) {
-    return { ok: false, error: "优先级必须在 0-10000 之间", field: "priority" };
-  }
+  // [v0.9.0] 业务规则 #13 — requiredSkills 不能为空（之前允许空数组）
+  const skillsR = validateSkillsNonEmpty(requiredSkills, "技能");
+  if (!skillsR.ok)
+    return { ok: false, error: skillsR.error, field: "requiredSkills" };
 
-  const enabled = typeof input.enabled === "boolean" ? input.enabled : Boolean(input.enabled);
+  // [v0.9.0] 业务规则 #12 — priority 必须是数字
+  const priorityR = validateRulePriority(input.priority);
+  if (!priorityR.ok)
+    return { ok: false, error: priorityR.error, field: "priority" };
+  const priority =
+    typeof input.priority === "number"
+      ? input.priority
+      : Number(input.priority);
+
+  const enabled =
+    typeof input.enabled === "boolean" ? input.enabled : Boolean(input.enabled);
 
   return {
     ok: true,
@@ -116,7 +148,7 @@ export interface RuleListItem {
   categoryCode: string | null;
   categoryName: string | null;
   skuName: string | null;
-  requiredSkillsStr: string;   // 编辑页回显用
+  requiredSkillsStr: string; // 编辑页回显用
   priority: number;
   enabled: boolean;
   createdAt: string;
@@ -137,8 +169,12 @@ export async function listRules(): Promise<RuleListItem[]> {
 
   // 一次查所有 SKU + 类目做映射（避免 N+1）
   const [skus, categories] = await Promise.all([
-    prisma.serviceSku.findMany({ select: { id: true, skuCode: true, name: true } }),
-    prisma.serviceCategory.findMany({ select: { id: true, categoryCode: true, name: true } }),
+    prisma.serviceSku.findMany({
+      select: { id: true, skuCode: true, name: true },
+    }),
+    prisma.serviceCategory.findMany({
+      select: { id: true, categoryCode: true, name: true },
+    }),
   ]);
   const skuById = new Map(skus.map((s) => [s.id, s]));
   const catById = new Map(categories.map((c) => [c.id, c]));
@@ -149,19 +185,23 @@ export async function listRules(): Promise<RuleListItem[]> {
     const spec = parseRuleJson(r.ruleJson);
     if (spec === null) return []; // 坏数据：跳过
     const sku = spec.match.skuId ? skuById.get(spec.match.skuId) : undefined;
-    const cat = spec.match.categoryId ? catById.get(spec.match.categoryId) : undefined;
-    return [{
-      id: r.id,
-      name: r.name,
-      skuCode: sku?.skuCode ?? null,
-      categoryCode: cat?.categoryCode ?? null,
-      categoryName: cat?.name ?? null,
-      skuName: sku?.name ?? null,
-      requiredSkillsStr: spec.requiredSkills.join(", "),
-      priority: r.priority,
-      enabled: r.enabled,
-      createdAt: r.createdAt.toISOString(),
-    }];
+    const cat = spec.match.categoryId
+      ? catById.get(spec.match.categoryId)
+      : undefined;
+    return [
+      {
+        id: r.id,
+        name: r.name,
+        skuCode: sku?.skuCode ?? null,
+        categoryCode: cat?.categoryCode ?? null,
+        categoryName: cat?.name ?? null,
+        skuName: sku?.name ?? null,
+        requiredSkillsStr: spec.requiredSkills.join(", "),
+        priority: r.priority,
+        enabled: r.enabled,
+        createdAt: r.createdAt.toISOString(),
+      },
+    ];
   });
 }
 
@@ -186,10 +226,16 @@ export async function getRuleForEdit(id: string): Promise<{
 
   const [sku, cat] = await Promise.all([
     spec.match.skuId
-      ? prisma.serviceSku.findUnique({ where: { id: spec.match.skuId }, select: { skuCode: true, name: true } })
+      ? prisma.serviceSku.findUnique({
+          where: { id: spec.match.skuId },
+          select: { skuCode: true, name: true },
+        })
       : Promise.resolve(null),
     spec.match.categoryId
-      ? prisma.serviceCategory.findUnique({ where: { id: spec.match.categoryId }, select: { categoryCode: true, name: true } })
+      ? prisma.serviceCategory.findUnique({
+          where: { id: spec.match.categoryId },
+          select: { categoryCode: true, name: true },
+        })
       : Promise.resolve(null),
   ]);
 
@@ -216,8 +262,11 @@ export async function getRuleForEdit(id: string): Promise<{
  * - categoryCode 反查类目拿 ID
  * - 都没找到 / 反查失败 → validation 错误
  */
-async function buildRuleJson(input: CreateRuleInput): Promise<
-  { ok: true; ruleJson: string } | { ok: false; error: string; field: "skuCode" | "categoryCode" }
+async function buildRuleJson(
+  input: CreateRuleInput,
+): Promise<
+  | { ok: true; ruleJson: string }
+  | { ok: false; error: string; field: "skuCode" | "categoryCode" }
 > {
   const match: { skuId?: string; categoryId?: string } = {};
 
@@ -227,7 +276,11 @@ async function buildRuleJson(input: CreateRuleInput): Promise<
       select: { id: true },
     });
     if (!sku) {
-      return { ok: false, error: `SKU 编码不存在：${input.skuCode}`, field: "skuCode" };
+      return {
+        ok: false,
+        error: `SKU 编码不存在：${input.skuCode}`,
+        field: "skuCode",
+      };
     }
     match.skuId = sku.id;
   }
@@ -238,7 +291,11 @@ async function buildRuleJson(input: CreateRuleInput): Promise<
       select: { id: true },
     });
     if (!cat) {
-      return { ok: false, error: `品类编码不存在：${input.categoryCode}`, field: "categoryCode" };
+      return {
+        ok: false,
+        error: `品类编码不存在：${input.categoryCode}`,
+        field: "categoryCode",
+      };
     }
     match.categoryId = cat.id;
   }
@@ -254,14 +311,24 @@ export async function createRule(
 ): Promise<DispatchRuleResult> {
   const validated = validateRuleInput(rawInput);
   if (!validated.ok) {
-    return { ok: false, category: "validation", error: validated.error, field: validated.field };
+    return {
+      ok: false,
+      category: "validation",
+      error: validated.error,
+      field: validated.field,
+    };
   }
   const c = validated.cleaned;
 
   // 业务编码 → 内部 ID 写入 ruleJson
   const ruleJsonResult = await buildRuleJson(c);
   if (!ruleJsonResult.ok) {
-    return { ok: false, category: "validation", error: ruleJsonResult.error, field: ruleJsonResult.field };
+    return {
+      ok: false,
+      category: "validation",
+      error: ruleJsonResult.error,
+      field: ruleJsonResult.field,
+    };
   }
 
   try {
@@ -289,23 +356,46 @@ export async function updateRule(
 ): Promise<DispatchRuleResult> {
   const id = (rawInput.id ?? "").trim();
   if (!id) {
-    return { ok: false, category: "validation", error: "缺少规则 id", field: "name" };
+    return {
+      ok: false,
+      category: "validation",
+      error: "缺少规则 id",
+      field: "name",
+    };
   }
 
-  const exists = await prisma.dispatchRule.findUnique({ where: { id }, select: { id: true } });
+  const exists = await prisma.dispatchRule.findUnique({
+    where: { id },
+    select: { id: true },
+  });
   if (!exists) {
-    return { ok: false, category: "validation", error: `规则 ${id} 不存在`, field: "name" };
+    return {
+      ok: false,
+      category: "validation",
+      error: `规则 ${id} 不存在`,
+      field: "name",
+    };
   }
 
   const validated = validateRuleInput(rawInput);
   if (!validated.ok) {
-    return { ok: false, category: "validation", error: validated.error, field: validated.field };
+    return {
+      ok: false,
+      category: "validation",
+      error: validated.error,
+      field: validated.field,
+    };
   }
   const c = validated.cleaned;
 
   const ruleJsonResult = await buildRuleJson(c);
   if (!ruleJsonResult.ok) {
-    return { ok: false, category: "validation", error: ruleJsonResult.error, field: ruleJsonResult.field };
+    return {
+      ok: false,
+      category: "validation",
+      error: ruleJsonResult.error,
+      field: ruleJsonResult.field,
+    };
   }
 
   try {
@@ -341,7 +431,10 @@ export async function toggleRuleEnabled(id: string): Promise<ToggleRuleResult> {
   if (!id) {
     return { ok: false, category: "validation", error: "缺少规则 id" };
   }
-  const row = await prisma.dispatchRule.findUnique({ where: { id }, select: { id: true, enabled: true } });
+  const row = await prisma.dispatchRule.findUnique({
+    where: { id },
+    select: { id: true, enabled: true },
+  });
   if (!row) {
     return { ok: false, category: "validation", error: `规则 ${id} 不存在` };
   }

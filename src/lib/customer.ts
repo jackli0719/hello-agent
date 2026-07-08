@@ -80,7 +80,9 @@ export async function listCustomerCategoriesAndSkus(): Promise<{
  * 按 skuCode 查 basePrice（用户端自动用 SKU 默认价时用）。
  * 找不到返 null。
  */
-export async function getSkuBasePriceByCode(skuCode: string): Promise<number | null> {
+export async function getSkuBasePriceByCode(
+  skuCode: string,
+): Promise<number | null> {
   if (!skuCode) return null;
   const row = await prisma.serviceSku.findUnique({
     where: { skuCode },
@@ -95,13 +97,31 @@ export async function getSkuBasePriceByCode(skuCode: string): Promise<number | n
 /** 用户端查询结果 — 简化版（不展示师傅手机等隐私字段） */
 export interface CustomerOrderLookupItem {
   id: string;
+  /** 客户姓名（冗余快照） */
+  customerName: string;
+  /** 客户手机号（冗余快照） */
+  customerPhone: string;
+  /** 服务地址 */
+  address: string;
   serviceName: string;
   serviceCategoryName: string | null;
   status: import("@/src/types").OrderStatus;
   scheduledAt: string;
   amountYuan: number;
+  /** 已派单师傅 ID（null = 未派单） */
+  masterId: string | null;
+  /** 已派单师傅姓名（null = 未派单） */
   technicianName: string | null;
+  /** 已派单师傅手机号（null = 未派单）— [v0.7.5] 详情页展示 */
+  technicianPhone: string | null;
   remark: string | null;
+  /** [v0.7.6] 后台内部备注（用户端不展示）*/
+  internalRemark?: string | null;
+  /** [v0.7.6] 师傅完成说明（用户端 + 后台展示）*/
+  serviceSummary?: string | null;
+  // [v0.7.9] 取消原因 + 取消时间
+  cancelReason: string | null;
+  canceledAt: string | null;
   createdAt: string;
 }
 
@@ -124,25 +144,107 @@ export async function listOrdersForCustomerPhone(
     orderBy: { createdAt: "desc" },
     select: {
       id: true,
+      customerName: true,
+      customerPhone: true,
+      address: true,
       serviceName: true,
       status: true,
       scheduledAt: true,
       amount: true,
+      masterId: true,
       masterName: true,
       remark: true,
       createdAt: true,
+      serviceSummary: true, // [v0.7.6] 师傅完成说明
+      cancelReason: true, // [v0.7.9]
+      canceledAt: true, // [v0.7.9]
+      // [v0.7.5] 列表也 join master 表（拿手机号）
+      master: { select: { phone: true } },
       serviceSku: { select: { category: { select: { name: true } } } },
     },
   });
   return rows.map((r) => ({
     id: r.id,
+    customerName: r.customerName,
+    customerPhone: r.customerPhone,
+    address: r.address,
     serviceName: r.serviceName,
     serviceCategoryName: r.serviceSku?.category.name ?? null,
     status: r.status as import("@/src/types").OrderStatus,
     scheduledAt: r.scheduledAt.toISOString(),
     amountYuan: r.amount / 100,
+    masterId: r.masterId,
     technicianName: r.masterName,
+    technicianPhone: r.master?.phone ?? null,
     remark: r.remark,
+    // [v0.7.6] 列表不需要 internalRemark（用户端不展示），但 serviceSummary 要
+    serviceSummary: r.serviceSummary,
+    // [v0.7.9] 取消字段（用户端可见 — 业务规则）
+    cancelReason: r.cancelReason,
+    canceledAt: r.canceledAt ? r.canceledAt.toISOString() : null,
     createdAt: r.createdAt.toISOString(),
   }));
+}
+
+/**
+ * [v0.7.5] 按订单号 + 手机号查单个订单详情（带越权防护）。
+ *
+ * 越权防护：
+ * - 必须传 customerPhone
+ * - 订单 customerPhone 必须等于传入的 phone → 否则返 null（防 URL 猜订单号）
+ * - 不告诉调用方「订单存在 / 不存在」（防止 ID 枚举）
+ *
+ * 返回 null = 订单不存在 / 不属于该 phone（两种情况统一处理）
+ */
+export async function getOrderForCustomer(
+  orderId: string,
+  phone: string,
+): Promise<CustomerOrderLookupItem | null> {
+  if (!orderId || !phone) return null;
+  const row = await prisma.order.findFirst({
+    where: {
+      id: orderId,
+      customerPhone: phone, // 越权防护
+    },
+    select: {
+      id: true,
+      customerName: true,
+      customerPhone: true,
+      address: true,
+      serviceName: true,
+      status: true,
+      scheduledAt: true,
+      amount: true,
+      masterId: true,
+      masterName: true,
+      remark: true,
+      createdAt: true,
+      serviceSummary: true, // [v0.7.6] 师傅完成说明
+      cancelReason: true, // [v0.7.9]
+      canceledAt: true, // [v0.7.9]
+      master: { select: { phone: true } },
+      serviceSku: { select: { category: { select: { name: true } } } },
+    },
+  });
+  if (!row) return null;
+  return {
+    id: row.id,
+    customerName: row.customerName,
+    customerPhone: row.customerPhone,
+    address: row.address,
+    serviceName: row.serviceName,
+    serviceCategoryName: row.serviceSku?.category.name ?? null,
+    status: row.status as import("@/src/types").OrderStatus,
+    scheduledAt: row.scheduledAt.toISOString(),
+    amountYuan: row.amount / 100,
+    masterId: row.masterId,
+    technicianName: row.masterName,
+    technicianPhone: row.master?.phone ?? null,
+    remark: row.remark,
+    serviceSummary: row.serviceSummary,
+    // [v0.7.9] 取消字段（用户端可见 — 业务规则）
+    cancelReason: row.cancelReason,
+    canceledAt: row.canceledAt ? row.canceledAt.toISOString() : null,
+    createdAt: row.createdAt.toISOString(),
+  };
 }

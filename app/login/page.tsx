@@ -1,177 +1,45 @@
-"use client";
+// 登录页 — [v0.7.1] 修 CSRF「会话已过期」bug
+//
+// [Next.js 15 限制] RSC 不能写 cookie — 之前 ensureCsrfCookie 在 page 里报
+// "Cookies can only be modified in a Server Action or Route Handler"
+//
+// [修法] csrf cookie 写入移到 middleware（访问 /login 时自动写）
+// 这里只读 cookie + 传 prop 给 client form。
 
-import { useState, useTransition } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { loginAction } from "./actions";
+import { Suspense } from "react";
+import { cookies } from "next/headers";
+import { CSRF_COOKIE } from "@/src/lib/csrf-constants";
+import LoginForm from "./LoginForm";
 
-/**
- * 登录页 — MVP 阶段固定账号 + cookie session。
- *
- * 不接第三方登录、不做用户管理 / 注册 / 忘记密码（按需求）。
- */
-
-export default function LoginPage() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const nextPath = searchParams.get("next") || "/dashboard";
-
-  const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
-
-  function handleSubmit(formData: FormData) {
-    setError(null);
-    // 直接把 formData 整个传给 server action — 校验由 server action 负责
-    // 不要 client 端重复校验（之前的硬编码 admin/admin123 容易和 server action 不一致）
-    startTransition(async () => {
-      const r = await loginAction(formData);
-      if (r.ok) {
-        router.push(r.next);
-        router.refresh();
-      } else {
-        setError(r.error);
-      }
-    });
+export default async function LoginPage() {
+  // [v0.7.1] 读 csrf cookie（middleware 已写）
+  // 注意：page 是 RSC，cookies() 在这里**可读**但不可写
+  let csrfToken = "";
+  try {
+    const c = await cookies();
+    csrfToken = c.get(CSRF_COOKIE)?.value ?? "";
+  } catch {
+    // 脚本上下文（无 request）→ 空字符串
   }
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "#f7f8fa",
-        fontFamily:
-          "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif",
-        color: "#111827",
-      }}
-    >
-      <form
-        action={handleSubmit}
-        style={{
-          background: "#fff",
-          border: "1px solid #e5e7eb",
-          borderRadius: 12,
-          padding: 32,
-          width: 360,
-          boxShadow: "0 4px 12px rgba(0,0,0,0.04)",
-        }}
-      >
-        <h1 style={{ fontSize: 22, fontWeight: 600, margin: "0 0 4px 0" }}>
-          登录
-        </h1>
-        <p style={{ color: "#6b7280", fontSize: 13, margin: "0 0 24px 0" }}>
-          O2O 管理后台 MVP — 固定账号 admin / admin123
-        </p>
-
-        <div style={{ marginBottom: 12 }}>
-          <label
-            style={{
-              display: "block",
-              fontSize: 13,
-              color: "#374151",
-              marginBottom: 6,
-              fontWeight: 500,
-            }}
-            htmlFor="username"
-          >
-            用户名
-          </label>
-          <input
-            id="username"
-            name="username"
-            type="text"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            style={{
-              width: "100%",
-              padding: "8px 12px",
-              border: "1px solid #d1d5db",
-              borderRadius: 6,
-              fontSize: 14,
-              background: "#fff",
-              outline: "none",
-              boxSizing: "border-box",
-            }}
-            required
-            autoComplete="username"
-          />
-        </div>
-
-        <div style={{ marginBottom: 12 }}>
-          <label
-            style={{
-              display: "block",
-              fontSize: 13,
-              color: "#374151",
-              marginBottom: 6,
-              fontWeight: 500,
-            }}
-            htmlFor="password"
-          >
-            密码
-          </label>
-          <input
-            id="password"
-            name="password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            style={{
-              width: "100%",
-              padding: "8px 12px",
-              border: "1px solid #d1d5db",
-              borderRadius: 6,
-              fontSize: 14,
-              background: "#fff",
-              outline: "none",
-              boxSizing: "border-box",
-            }}
-            required
-            autoComplete="current-password"
-          />
-        </div>
-
-        {error && (
-          <div
-            style={{
-              padding: "8px 12px",
-              background: "#fee2e2",
-              color: "#b91c1c",
-              borderRadius: 6,
-              fontSize: 13,
-              marginBottom: 12,
-            }}
-          >
-            {error}
-          </div>
-        )}
-
-        <button
-          type="submit"
-          disabled={isPending}
+    <Suspense
+      fallback={
+        <main
           style={{
-            width: "100%",
-            padding: "10px 16px",
-            background: isPending ? "#9ca3af" : "#2563eb",
-            color: "#fff",
-            border: "none",
-            borderRadius: 6,
-            fontSize: 14,
-            fontWeight: 500,
-            cursor: isPending ? "not-allowed" : "pointer",
-            marginTop: 4,
+            minHeight: "100vh",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "#f7f8fa",
+            color: "#9ca3af",
           }}
         >
-          {isPending ? "登录中…" : "登录"}
-        </button>
-
-        <p style={{ color: "#9ca3af", fontSize: 11, marginTop: 16, textAlign: "center" }}>
-          演示阶段 — 账号硬编码在源码
-        </p>
-      </form>
-    </main>
+          加载中…
+        </main>
+      }
+    >
+      <LoginForm csrfToken={csrfToken} />
+    </Suspense>
   );
 }

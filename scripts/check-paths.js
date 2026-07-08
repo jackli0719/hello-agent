@@ -7,6 +7,7 @@
 // 规则：
 // 1. 不允许 `src/app/` 目录（Next.js 只认项目根 `app/`）
 // 2. 不允许 `src/components/`（客户端组件统一放项目根 `components/`）
+// 3. 根 `lib/` 是演示期遗留白名单，新业务必须放 `src/lib/`
 //
 // 退出码：0 = OK，1 = 有违规
 
@@ -14,12 +15,24 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const projectRoot = path.resolve(__dirname, "..");
+const legacyLibAllowlist = new Set([
+  "dispatch.test.ts",
+  "dispatch.ts",
+  "mock-data.ts",
+  "types.ts",
+]);
 
 const forbiddenDirs = [
   // Next.js 路由 — 必须放项目根
-  { path: path.join(projectRoot, "src/app"), reason: "Next.js 路由必须放在项目根 app/，不是 src/app/" },
+  {
+    path: path.join(projectRoot, "src/app"),
+    reason: "Next.js 路由必须放在项目根 app/，不是 src/app/",
+  },
   // 客户端组件 — 必须放项目根
-  { path: path.join(projectRoot, "src/components"), reason: "客户端组件必须放在项目根 components/，不是 src/components/" },
+  {
+    path: path.join(projectRoot, "src/components"),
+    reason: "客户端组件必须放在项目根 components/，不是 src/components/",
+  },
 ];
 
 let violations = 0;
@@ -28,6 +41,19 @@ for (const { path: dir, reason } of forbiddenDirs) {
   if (fs.existsSync(dir)) {
     console.error(`❌ 违规: ${path.relative(projectRoot, dir)}`);
     console.error(`   ${reason}`);
+    violations++;
+  }
+}
+
+const legacyLibDir = path.join(projectRoot, "lib");
+if (fs.existsSync(legacyLibDir)) {
+  for (const entry of fs.readdirSync(legacyLibDir, { withFileTypes: true })) {
+    if (entry.isDirectory() || legacyLibAllowlist.has(entry.name)) continue;
+
+    console.error(`❌ 违规: lib/${entry.name}`);
+    console.error(
+      "   根 lib/ 只保留演示期遗留白名单；新业务代码必须放 src/lib/",
+    );
     violations++;
   }
 }

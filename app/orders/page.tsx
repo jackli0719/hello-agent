@@ -1,8 +1,11 @@
 import { OrderActions } from "@/components/OrderActions";
+import { InternalRemarkForm } from "@/components/InternalRemarkForm";
+import { AdminCancelButton } from "@/components/AdminCancelButton";
 import { StatusBadge, th, td, card, ORDER_TONE } from "@/components/ui";
 import { ORDER_STATUS_LABEL } from "@/lib/mock-data";
 import { listOrdersForPage, type OrderListItem } from "@/src/lib/queries";
 import { listEnabledServices } from "@/src/lib/repos/services";
+import { ensureCsrfCookie } from "@/src/lib/csrf";
 import type { OrderStatus } from "@/src/types";
 import Link from "next/link";
 
@@ -57,11 +60,14 @@ function buildOrdersUrl(params: {
   if (params.skuCode) sp.set("skuCode", params.skuCode);
   if (params.dateFrom) sp.set("dateFrom", params.dateFrom);
   if (params.dateTo) sp.set("dateTo", params.dateTo);
-  if (params.dateField && params.dateField !== "createdAt") sp.set("dateField", params.dateField);
+  if (params.dateField && params.dateField !== "createdAt")
+    sp.set("dateField", params.dateField);
   if (params.status && params.status !== "all") sp.set("status", params.status);
   if (params.page && params.page !== "1") sp.set("page", params.page);
   // pageSize 总是写入（因为它改变会改变 page 总数；URL 必须显式）
-  if (params.pageSize && params.pageSize !== "20") sp.set("pageSize", params.pageSize);
+  // [v0.7.0 任务] 默认 10（之前默认 20）
+  if (params.pageSize && params.pageSize !== "10")
+    sp.set("pageSize", params.pageSize);
   const qs = sp.toString();
   return `/orders${qs ? `?${qs}` : ""}`;
 }
@@ -73,19 +79,23 @@ export default async function OrdersPage({ searchParams }: PageProps) {
     skuCode = "",
     created,
     page = "1",
-    pageSize: pageSizeParam = "20",
+    // [v0.7.0 任务] 默认 pageSize = 10（之前默认 20）
+    pageSize: pageSizeParam = "10",
     dateFrom = "",
     dateTo = "",
     dateField = "createdAt",
   } = await searchParams;
+  // [v0.7.7] RSC 阶段确保 csrf cookie 存在（InternalRemarkForm 校验需要）
+  const csrfToken = await ensureCsrfCookie();
   // 非法 status 值 fallback 到 "all"，避免 ?status=invalid 时把所有订单过滤掉
-  const validStatus = (FILTERS.some((f) => f.value === status) ? status : "all") as
-    | "all"
-    | OrderStatus;
+  const validStatus = (
+    FILTERS.some((f) => f.value === status) ? status : "all"
+  ) as "all" | OrderStatus;
   const statusFilter = validStatus;
 
   // 时间字段校验
-  const validDateField = dateField === "scheduledAt" ? "scheduledAt" : "createdAt";
+  const validDateField =
+    dateField === "scheduledAt" ? "scheduledAt" : "createdAt";
   // dateFrom / dateTo 转 Date（YYYY-MM-DD 解析为本地 0 点）
   const dateFromDate = dateFrom ? new Date(`${dateFrom}T00:00:00`) : undefined;
   const dateToDate = dateTo ? new Date(`${dateTo}T00:00:00`) : undefined;
@@ -144,15 +154,24 @@ export default async function OrdersPage({ searchParams }: PageProps) {
       acc[o.status]++;
       return acc;
     },
-    { all: 0, pending: 0, assigned: 0, in_service: 0, completed: 0, cancelled: 0 } as Record<
-      "all" | OrderStatus,
-      number
-    >,
+    {
+      all: 0,
+      pending: 0,
+      assigned: 0,
+      in_service: 0,
+      completed: 0,
+      cancelled: 0,
+    } as Record<"all" | OrderStatus, number>,
   );
 
   // 当前是否筛选中（决定「重置」按钮显示）
   const isFiltering =
-    !!keyword || statusFilter !== "all" || !!skuCode || !!dateFrom || !!dateTo || currentPage > 1;
+    !!keyword ||
+    statusFilter !== "all" ||
+    !!skuCode ||
+    !!dateFrom ||
+    !!dateTo ||
+    currentPage > 1;
 
   return (
     <>
@@ -166,7 +185,14 @@ export default async function OrdersPage({ searchParams }: PageProps) {
           color: "#111827",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 4,
+          }}
+        >
           <h1 style={{ fontSize: 24, margin: 0 }}>订单管理</h1>
           <Link
             href="/orders/new"
@@ -184,7 +210,8 @@ export default async function OrdersPage({ searchParams }: PageProps) {
           </Link>
         </div>
         <p style={{ color: "#6b7280", margin: "0 0 20px 0", fontSize: 14 }}>
-          共 {totalCountAll} 条订单（按 SKU+时间筛选） · 当前页 {filtered.length} 条 / 第 {currentPage} 页
+          共 {totalCountAll} 条订单（按 SKU+时间筛选） · 当前页{" "}
+          {filtered.length} 条 / 第 {currentPage} 页
         </p>
 
         {created ? (
@@ -330,7 +357,14 @@ export default async function OrdersPage({ searchParams }: PageProps) {
         </form>
 
         {/* 状态筛选 chips */}
-        <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            marginBottom: 20,
+            flexWrap: "wrap",
+          }}
+        >
           {FILTERS.map((f) => {
             const active = statusFilter === f.value;
             // 保留 keyword + skuCode + 时间范围时切换 status，page 重置为 1
@@ -357,7 +391,8 @@ export default async function OrdersPage({ searchParams }: PageProps) {
                   border: active ? "1px solid #111827" : "1px solid #e5e7eb",
                 }}
               >
-                {f.label} <span style={{ opacity: 0.7 }}>({counts[f.value]})</span>
+                {f.label}{" "}
+                <span style={{ opacity: 0.7 }}>({counts[f.value]})</span>
               </Link>
             );
           })}
@@ -376,7 +411,9 @@ export default async function OrdersPage({ searchParams }: PageProps) {
                   textAlign: "center",
                 }}
               >
-                <div style={{ color: "#9ca3af", fontSize: 14, marginBottom: 12 }}>
+                <div
+                  style={{ color: "#9ca3af", fontSize: 14, marginBottom: 12 }}
+                >
                   数据库里还没有订单
                 </div>
                 <Link
@@ -402,7 +439,13 @@ export default async function OrdersPage({ searchParams }: PageProps) {
                 </div>
               </div>
             ) : (
-              <div style={{ padding: "40px 0", textAlign: "center", color: "#9ca3af" }}>
+              <div
+                style={{
+                  padding: "40px 0",
+                  textAlign: "center",
+                  color: "#9ca3af",
+                }}
+              >
                 暂无订单
               </div>
             )
@@ -418,6 +461,7 @@ export default async function OrdersPage({ searchParams }: PageProps) {
                   <th style={th}>已分配师傅</th>
                   <th style={th}>状态</th>
                   <th style={th}>创建时间</th>
+                  <th style={{ ...th, minWidth: 260 }}>备注 / 内部备注</th>
                   <th style={{ ...th, minWidth: 260 }}>推荐 / 命中规则</th>
                 </tr>
               </thead>
@@ -427,7 +471,9 @@ export default async function OrdersPage({ searchParams }: PageProps) {
                     <td style={td}>{o.id}</td>
                     <td style={td}>
                       <div>{o.customerName}</div>
-                      <div style={{ color: "#6b7280", fontSize: 12 }}>{o.customerPhone || "—"}</div>
+                      <div style={{ color: "#6b7280", fontSize: 12 }}>
+                        {o.customerPhone || "—"}
+                      </div>
                     </td>
                     <td style={td}>
                       <div>{o.serviceName}</div>
@@ -448,14 +494,47 @@ export default async function OrdersPage({ searchParams }: PageProps) {
                     </td>
                     <td style={td}>¥{o.amountYuan.toFixed(2)}</td>
                     <td style={td}>
-                      {o.technicianName ?? <span style={{ color: "#9ca3af" }}>未派单</span>}
+                      {o.technicianName ?? (
+                        <span style={{ color: "#9ca3af" }}>未派单</span>
+                      )}
                     </td>
                     <td style={td}>
-                      <StatusBadge label={ORDER_STATUS_LABEL[o.status]} tone={ORDER_TONE[o.status]} />
+                      <StatusBadge
+                        label={ORDER_STATUS_LABEL[o.status]}
+                        tone={ORDER_TONE[o.status]}
+                      />
                     </td>
                     <td style={td}>{formatDateTime(o.createdAt)}</td>
                     <td style={td}>
-                      <ActionCell order={o} />
+                      {/* [v0.7.6] 备注展示 + 后台内部备注编辑 */}
+                      <div style={{ fontSize: 12, marginBottom: 4 }}>
+                        <span style={{ color: "#6b7280" }}>用户：</span>
+                        {o.remark?.trim() ? (
+                          o.remark
+                        ) : (
+                          <span style={{ color: "#9ca3af" }}>暂无备注</span>
+                        )}
+                      </div>
+                      {o.serviceSummary?.trim() ? (
+                        <div
+                          style={{
+                            fontSize: 12,
+                            marginBottom: 4,
+                            color: "#166534",
+                          }}
+                        >
+                          <span>师傅：</span>
+                          {o.serviceSummary}
+                        </div>
+                      ) : null}
+                      <InternalRemarkForm
+                        orderId={o.id}
+                        initialRemark={o.internalRemark}
+                        csrfToken={csrfToken}
+                      />
+                    </td>
+                    <td style={td}>
+                      <ActionCell order={o} csrfToken={csrfToken} />
                     </td>
                   </tr>
                 ))}
@@ -464,50 +543,90 @@ export default async function OrdersPage({ searchParams }: PageProps) {
           )}
 
           {/* 分页 — 始终显示让用户感知有分页机制；总订单少时也显示「第 1 / 1 页」 */}
-          <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", marginTop: 16, gap: 8, flexWrap: "wrap" }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "flex-end",
+              alignItems: "center",
+              marginTop: 16,
+              gap: 8,
+              flexWrap: "wrap",
+            }}
+          >
             <label style={{ fontSize: 13, color: "#6b7280" }}>每页</label>
             <select
               name="pageSize"
               defaultValue={String(pageSize)}
               style={{
-                padding: "4px 8px", border: "1px solid #d1d5db", borderRadius: 4,
-                fontSize: 13, background: "#fff", outline: "none",
+                padding: "4px 8px",
+                border: "1px solid #d1d5db",
+                borderRadius: 4,
+                fontSize: 13,
+                background: "#fff",
+                outline: "none",
               }}
             >
               {PAGE_SIZE_OPTIONS.map((n) => (
-                <option key={n} value={n}>{n}</option>
+                <option key={n} value={n}>
+                  {n}
+                </option>
               ))}
             </select>
             <span style={{ fontSize: 13, color: "#6b7280" }}>条</span>
             <Link
               href={buildOrdersUrl({
-                keyword, status: statusFilter, skuCode, dateFrom, dateTo, dateField: validDateField,
+                keyword,
+                status: statusFilter,
+                skuCode,
+                dateFrom,
+                dateTo,
+                dateField: validDateField,
                 page: String(Math.max(1, currentPage - 1)),
                 pageSize: String(pageSize),
               })}
               style={{
-                padding: "6px 14px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 13,
+                padding: "6px 14px",
+                border: "1px solid #d1d5db",
+                borderRadius: 6,
+                fontSize: 13,
                 color: currentPage === 1 ? "#d1d5db" : "#374151",
-                background: "#fff", textDecoration: "none",
+                background: "#fff",
+                textDecoration: "none",
                 pointerEvents: currentPage === 1 ? "none" : "auto",
               }}
             >
               上一页
             </Link>
             <span style={{ fontSize: 13, color: "#6b7280" }}>
-              第 {currentPage} / {Math.max(1, Math.ceil(totalCountAll / pageSize))} 页
+              第 {currentPage} /{" "}
+              {Math.max(1, Math.ceil(totalCountAll / pageSize))} 页
             </span>
             <Link
               href={buildOrdersUrl({
-                keyword, status: statusFilter, skuCode, dateFrom, dateTo, dateField: validDateField,
+                keyword,
+                status: statusFilter,
+                skuCode,
+                dateFrom,
+                dateTo,
+                dateField: validDateField,
                 page: String(currentPage + 1),
                 pageSize: String(pageSize),
               })}
               style={{
-                padding: "6px 14px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 13,
-                color: currentPage >= Math.ceil(totalCountAll / pageSize) ? "#d1d5db" : "#374151",
-                background: "#fff", textDecoration: "none",
-                pointerEvents: currentPage >= Math.ceil(totalCountAll / pageSize) ? "none" : "auto",
+                padding: "6px 14px",
+                border: "1px solid #d1d5db",
+                borderRadius: 6,
+                fontSize: 13,
+                color:
+                  currentPage >= Math.ceil(totalCountAll / pageSize)
+                    ? "#d1d5db"
+                    : "#374151",
+                background: "#fff",
+                textDecoration: "none",
+                pointerEvents:
+                  currentPage >= Math.ceil(totalCountAll / pageSize)
+                    ? "none"
+                    : "auto",
               }}
             >
               下一页
@@ -520,20 +639,68 @@ export default async function OrdersPage({ searchParams }: PageProps) {
 }
 
 // 推荐 / 派单结果展示单元格
-function ActionCell({ order }: { order: OrderListItem }) {
+function ActionCell({
+  order,
+  csrfToken,
+}: {
+  order: OrderListItem;
+  csrfToken: string;
+}) {
   const { recommendation } = order;
   const rule = recommendation.rule;
 
+  // [v0.7.9] cancelled 状态：展示取消信息 + 不可操作
+  if (order.status === "cancelled") {
+    return (
+      <div style={{ fontSize: 12 }}>
+        {order.cancelReason && (
+          <div
+            style={{
+              color: "#7f1d1d",
+              background: "#fef2f2",
+              padding: "4px 6px",
+              borderRadius: 3,
+              marginBottom: 4,
+            }}
+          >
+            原因：{order.cancelReason}
+          </div>
+        )}
+        {order.canceledAt && (
+          <div style={{ color: "#6b7280" }}>{order.canceledAt}</div>
+        )}
+      </div>
+    );
+  }
+
+  // [v0.7.9] pending / assigned / in_service 可取消（completed 不可）
+  const canCancel =
+    order.status === "pending" ||
+    order.status === "assigned" ||
+    order.status === "in_service";
+  const requireReason = order.status === "in_service";
+
   // pending 状态：派单按钮列表（候选可能为空，OrderActions 自己处理）
-  // assigned / in_service / completed / cancelled：OrderActions 按 status 分发
+  // assigned / in_service / completed：OrderActions 按 status 分发
   if (order.status !== "pending") {
     return (
-      <OrderActions
-        orderId={order.id}
-        status={order.status}
-        ruleName={null}
-        candidates={[]}
-      />
+      <div>
+        <OrderActions
+          orderId={order.id}
+          status={order.status}
+          ruleName={null}
+          candidates={[]}
+        />
+        {canCancel && (
+          <div style={{ marginTop: 6 }}>
+            <AdminCancelButton
+              orderId={order.id}
+              requireReason={requireReason}
+              csrfToken={csrfToken}
+            />
+          </div>
+        )}
+      </div>
     );
   }
 

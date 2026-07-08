@@ -1,0 +1,7 @@
+# v0.2.6: pre-commit 接 B1.2（CLAUDE.md P2-3 决策回报提示）
+# 不阻断——开发者被噪音逼得写空话是更糟的结果（v0.2.1 决策回报原则）
+node scripts/lint-commit-message.js
+npm run check
+# [v0.9.3] 改 demo data / seed / mock-data.ts → 必跑 test（CLAUDE.md P0-5）
+npm run test
+npx lint-staged

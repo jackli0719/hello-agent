@@ -15,6 +15,16 @@
 
 import { prisma } from "@/src/lib/db";
 import { normalizeCode } from "@/src/lib/codes";
+import { logInfo, logError } from "@/src/lib/logger";
+import { incrementCounter, METRIC } from "@/src/lib/metrics";
+import {
+  validateAddress,
+  validateCancelReason,
+  validateCustomerName,
+  validateOrderAmount,
+  validatePhone,
+  trimServiceSummary,
+} from "@/src/lib/validation";
 
 export type OrderField =
   | "customerName"
@@ -46,23 +56,27 @@ export type CreateOrderResult =
 
 export function validateCreateOrderInput(
   input: Partial<CreateOrderInput>,
-): { ok: true; cleaned: CreateOrderInput } | { ok: false; error: string; field: OrderField } {
-  const customerName = (input.customerName ?? "").trim();
-  if (!customerName) return { ok: false, error: "请填写客户姓名", field: "customerName" };
-  if (customerName.length > 50) return { ok: false, error: "客户姓名不能超过 50 个字符", field: "customerName" };
+):
+  | { ok: true; cleaned: CreateOrderInput }
+  | { ok: false; error: string; field: OrderField } {
+  // [v0.9.0] 复用 src/lib/validation.ts 的纯函数校验
+  const nameR = validateCustomerName(input.customerName);
+  if (!nameR.ok)
+    return { ok: false, error: nameR.error, field: "customerName" };
+  const customerName = input.customerName!.trim();
 
-  const customerPhone = (input.customerPhone ?? "").trim();
-  if (!customerPhone) return { ok: false, error: "请填写手机号", field: "customerPhone" };
-  if (!/^1\d{10}$/.test(customerPhone)) {
-    return { ok: false, error: "手机号格式不正确（11 位数字，1 开头）", field: "customerPhone" };
-  }
+  const phoneR = validatePhone(input.customerPhone);
+  if (!phoneR.ok)
+    return { ok: false, error: phoneR.error, field: "customerPhone" };
+  const customerPhone = input.customerPhone!.trim();
 
-  const address = (input.address ?? "").trim();
-  if (!address) return { ok: false, error: "请填写服务地址", field: "address" };
-  if (address.length > 200) return { ok: false, error: "服务地址不能超过 200 个字符", field: "address" };
+  const addrR = validateAddress(input.address);
+  if (!addrR.ok) return { ok: false, error: addrR.error, field: "address" };
+  const address = input.address!.trim();
 
   const skuCodeRaw = (input.skuCode ?? "").trim();
-  if (!skuCodeRaw) return { ok: false, error: "请选择服务 SKU", field: "skuCode" };
+  if (!skuCodeRaw)
+    return { ok: false, error: "请选择服务 SKU", field: "skuCode" };
 
   // categoryCode 可选 — 旧调用方不传时跳过校验。trim 后非空就保留，否则置 undefined
   let categoryCode: string | undefined;
@@ -77,16 +91,18 @@ export function validateCreateOrderInput(
   const skuCode = normalizeCode(skuCodeRaw);
   if (categoryCode !== undefined) categoryCode = normalizeCode(categoryCode);
   // normalize 后可能变空（输入完全是非法字符） — 重新校验
-  if (!skuCode) return { ok: false, error: "服务 SKU 格式不合法", field: "skuCode" };
+  if (!skuCode)
+    return { ok: false, error: "服务 SKU 格式不合法", field: "skuCode" };
   if (categoryCode === "") categoryCode = undefined;
 
-  if (typeof input.amount !== "number" || Number.isNaN(input.amount)) {
-    return { ok: false, error: "金额必须是数字", field: "amount" };
-  }
-  if (input.amount < 0) return { ok: false, error: "金额不能为负数", field: "amount" };
-  if (input.amount > 1_000_000) return { ok: false, error: "金额超出合理范围", field: "amount" };
+  // [v0.9.0] 业务规则 #4 — 订单金额必须 > 0（之前是 ≥ 0）
+  const amountR = validateOrderAmount(input.amount);
+  if (!amountR.ok) return { ok: false, error: amountR.error, field: "amount" };
 
-  if (!(input.scheduledAt instanceof Date) || Number.isNaN(input.scheduledAt.getTime())) {
+  if (
+    !(input.scheduledAt instanceof Date) ||
+    Number.isNaN(input.scheduledAt.getTime())
+  ) {
     return { ok: false, error: "预约时间不正确", field: "scheduledAt" };
   }
 
@@ -109,7 +125,7 @@ export function validateCreateOrderInput(
       address,
       skuCode,
       categoryCode,
-      amount: input.amount,
+      amount: input.amount as number,
       scheduledAt: input.scheduledAt,
       remark,
     },
@@ -135,7 +151,11 @@ export async function createOrder(
     },
   });
   if (!sku) {
-    return { ok: false, error: `SKU 不存在：${input.skuCode}`, field: "skuCode" };
+    return {
+      ok: false,
+      error: `SKU 不存在：${input.skuCode}`,
+      field: "skuCode",
+    };
   }
   if (!sku.enabled) {
     return { ok: false, error: `SKU 已下架：${sku.name}`, field: "skuCode" };
@@ -144,7 +164,10 @@ export async function createOrder(
   // 配对校验：客户端传的 categoryCode 必须等于 SKU 真实所属类目的 categoryCode。
   // 这是「前端改了 skuCode 但没改 categoryCode」或者反过来时的兜底。
   // 不传 categoryCode 时跳过（兼容旧调用方/外部 API）。
-  if (input.categoryCode !== undefined && sku.category.categoryCode !== input.categoryCode) {
+  if (
+    input.categoryCode !== undefined &&
+    sku.category.categoryCode !== input.categoryCode
+  ) {
     return {
       ok: false,
       error: `SKU「${sku.name}」不属于类目「${input.categoryCode}」`,
@@ -174,6 +197,16 @@ export async function createOrder(
           remark: input.remark ?? null,
         },
       });
+      // 埋点：订单创建成功
+      logInfo("order created", {
+        orderId,
+        skuCode: input.skuCode,
+        customerPhone: input.customerPhone,
+      });
+      incrementCounter(METRIC.ORDER_CREATE_SUCCESS, {
+        orderId,
+        skuCode: input.skuCode,
+      });
       return { ok: true, orderId };
     } catch (e) {
       lastError = e;
@@ -184,6 +217,10 @@ export async function createOrder(
     }
   }
   // 重试耗尽才走到这里 — 5 次都撞号说明并发极高，转成业务错误返回
+  logError("order create exhausted retries", lastError, {
+    skuCode: input.skuCode,
+  });
+  incrementCounter(METRIC.ORDER_CREATE_FAILED, { reason: "retries_exhausted" });
   throw lastError instanceof Error ? lastError : new Error("订单号生成失败");
 }
 
@@ -213,7 +250,9 @@ export function buildOrderId(now: Date, seq: number): string {
  * 查 DB 算「下一个候选订单号」：O + YYYMMDD + (count + 1)。
  * 同日并发可能返回重复值 — 由 createOrder 的重试兜底。
  */
-export async function generateNextOrderId(now: Date = new Date()): Promise<string> {
+export async function generateNextOrderId(
+  now: Date = new Date(),
+): Promise<string> {
   const pad = (n: number) => String(n).padStart(2, "0");
   const ymd = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
   const todayPrefix = `O${ymd}`;
@@ -349,8 +388,16 @@ export async function assignOrder(
     });
   } catch (e) {
     if (e instanceof AssignOrderError) {
+      logInfo("assign failed (validation)", {
+        orderId,
+        masterId,
+        reason: e.reason,
+      });
+      incrementCounter(METRIC.ORDER_ASSIGN_FAILED, { reason: "validation" });
       return { ok: false, category: "validation", error: e.reason };
     }
+    logError("assign failed (system)", e, { orderId, masterId });
+    incrementCounter(METRIC.ORDER_ASSIGN_FAILED, { reason: "system" });
     return {
       ok: false,
       category: "system",
@@ -358,6 +405,15 @@ export async function assignOrder(
     };
   }
 
+  logInfo("order assigned", {
+    orderId,
+    masterId: master.id,
+    masterName: master.name,
+  });
+  incrementCounter(METRIC.ORDER_ASSIGN_SUCCESS, {
+    orderId,
+    masterId: master.id,
+  });
   return {
     ok: true,
     orderId,
@@ -370,13 +426,24 @@ export async function assignOrder(
  * 内部工具：跟 queries.ts 一样调 recommendMastersForOrder。
  * 这里独立查 DB（不依赖 queries.ts 的 listOrdersForPage）— assignOrder 是个独立路径。
  */
-async function computeRecommendationForOrder(
-  order: { id: string; serviceSkuId: string | null; status: string },
-) {
-  const { recommendMastersForOrder, parseRuleJson } = await import("@/lib/dispatch");
+async function computeRecommendationForOrder(order: {
+  id: string;
+  serviceSkuId: string | null;
+  status: string;
+  address: string;
+}) {
+  const { recommendMastersForOrder, parseRuleJson } =
+    await import("@/lib/dispatch");
   type Tech = {
-    id: string; name: string; phone: string; skills: string;
-    rating: number; completedJobs: number; status: string; serviceArea: string;
+    id: string;
+    name: string;
+    phone: string;
+    skills: string;
+    rating: number;
+    completedJobs: number;
+    status: string;
+    serviceArea: string;
+    merchantId: string;
   };
 
   // 加载 SKU 拿 categoryId
@@ -389,24 +456,51 @@ async function computeRecommendationForOrder(
     categoryId = sku?.categoryId ?? null;
   }
 
-  const [ruleRows, masterRows] = await Promise.all([
-    prisma.dispatchRule.findMany({
-      where: { enabled: true },
-      select: { id: true, name: true, priority: true, enabled: true, ruleJson: true },
-    }),
-    prisma.master.findMany({
-      select: {
-        id: true,
-        name: true,
-        phone: true,
-        skills: true,
-        rating: true,
-        completedJobs: true,
-        status: true,
-        serviceArea: true,
-      },
-    }),
-  ]);
+  const [ruleRows, masterRows, platformAreaRows, merchantAreaRows] =
+    await Promise.all([
+      prisma.dispatchRule.findMany({
+        where: { enabled: true },
+        select: {
+          id: true,
+          name: true,
+          priority: true,
+          enabled: true,
+          ruleJson: true,
+        },
+      }),
+      prisma.master.findMany({
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          skills: true,
+          rating: true,
+          completedJobs: true,
+          status: true,
+          serviceArea: true,
+          merchantId: true,
+        },
+      }),
+      prisma.platformArea.findMany({
+        where: { enabled: true },
+        select: {
+          id: true,
+          province: true,
+          city: true,
+          district: true,
+          street: true,
+          enabled: true,
+        },
+      }),
+      prisma.merchantArea.findMany({
+        where: { enabled: true, merchant: { status: "active" } },
+        select: {
+          merchantId: true,
+          platformAreaId: true,
+          enabled: true,
+        },
+      }),
+    ]);
 
   const rules = ruleRows.map((r) => ({
     id: r.id,
@@ -419,30 +513,36 @@ async function computeRecommendationForOrder(
     spec: parseRuleJson(r.ruleJson) ?? { match: {}, requiredSkills: [] },
   }));
 
-  const masters = (masterRows as Tech[]).map((row): import("@/src/types").Technician => {
-    let skills: string[] = [];
-    try {
-      const parsed = JSON.parse(row.skills);
-      if (Array.isArray(parsed)) skills = parsed.filter((s) => typeof s === "string");
-    } catch {
-      // 坏数据留空
-    }
-    return {
-      id: row.id,
-      name: row.name,
-      phone: row.phone,
-      skills,
-      rating: row.rating,
-      completedJobs: row.completedJobs,
-      status: row.status as import("@/src/types").TechnicianStatus,
-      serviceArea: row.serviceArea ?? "",
-    };
-  });
+  const masters = (masterRows as Tech[]).map(
+    (row): import("@/src/types").Technician => {
+      let skills: string[] = [];
+      try {
+        const parsed = JSON.parse(row.skills);
+        if (Array.isArray(parsed))
+          skills = parsed.filter((s) => typeof s === "string");
+      } catch {
+        // 坏数据留空
+      }
+      return {
+        id: row.id,
+        name: row.name,
+        phone: row.phone,
+        skills,
+        rating: row.rating,
+        completedJobs: row.completedJobs,
+        status: row.status as import("@/src/types").TechnicianStatus,
+        serviceArea: row.serviceArea ?? "",
+        merchantId: row.merchantId,
+      };
+    },
+  );
 
   return recommendMastersForOrder({
-    order: { skuId: order.serviceSkuId, categoryId },
+    order: { skuId: order.serviceSkuId, categoryId, address: order.address },
     rules,
     masters,
+    platformAreas: platformAreaRows,
+    merchantAreas: merchantAreaRows,
   });
 }
 
@@ -461,7 +561,14 @@ export class TransitionOrderError extends Error {
 }
 
 export type TransitionOrderResult =
-  | { ok: true; orderId: string; nextStatus: "in_service" | "completed" | "cancelled" }
+  | {
+      ok: true;
+      orderId: string;
+      nextStatus: "in_service" | "completed" | "cancelled";
+      // [v0.4.0] 暴露给 activity log 用
+      fromStatus: string;
+      masterName: string | null;
+    }
   | {
       ok: false;
       category: "validation" | "system";
@@ -490,15 +597,27 @@ export type TransitionOrderResult =
 export async function transitionOrder(
   orderId: string,
   nextStatus: "in_service" | "completed" | "cancelled",
+  // [v0.7.8] 可选 serviceSummary：师傅完成订单时填（只在 completed 用）
+  // 在事务内写入 → serviceSummary 与 status 一起更新（原子性）
+  serviceSummary?: string,
+  // [v0.7.9] 可选 cancelReason：取消订单时填
+  // [v0.9.0] 业务规则 #14 — 所有 cancel 状态都必填（pending / assigned / in_service）
+  // 在事务内写入 → cancelReason + canceledAt 与 status 一起更新（原子性）
+  cancelReason?: string,
 ): Promise<TransitionOrderResult> {
   // 1. 加载订单
   const order = await prisma.order.findUnique({ where: { id: orderId } });
   if (!order) {
-    return { ok: false, category: "validation", error: `订单 ${orderId} 不存在` };
+    return {
+      ok: false,
+      category: "validation",
+      error: `订单 ${orderId} 不存在`,
+    };
   }
 
   // 2. 校验合法流转
-  const allowed = ALLOWED_TRANSITIONS[order.status as keyof typeof ALLOWED_TRANSITIONS];
+  const allowed =
+    ALLOWED_TRANSITIONS[order.status as keyof typeof ALLOWED_TRANSITIONS];
   if (!allowed || !allowed.includes(nextStatus)) {
     return {
       ok: false,
@@ -507,12 +626,44 @@ export async function transitionOrder(
     };
   }
 
-  // 3. 事务：乐观锁改订单 + 视情况释放师傅
+  // [v0.9.0] 业务规则 #14 — 所有 cancel 状态都必填原因（在 DB 写入前校验）
+  if (nextStatus === "cancelled") {
+    const reasonR = validateCancelReason(cancelReason);
+    if (!reasonR.ok) {
+      return { ok: false, category: "validation", error: reasonR.error };
+    }
+  }
+
+  // [v0.9.0] 业务规则 #15 — serviceSummary 可以为空，但填了要 trim
+  const cleanedServiceSummary =
+    nextStatus === "completed"
+      ? trimServiceSummary(serviceSummary).cleaned
+      : "";
+
+  // 3. 事务：乐观锁改订单 + 视情况释放师傅 + 写 serviceSummary/cancelReason（原子性）
   try {
     await prisma.$transaction(async (tx) => {
+      // [v0.7.8] serviceSummary 与 status 同事务写
+      const data: {
+        status: "in_service" | "completed" | "cancelled";
+        serviceSummary?: string;
+        cancelReason?: string;
+        canceledAt?: Date;
+      } = {
+        status: nextStatus,
+      };
+      // 只在 completed 状态 + 实际传了 serviceSummary 时写入
+      if (nextStatus === "completed" && cleanedServiceSummary) {
+        data.serviceSummary = cleanedServiceSummary;
+      }
+      // [v0.9.0] cancelled 状态 — 必填原因（已在头部校验过）
+      if (nextStatus === "cancelled" && cancelReason && cancelReason.trim()) {
+        data.cancelReason = cancelReason.trim();
+        data.canceledAt = new Date();
+      }
       const result = await tx.order.updateMany({
         where: { id: orderId, status: order.status }, // CAS：只在状态没变时改
-        data: { status: nextStatus },
+        data,
       });
       if (result.count === 0) {
         throw new TransitionOrderError(
@@ -534,8 +685,27 @@ export async function transitionOrder(
     });
   } catch (e) {
     if (e instanceof TransitionOrderError) {
+      logInfo("transition failed (validation)", {
+        orderId,
+        fromStatus: order.status,
+        toStatus: nextStatus,
+        reason: e.reason,
+      });
+      incrementCounter(METRIC.ORDER_TRANSITION_FAILED(nextStatus), {
+        from: order.status,
+        reason: "validation",
+      });
       return { ok: false, category: "validation", error: e.reason };
     }
+    logError("transition failed (system)", e, {
+      orderId,
+      fromStatus: order.status,
+      toStatus: nextStatus,
+    });
+    incrementCounter(METRIC.ORDER_TRANSITION_FAILED(nextStatus), {
+      from: order.status,
+      reason: "system",
+    });
     return {
       ok: false,
       category: "system",
@@ -543,11 +713,28 @@ export async function transitionOrder(
     };
   }
 
-  return { ok: true, orderId, nextStatus };
+  logInfo("order transitioned", {
+    orderId,
+    fromStatus: order.status,
+    toStatus: nextStatus,
+  });
+  incrementCounter(METRIC.ORDER_TRANSITION_SUCCESS(nextStatus), {
+    from: order.status,
+  });
+  return {
+    ok: true,
+    orderId,
+    nextStatus,
+    fromStatus: order.status,
+    masterName: order.masterName ?? null,
+  };
 }
 
 // 合法流转表 — 用 lookup 代替一串 if
-const ALLOWED_TRANSITIONS: Record<string, Array<"in_service" | "completed" | "cancelled">> = {
+const ALLOWED_TRANSITIONS: Record<
+  string,
+  Array<"in_service" | "completed" | "cancelled">
+> = {
   pending: ["cancelled"],
   assigned: ["in_service", "cancelled"],
   in_service: ["completed", "cancelled"],

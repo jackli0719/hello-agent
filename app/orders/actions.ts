@@ -11,14 +11,25 @@ import {
   type TransitionOrderResult,
 } from "@/src/lib/orders";
 import { releaseMaster, ReleaseOrderError } from "@/src/lib/repos/orders";
+import { createActivityLog } from "@/src/lib/activity-log";
+import {
+  CSRF_FORM_FIELD,
+  verifyCsrfOrigin,
+  verifyCsrfToken,
+} from "@/src/lib/csrf";
+import {
+  requireAdmin,
+  requireCsrf,
+  requireWorker,
+  requireRole,
+} from "@/src/lib/auth-helpers";
 
 // 失败时返回的判别联合 — 成功路径通过 redirect 走，函数本身不返回。
 export type CreateOrderActionResult = Exclude<CreateOrderResult, { ok: true }>;
 
 // 派单失败时返回的判别联合 — 成功时返回 assigned=true 让 UI 给反馈
 export type AssignOrderActionResult =
-  | AssignOrderResult
-  | { ok: true; orderId: string; masterName: string };
+  AssignOrderResult | { ok: true; orderId: string; masterName: string };
 
 // 「取消派单」action 返回值
 export type CancelDispatchActionResult =
@@ -26,7 +37,9 @@ export type CancelDispatchActionResult =
   | { ok: false; category: "validation" | "system"; error: string };
 
 // 状态流转 action 返回值 — 三个 action 通用
-export type TransitionActionResult = Exclude<TransitionOrderResult, { ok: true }> | { ok: true; orderId: string; nextStatus: string };
+export type TransitionActionResult =
+  | Exclude<TransitionOrderResult, { ok: true }>
+  | { ok: true; orderId: string; nextStatus: string };
 
 /**
  * 新建订单 server action。
@@ -34,7 +47,19 @@ export type TransitionActionResult = Exclude<TransitionOrderResult, { ok: true }
  * 成功 → revalidate + redirect /orders
  * 失败 → 返回结构化错误给 UI 内联展示
  */
-export async function createOrderAction(formData: FormData): Promise<CreateOrderActionResult | null> {
+export async function createOrderAction(
+  formData: FormData,
+): Promise<CreateOrderActionResult | null> {
+  // [v0.9.4] P0 鉴权收口：admin + csrf
+  const auth = await requireAdmin();
+  if (!auth.ok) {
+    return { ok: false, error: auth.error };
+  }
+  const csrf = await requireCsrf(formData);
+  if (!csrf.ok) {
+    return { ok: false, error: csrf.error };
+  }
+
   const scheduledAtRaw = String(formData.get("scheduledAt") ?? "").trim();
   const amountRaw = String(formData.get("amount") ?? "").trim();
 
@@ -57,6 +82,20 @@ export async function createOrderAction(formData: FormData): Promise<CreateOrder
   if (!result.ok) {
     return result;
   }
+
+  // 写操作日志（失败不影响主流程）
+  const customerName = String(formData.get("customerName") ?? "");
+  await createActivityLog({
+    action: "order_created",
+    targetType: "order",
+    targetId: result.orderId,
+    message: `用户 ${customerName} 创建了订单 ${result.orderId}`,
+    metadata: {
+      skuCode: String(formData.get("skuCode") ?? ""),
+      customerPhone: String(formData.get("customerPhone") ?? ""),
+      amount,
+    },
+  });
 
   try {
     revalidatePath("/orders");
@@ -85,9 +124,29 @@ export async function assignOrderAction(
   orderId: string,
   masterId: string,
 ): Promise<AssignOrderActionResult> {
+  // [v0.9.4] P0 鉴权收口：admin
+  const auth = await requireAdmin();
+  if (!auth.ok) {
+    return { ok: false, category: auth.category, error: auth.error };
+  }
+  // [v0.9.7] P0 CSRF：非 FormData action 用 Origin 头校验
+  const csrf = await verifyCsrfOrigin();
+  if (!csrf.ok) {
+    return { ok: false, category: "validation", error: csrf.error };
+  }
+
   const result = await assignOrder(orderId, masterId);
 
   if (result.ok) {
+    // 写操作日志
+    await createActivityLog({
+      action: "order_assigned",
+      targetType: "order",
+      targetId: result.orderId,
+      message: `管理员将订单 ${result.orderId} 派给师傅 ${result.masterName}`,
+      metadata: { masterId, masterName: result.masterName },
+    });
+
     try {
       revalidatePath("/orders");
       revalidatePath("/");
@@ -113,8 +172,33 @@ export async function assignOrderAction(
 export async function cancelDispatchAction(
   orderId: string,
 ): Promise<CancelDispatchActionResult> {
+  // [v0.9.4] P0 鉴权收口：admin
+  const auth = await requireAdmin();
+  if (!auth.ok) {
+    return { ok: false, category: auth.category, error: auth.error };
+  }
+  // [v0.9.7] P0 CSRF：Origin 头校验
+  const csrf = await verifyCsrfOrigin();
+  if (!csrf.ok) {
+    return { ok: false, category: "validation", error: csrf.error };
+  }
+
   try {
     const order = await releaseMaster(orderId, "cancelled");
+    // 写操作日志
+    await createActivityLog({
+      action: "order_dispatch_canceled", // [v0.7.9] 跟 order_canceled 区分
+      targetType: "order",
+      targetId: order.id,
+      message: order.technicianName
+        ? `管理员取消了订单 ${order.id}（已释放师傅 ${order.technicianName}）`
+        : `管理员取消了订单 ${order.id}`,
+      metadata: {
+        reason: "cancel_dispatch",
+        technicianName: order.technicianName,
+      },
+    });
+
     try {
       revalidatePath("/orders");
       revalidatePath("/");
@@ -142,9 +226,64 @@ async function runTransition(
   orderId: string,
   nextStatus: "in_service" | "completed" | "cancelled",
   friendlyName: string,
+  // [v0.7.8] 可选 serviceSummary：透传给 transitionOrder 在事务内写
+  serviceSummary?: string,
+  // [v0.7.9] 可选 cancelReason：透传给 transitionOrder 在事务内写
+  cancelReason?: string,
 ): Promise<TransitionActionResult> {
-  const result = await transitionOrder(orderId, nextStatus);
+  const result = await transitionOrder(
+    orderId,
+    nextStatus,
+    serviceSummary,
+    cancelReason,
+  );
   if (result.ok) {
+    // 写操作日志（按目标状态分支 action 类型）
+    const actionMap = {
+      in_service: "service_started",
+      completed: "order_completed",
+      cancelled: "order_canceled",
+    } as const;
+    const actionLabelMap = {
+      in_service: `师傅 ${result.masterName ?? ""} 开始服务订单 ${result.orderId}`,
+      completed: `师傅 ${result.masterName ?? ""} 完成订单 ${result.orderId}`,
+      cancelled: `订单 ${result.orderId} 被取消`,
+    } as const;
+    await createActivityLog({
+      action: actionMap[nextStatus],
+      targetType: "order",
+      targetId: result.orderId,
+      message: actionLabelMap[nextStatus],
+      metadata: {
+        fromStatus: result.fromStatus,
+        toStatus: nextStatus,
+        masterName: result.masterName,
+      },
+    });
+
+    // [v0.7.9] 取消订单 → 单独埋日志（含原因）
+    if (nextStatus === "cancelled" && cancelReason && cancelReason.trim()) {
+      await createActivityLog({
+        action: "order_canceled",
+        targetType: "order",
+        targetId: result.orderId,
+        message: `订单 ${result.orderId} 被取消：${cancelReason.trim()}`,
+        metadata: { cancelReason: cancelReason.trim() },
+      });
+    }
+
+    // [v0.7.8] 师傅填了 serviceSummary → 单独埋日志
+    // （serviceSummary 数据已写在 transitionOrder 事务里；这里只记录活动）
+    if (nextStatus === "completed" && serviceSummary && serviceSummary.trim()) {
+      await createActivityLog({
+        action: "order_service_summary_added",
+        targetType: "order",
+        targetId: result.orderId,
+        message: `师傅${result.masterName ?? ""}填写了订单 ${result.orderId} 的服务完成说明`,
+        metadata: { serviceSummary: serviceSummary.trim() },
+      });
+    }
+
     try {
       revalidatePath("/orders");
       revalidatePath("/");
@@ -157,7 +296,11 @@ async function runTransition(
   if (result.category === "validation") {
     return { ok: false, category: "validation", error: result.error };
   }
-  return { ok: false, category: "system", error: `${friendlyName}失败，请稍后再试` };
+  return {
+    ok: false,
+    category: "system",
+    error: `${friendlyName}失败，请稍后再试`,
+  };
 }
 
 /**
@@ -166,16 +309,46 @@ async function runTransition(
 export async function startServiceAction(
   orderId: string,
 ): Promise<TransitionActionResult> {
+  // [v0.9.4] P0 鉴权收口：admin
+  const auth = await requireAdmin();
+  if (!auth.ok) {
+    return { ok: false, category: auth.category, error: auth.error };
+  }
+  // [v0.9.7] P0 CSRF：Origin 头校验
+  const csrf = await verifyCsrfOrigin();
+  if (!csrf.ok) {
+    return { ok: false, category: "validation", error: csrf.error };
+  }
   return runTransition(orderId, "in_service", "开始服务");
 }
 
 /**
  * 「完成订单」— in_service → completed。
+ * [v0.7.6] 可选 serviceSummary：师傅填的服务完成说明。
+ * [v0.7.8] serviceSummary 与 status 在同事务内写（原子性）。
  */
 export async function completeOrderAction(
   orderId: string,
+  serviceSummary?: string,
 ): Promise<TransitionActionResult> {
-  return runTransition(orderId, "completed", "完成订单");
+  // [v0.9.4] P0 鉴权收口：admin
+  const auth = await requireAdmin();
+  if (!auth.ok) {
+    return { ok: false, category: auth.category, error: auth.error };
+  }
+  // [v0.9.7] P0 CSRF：Origin 头校验
+  const csrf = await verifyCsrfOrigin();
+  if (!csrf.ok) {
+    return { ok: false, category: "validation", error: csrf.error };
+  }
+  // [v0.7.8] serviceSummary 写在 transitionOrder 内部（同事务）
+  const result = await runTransition(
+    orderId,
+    "completed",
+    "完成订单",
+    serviceSummary,
+  );
+  return result;
 }
 
 /**
@@ -184,6 +357,246 @@ export async function completeOrderAction(
  */
 export async function cancelOrderAction(
   orderId: string,
+  cancelReason?: string,
 ): Promise<TransitionActionResult> {
-  return runTransition(orderId, "cancelled", "取消订单");
+  // [v0.9.4] P0 鉴权收口：admin
+  const auth = await requireAdmin();
+  if (!auth.ok) {
+    return { ok: false, category: auth.category, error: auth.error };
+  }
+  // [v0.9.7] P0 CSRF：Origin 头校验
+  const csrf = await verifyCsrfOrigin();
+  if (!csrf.ok) {
+    return { ok: false, category: "validation", error: csrf.error };
+  }
+  return runTransition(
+    orderId,
+    "cancelled",
+    "取消订单",
+    undefined,
+    cancelReason,
+  );
+}
+
+/**
+ * [v0.7.6] 「更新内部备注」— admin 专属。
+ * 内部备注只后台可见，user/worker 端不展示。
+ * Activity Log 记录：order_internal_remark_updated
+ */
+export type UpdateInternalRemarkResult =
+  { ok: true } | { ok: false; error: string };
+
+export async function updateInternalRemarkAction(
+  formData: FormData,
+): Promise<UpdateInternalRemarkResult> {
+  // [v0.9.4] P0 鉴权收口：admin
+  const auth = await requireAdmin();
+  if (!auth.ok) {
+    return { ok: false, error: auth.error };
+  }
+  // [v0.7.7] CSRF 校验（修 ADR-013 B6 同类 v0.7.2 logout bug）
+  const csrfToken = String(formData.get(CSRF_FORM_FIELD) ?? "");
+  if (!(await verifyCsrfToken(csrfToken))) {
+    return { ok: false, error: "会话已过期，请刷新页面后重试" };
+  }
+
+  const orderId = String(formData.get("orderId") ?? "").trim();
+  const internalRemark = String(formData.get("internalRemark") ?? "").trim();
+
+  if (!orderId) {
+    return { ok: false, error: "缺少订单 id" };
+  }
+  if (internalRemark.length > 500) {
+    return { ok: false, error: "内部备注不能超过 500 个字符" };
+  }
+
+  // 权限检查：必须是 admin（middleware 已挡；这里兜底）
+  const { getCurrentUser } = await import("@/src/lib/auth");
+  const user = await getCurrentUser();
+  if (!user) {
+    // [v0.7.10] 中间过渡：旧 cookie 兼容（v0.6.0 之前 session 格式是 "1"）
+    return { ok: false, error: "请重新登录后再操作" };
+  }
+  if (user.role !== "admin") {
+    return { ok: false, error: "仅管理员可编辑内部备注" };
+  }
+
+  try {
+    const { prisma } = await import("@/src/lib/db");
+    await prisma.order.update({
+      where: { id: orderId },
+      data: { internalRemark: internalRemark || null },
+    });
+
+    // 写活动日志
+    const { createActivityLog } = await import("@/src/lib/activity-log");
+    await createActivityLog({
+      action: "order_internal_remark_updated",
+      targetType: "order",
+      targetId: orderId,
+      message: internalRemark
+        ? `管理员更新了订单 ${orderId} 的内部备注`
+        : `管理员清空了订单 ${orderId} 的内部备注`,
+      actorId: user.id,
+      actorName: user.name,
+      actorRole: "admin",
+      metadata: { internalRemark },
+    });
+
+    try {
+      const { revalidatePath } = await import("next/cache");
+      revalidatePath("/orders");
+    } catch {
+      // 单测无 Next runtime
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+/**
+ * [v0.7.9] 师傅取消订单 — 师傅专属
+ * 业务规则：assigned / in_service 状态可取消（completed/cancelled 不允许）
+ * in_service 必须填原因（业务规则 #5 + ADR-013 简洁版本）
+ */
+export async function workerCancelOrderAction(
+  formData: FormData,
+): Promise<TransitionActionResult> {
+  // [v0.9.4] P0 鉴权收口：worker（v0.9.6 组 3 加 masterId 归属校验）
+  const auth = await requireWorker();
+  if (!auth.ok) {
+    return { ok: false, category: auth.category, error: auth.error };
+  }
+  // [v0.7.9] CSRF 校验（防 v0.7.2/v0.7.7 同类 bug）
+  const { CSRF_FORM_FIELD, verifyCsrfToken } = await import("@/src/lib/csrf");
+  const csrfToken = String(formData.get(CSRF_FORM_FIELD) ?? "");
+  if (!(await verifyCsrfToken(csrfToken))) {
+    return {
+      ok: false,
+      category: "validation",
+      error: "会话已过期，请刷新页面后重试",
+    };
+  }
+
+  const orderId = String(formData.get("orderId") ?? "").trim();
+  const cancelReason = String(formData.get("cancelReason") ?? "").trim();
+  if (!orderId) {
+    return { ok: false, category: "validation", error: "缺少订单 id" };
+  }
+  // 权限 + 状态校验：必须是该师傅的订单
+  const { getCurrentUser } = await import("@/src/lib/auth");
+  const user = await getCurrentUser();
+  if (!user) {
+    // [v0.7.10] 中间过渡：旧 cookie 兼容
+    return { ok: false, category: "validation", error: "请重新登录后再操作" };
+  }
+  if (user.role !== "worker" || !user.workerId) {
+    return { ok: false, category: "validation", error: "仅师傅可调用" };
+  }
+  // 业务校验：不能取消 completed/cancelled
+  const { prisma } = await import("@/src/lib/db");
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: { status: true, masterId: true },
+  });
+  if (!order) {
+    return { ok: false, category: "validation", error: "订单不存在" };
+  }
+  if (order.masterId !== user.workerId) {
+    return { ok: false, category: "validation", error: "该订单不属于您" };
+  }
+  if (order.status === "completed" || order.status === "cancelled") {
+    return {
+      ok: false,
+      category: "validation",
+      error: `订单状态「${order.status}」不允许取消`,
+    };
+  }
+  // in_service 必填原因
+  if (order.status === "in_service" && !cancelReason) {
+    return {
+      ok: false,
+      category: "validation",
+      error: "服务中的订单必须填写取消原因",
+    };
+  }
+
+  const result = await runTransition(
+    orderId,
+    "cancelled",
+    "取消订单",
+    undefined,
+    cancelReason,
+  );
+  return result;
+}
+
+/**
+ * [v0.7.9] 用户取消订单 — customer 专属
+ * 业务规则：仅 pending 状态可取消（其他状态不允许 — 业务规则 #10）
+ */
+export async function customerCancelOrderAction(
+  formData: FormData,
+): Promise<TransitionActionResult> {
+  // [v0.9.4] P0 鉴权收口：customer
+  const auth = await requireRole(["customer"]);
+  if (!auth.ok) {
+    return { ok: false, category: auth.category, error: auth.error };
+  }
+  // [v0.7.9] CSRF 校验
+  const { CSRF_FORM_FIELD, verifyCsrfToken } = await import("@/src/lib/csrf");
+  const csrfToken = String(formData.get(CSRF_FORM_FIELD) ?? "");
+  if (!(await verifyCsrfToken(csrfToken))) {
+    return {
+      ok: false,
+      category: "validation",
+      error: "会话已过期，请刷新页面后重试",
+    };
+  }
+
+  const orderId = String(formData.get("orderId") ?? "").trim();
+  const cancelReason = String(formData.get("cancelReason") ?? "").trim();
+  if (!orderId) {
+    return { ok: false, category: "validation", error: "缺少订单 id" };
+  }
+  // 权限 + 状态校验
+  const { getCurrentUser } = await import("@/src/lib/auth");
+  const user = await getCurrentUser();
+  if (!user) {
+    // [v0.7.10] 中间过渡：旧 cookie 兼容
+    return { ok: false, category: "validation", error: "请重新登录后再操作" };
+  }
+  if (user.role !== "customer" || !user.phone) {
+    return { ok: false, category: "validation", error: "仅用户可调用" };
+  }
+  const { prisma } = await import("@/src/lib/db");
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: { status: true, customerPhone: true },
+  });
+  if (!order) {
+    return { ok: false, category: "validation", error: "订单不存在" };
+  }
+  // 越权防护：必须是自己的订单
+  if (order.customerPhone !== user.phone) {
+    return { ok: false, category: "validation", error: "该订单不属于您" };
+  }
+  // 业务规则：仅 pending 状态可取消
+  if (order.status !== "pending") {
+    return {
+      ok: false,
+      category: "validation",
+      error: `订单状态「${order.status}」不允许取消`,
+    };
+  }
+
+  const result = await runTransition(
+    orderId,
+    "cancelled",
+    "取消订单",
+    undefined,
+    cancelReason,
+  );
+  return result;
 }

@@ -26,8 +26,16 @@ const inputStyle: React.CSSProperties = {
   outline: "none",
   boxSizing: "border-box",
 };
-const helpStyle: React.CSSProperties = { fontSize: 11, color: "#9ca3af", marginTop: 4 };
-const errorStyle: React.CSSProperties = { fontSize: 12, color: "#b91c1c", marginTop: 4 };
+const helpStyle: React.CSSProperties = {
+  fontSize: 11,
+  color: "#9ca3af",
+  marginTop: 4,
+};
+const errorStyle: React.CSSProperties = {
+  fontSize: 12,
+  color: "#b91c1c",
+  marginTop: 4,
+};
 
 interface CategoryOption {
   categoryCode: string;
@@ -77,10 +85,16 @@ export function DispatchRuleForm({ mode, initial, categories, skus }: Props) {
     }
   }
 
-  function handleSubmit(formData: FormData) {
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    // [v0.9.1] 修 legacy bug：跟 NewOrderForm 同问题
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
     setResult(null);
     startTransition(async () => {
-      const r = mode === "create" ? await createRuleAction(formData) : await updateRuleAction(formData);
+      const r =
+        mode === "create"
+          ? await createRuleAction(formData)
+          : await updateRuleAction(formData);
       if (r) setResult(r);
     });
   }
@@ -91,7 +105,7 @@ export function DispatchRuleForm({ mode, initial, categories, skus }: Props) {
   const error = result && !result.ok ? result : null;
 
   return (
-    <form action={handleSubmit} style={{ display: "grid", gap: 16 }}>
+    <form onSubmit={handleSubmit} style={{ display: "grid", gap: 16 }}>
       {mode === "edit" && initial && (
         <input type="hidden" name="id" value={initial.id} />
       )}
@@ -114,7 +128,9 @@ export function DispatchRuleForm({ mode, initial, categories, skus }: Props) {
       </div>
 
       <div>
-        <label style={labelStyle}>匹配类型 <span style={{ color: "#b91c1c" }}>*</span></label>
+        <label style={labelStyle}>
+          匹配类型 <span style={{ color: "#b91c1c" }}>*</span>
+        </label>
         <div style={{ display: "flex", gap: 12, marginBottom: 6 }}>
           <label
             style={{
@@ -122,7 +138,8 @@ export function DispatchRuleForm({ mode, initial, categories, skus }: Props) {
               alignItems: "center",
               gap: 6,
               padding: "8px 14px",
-              border: "1px solid " + (matchType === "sku" ? "#2563eb" : "#d1d5db"),
+              border:
+                "1px solid " + (matchType === "sku" ? "#2563eb" : "#d1d5db"),
               borderRadius: 6,
               background: matchType === "sku" ? "#eff6ff" : "#fff",
               cursor: "pointer",
@@ -144,7 +161,9 @@ export function DispatchRuleForm({ mode, initial, categories, skus }: Props) {
               alignItems: "center",
               gap: 6,
               padding: "8px 14px",
-              border: "1px solid " + (matchType === "category" ? "#2563eb" : "#d1d5db"),
+              border:
+                "1px solid " +
+                (matchType === "category" ? "#2563eb" : "#d1d5db"),
               borderRadius: 6,
               background: matchType === "category" ? "#eff6ff" : "#fff",
               cursor: "pointer",
@@ -189,7 +208,9 @@ export function DispatchRuleForm({ mode, initial, categories, skus }: Props) {
               </option>
             ))}
           </select>
-          {error?.field === "skuCode" && <div style={errorStyle}>{error.error}</div>}
+          {error?.field === "skuCode" && (
+            <div style={errorStyle}>{error.error}</div>
+          )}
         </div>
 
         <div>
@@ -216,7 +237,9 @@ export function DispatchRuleForm({ mode, initial, categories, skus }: Props) {
               </option>
             ))}
           </select>
-          {error?.field === "categoryCode" && <div style={errorStyle}>{error.error}</div>}
+          {error?.field === "categoryCode" && (
+            <div style={errorStyle}>{error.error}</div>
+          )}
         </div>
       </div>
 
@@ -233,10 +256,12 @@ export function DispatchRuleForm({ mode, initial, categories, skus }: Props) {
           style={inputStyle}
         />
         <div style={helpStyle}>
-          用逗号分隔多个技能。留空表示「不要求特定技能，所有 available 师傅都候选」。
-          师傅必须掌握全部列出技能才能接这单。
+          用逗号分隔多个技能。留空表示「不要求特定技能，所有 available
+          师傅都候选」。 师傅必须掌握全部列出技能才能接这单。
         </div>
-        {error?.field === "requiredSkills" && <div style={errorStyle}>{error.error}</div>}
+        {error?.field === "requiredSkills" && (
+          <div style={errorStyle}>{error.error}</div>
+        )}
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
@@ -255,7 +280,9 @@ export function DispatchRuleForm({ mode, initial, categories, skus }: Props) {
             required
           />
           <div style={helpStyle}>0-10000。同类型多条规则选 priority 最高</div>
-          {error?.field === "priority" && <div style={errorStyle}>{error.error}</div>}
+          {error?.field === "priority" && (
+            <div style={errorStyle}>{error.error}</div>
+          )}
         </div>
         <div>
           <label style={labelStyle}>是否启用</label>
@@ -271,7 +298,11 @@ export function DispatchRuleForm({ mode, initial, categories, skus }: Props) {
               cursor: "pointer",
             }}
           >
-            <input name="enabled" type="checkbox" defaultChecked={initial?.enabled ?? true} />
+            <input
+              name="enabled"
+              type="checkbox"
+              defaultChecked={initial?.enabled ?? true}
+            />
             <span style={{ fontSize: 14 }}>禁用后不会参与订单推荐</span>
           </label>
         </div>
@@ -292,7 +323,11 @@ export function DispatchRuleForm({ mode, initial, categories, skus }: Props) {
       )}
 
       <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
-        <SubmitButton isPending={isPending} label={submitLabel} submittingLabel={submittingLabel} />
+        <SubmitButton
+          isPending={isPending}
+          label={submitLabel}
+          submittingLabel={submittingLabel}
+        />
         <CancelLink />
       </div>
     </form>

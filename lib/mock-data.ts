@@ -1,4 +1,10 @@
-import type { Order, OrderStatus, Service, Technician, TechnicianStatus } from "./types";
+import type {
+  Order,
+  OrderStatus,
+  Service,
+  Technician,
+  TechnicianStatus,
+} from "./types";
 
 // ============================================================
 // lib/ 目录说明（重要）
@@ -39,7 +45,7 @@ export const MOCK_ORDERS: Order[] = [
     customerPhone: "13900000001",
     serviceName: "深度保洁 3 小时",
     technicianName: "李师傅",
-    address: "上海市浦东新区世纪大道 100 号",
+    address: "广东省深圳市南山区粤海街道科技园 100 号",
     scheduledAt: "2026-06-24T10:00:00+08:00",
     amount: 268,
     status: "in_service",
@@ -50,7 +56,7 @@ export const MOCK_ORDERS: Order[] = [
     customerPhone: "13900000002",
     serviceName: "空调清洗（挂机）",
     technicianName: null,
-    address: "上海市徐汇区漕溪北路 88 号",
+    address: "广东省深圳市福田区华强北街道华强路 88 号",
     scheduledAt: "2026-06-24T14:00:00+08:00",
     amount: 128,
     status: "pending",
@@ -61,7 +67,7 @@ export const MOCK_ORDERS: Order[] = [
     customerPhone: "13900000003",
     serviceName: "水管维修",
     technicianName: "赵师傅",
-    address: "上海市闵行区莘庄镇 1234 弄",
+    address: "广东省广州市天河区石牌街道天河路 1234 号",
     scheduledAt: "2026-06-24T16:30:00+08:00",
     amount: 180,
     status: "assigned",
@@ -72,7 +78,7 @@ export const MOCK_ORDERS: Order[] = [
     customerPhone: "13900000007",
     serviceName: "月嫂服务（住家）",
     technicianName: "周姐",
-    address: "上海市长宁区中山公园路 12 号",
+    address: "广东省深圳市宝安区西乡街道宝源路 12 号",
     scheduledAt: "2026-06-23T09:00:00+08:00",
     amount: 12800,
     status: "completed",
@@ -83,7 +89,7 @@ export const MOCK_ORDERS: Order[] = [
     customerPhone: "13900000005",
     serviceName: "家电维修",
     technicianName: null,
-    address: "上海市黄浦区南京东路 200 号",
+    address: "广东省深圳市福田区华强北街道振华路 200 号",
     scheduledAt: "2026-06-23T11:00:00+08:00",
     amount: 0,
     status: "cancelled",
@@ -94,7 +100,7 @@ export const MOCK_ORDERS: Order[] = [
     customerPhone: "13900000009",
     serviceName: "日常保洁 2 小时",
     technicianName: null,
-    address: "上海市虹口区四川北路 1888 号",
+    address: "广东省深圳市南山区粤海街道高新南一道 1888 号",
     scheduledAt: "2026-06-25T09:00:00+08:00",
     amount: 158,
     status: "pending",

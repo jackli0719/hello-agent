@@ -12,8 +12,11 @@ import {
   type UpdateSkuInput,
 } from "@/src/lib/services";
 import { parseSkillsString } from "@/src/lib/masters";
+import { createActivityLog } from "@/src/lib/activity-log";
+import { requireAdmin, requireCsrf } from "@/src/lib/auth-helpers";
 
-export type ServiceActionResult = Exclude<ServiceResult, { ok: true }> | { ok: true; id: string };
+export type ServiceActionResult =
+  Exclude<ServiceResult, { ok: true }> | { ok: true; id: string };
 
 // checkbox on → boolean true；未选 → false
 function asBool(v: FormDataEntryValue | null): boolean {
@@ -37,7 +40,9 @@ function formDataToSku(formData: FormData): Partial<CreateSkuInput> {
     basePrice: basePriceRaw === "" ? NaN : Number(basePriceRaw),
     enabled: asBool(formData.get("enabled")),
     // requiredSkills 是逗号分隔字符串，调用 parseSkillsString 解析
-    requiredSkills: parseSkillsString(String(formData.get("requiredSkills") ?? "")),
+    requiredSkills: parseSkillsString(
+      String(formData.get("requiredSkills") ?? ""),
+    ),
   };
 }
 
@@ -48,11 +53,25 @@ function formDataToUpdateSku(formData: FormData): Partial<UpdateSkuInput> {
     name: String(formData.get("name") ?? "").trim(),
     basePrice: basePriceRaw === "" ? NaN : Number(basePriceRaw),
     enabled: asBool(formData.get("enabled")),
-    requiredSkills: parseSkillsString(String(formData.get("requiredSkills") ?? "")),
+    requiredSkills: parseSkillsString(
+      String(formData.get("requiredSkills") ?? ""),
+    ),
   };
 }
 
-export async function createCategoryAction(formData: FormData): Promise<ServiceActionResult | null> {
+export async function createCategoryAction(
+  formData: FormData,
+): Promise<ServiceActionResult | null> {
+  // [v0.9.4] P0 鉴权收口：admin + csrf
+  const auth = await requireAdmin();
+  if (!auth.ok) {
+    return { ok: false, category: auth.category, error: auth.error };
+  }
+  const csrf = await requireCsrf(formData);
+  if (!csrf.ok) {
+    return { ok: false, category: csrf.category, error: csrf.error };
+  }
+
   const result = await createCategory(formDataToCategory(formData));
   if (!result.ok) return result;
 
@@ -66,9 +85,35 @@ export async function createCategoryAction(formData: FormData): Promise<ServiceA
   redirect(`/services?category=${encodeURIComponent(result.id)}`);
 }
 
-export async function createSkuAction(formData: FormData): Promise<ServiceActionResult | null> {
-  const result = await createSku(formDataToSku(formData));
+export async function createSkuAction(
+  formData: FormData,
+): Promise<ServiceActionResult | null> {
+  // [v0.9.4] P0 鉴权收口：admin + csrf
+  const auth = await requireAdmin();
+  if (!auth.ok) {
+    return { ok: false, category: auth.category, error: auth.error };
+  }
+  const csrf = await requireCsrf(formData);
+  if (!csrf.ok) {
+    return { ok: false, category: csrf.category, error: csrf.error };
+  }
+
+  const input = formDataToSku(formData);
+  const result = await createSku(input);
   if (!result.ok) return result;
+
+  // 写操作日志
+  await createActivityLog({
+    action: "service_sku_created",
+    targetType: "serviceSku",
+    targetId: result.id,
+    message: `管理员新增服务 SKU：${input.name}（${input.code}）`,
+    metadata: {
+      categoryCode: input.categoryCode,
+      basePrice: input.basePrice,
+      requiredSkills: input.requiredSkills,
+    },
+  });
 
   try {
     revalidatePath("/services");
@@ -80,9 +125,34 @@ export async function createSkuAction(formData: FormData): Promise<ServiceAction
   redirect(`/services?sku=${encodeURIComponent(result.id)}`);
 }
 
-export async function updateSkuAction(formData: FormData): Promise<ServiceActionResult | null> {
-  const result = await updateSku(formDataToUpdateSku(formData));
+export async function updateSkuAction(
+  formData: FormData,
+): Promise<ServiceActionResult | null> {
+  // [v0.9.4] P0 鉴权收口：admin + csrf
+  const auth = await requireAdmin();
+  if (!auth.ok) {
+    return { ok: false, category: auth.category, error: auth.error };
+  }
+  const csrf = await requireCsrf(formData);
+  if (!csrf.ok) {
+    return { ok: false, category: csrf.category, error: csrf.error };
+  }
+
+  const input = formDataToUpdateSku(formData);
+  const result = await updateSku(input);
   if (!result.ok) return result;
+
+  // 写操作日志
+  await createActivityLog({
+    action: "service_sku_updated",
+    targetType: "serviceSku",
+    targetId: result.id,
+    message: `管理员更新服务 SKU：${input.name}`,
+    metadata: {
+      basePrice: input.basePrice,
+      requiredSkills: input.requiredSkills,
+    },
+  });
 
   try {
     revalidatePath("/services");

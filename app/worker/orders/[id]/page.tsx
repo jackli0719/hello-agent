@@ -13,34 +13,41 @@
 // - 不复用 OrderCard：详情页字段更多（品类、师傅、创建时间），UI 不一样
 // - 操作按钮完全复用 WorkerOrderActions — 列表页和详情页用同一个 client 组件
 
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { getOrderForWorker } from "@/src/lib/worker";
 import { StatusBadge, ORDER_TONE } from "@/components/ui";
 import { ORDER_STATUS_LABEL } from "@/lib/mock-data";
+import { getCurrentUser } from "@/src/lib/auth";
+import { ensureCsrfCookie } from "@/src/lib/csrf";
+import { workerCancelOrderAction } from "@/app/orders/actions";
+import { CancelForm } from "@/components/CancelForm";
 import { WorkerOrderActions } from "../../WorkerOrderActions";
+import { logoutAction } from "@/app/login/actions";
 
 interface PageProps {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ masterId?: string }>;
 }
 
-export default async function WorkerOrderDetailPage({
-  params,
-  searchParams,
-}: PageProps) {
+export default async function WorkerOrderDetailPage({ params }: PageProps) {
   const { id } = await params;
-  const { masterId } = await searchParams;
 
-  // masterId 缺省：演示期允许（不校验），但页面应该提示
-  // masterId 存在：用它做越权校验
-  const order = await getOrderForWorker(id, masterId);
+  // 1. 当前登录 worker
+  const user = await getCurrentUser();
+  if (!user) {
+    redirect(`/login?next=/worker/orders/${encodeURIComponent(id)}`);
+  }
+  if (user.role !== "worker" || !user.workerId) {
+    redirect("/dashboard");
+  }
+  // [v0.7.9] RSC 阶段确保 csrf cookie 存在（师傅取消按钮需要）
+  const csrfToken = await ensureCsrfCookie();
+
+  // 2. 拉订单（按登录 workerId 强校验 — 越权返回 null）
+  const order = await getOrderForWorker(id, user.workerId);
   if (!order) notFound();
 
-  // 返回链接 — 永远带 masterId 保留上下文；没 masterId 时回到 /worker 让用户重选
-  const backHref = masterId
-    ? `/worker?masterId=${encodeURIComponent(masterId)}`
-    : "/worker";
+  const backHref = "/worker";
 
   // 时间格式：YYYY-MM-DD HH:mm
   const formatDateTime = (iso: string) => {
@@ -62,7 +69,7 @@ export default async function WorkerOrderDetailPage({
         margin: "0 auto",
       }}
     >
-      {/* 极简顶部 — 含返回 */}
+      {/* 极简顶部 — 含返回 + 退出 */}
       <header
         style={{
           background: "#fff",
@@ -89,7 +96,11 @@ export default async function WorkerOrderDetailPage({
           ← 返回
         </Link>
         <div style={{ fontSize: 13, color: "#6b7280" }}>订单详情</div>
-        <div style={{ width: 56 }} />
+        <form action={logoutAction}>
+          <button type="submit" style={logoutBtnStyle}>
+            退出
+          </button>
+        </form>
       </header>
 
       {/* 订单主卡 — 顶部订单号 + 状态 */}
@@ -114,7 +125,9 @@ export default async function WorkerOrderDetailPage({
         >
           <div>
             <div style={{ fontSize: 12, color: "#6b7280" }}>订单号</div>
-            <div style={{ fontSize: 16, fontWeight: 600, marginTop: 4 }}>{order.id}</div>
+            <div style={{ fontSize: 16, fontWeight: 600, marginTop: 4 }}>
+              {order.id}
+            </div>
           </div>
           <StatusBadge
             label={ORDER_STATUS_LABEL[order.status]}
@@ -135,6 +148,22 @@ export default async function WorkerOrderDetailPage({
         <Field label="金额" value={`¥${order.amountYuan.toFixed(2)}`} />
         <Field label="预约时间" value={formatDateTime(order.scheduledAt)} />
 
+        {/* [v0.7.6] 备注信息 */}
+        <SectionTitle title="备注信息" />
+        <Field
+          label="用户备注"
+          value={order.remark?.trim() ? order.remark : "暂无备注"}
+        />
+        <Field
+          label="后台内部备注"
+          value={
+            order.internalRemark?.trim() ? order.internalRemark : "暂无备注"
+          }
+        />
+        {order.serviceSummary?.trim() ? (
+          <Field label="服务完成说明" value={order.serviceSummary} />
+        ) : null}
+
         {/* 师傅信息 */}
         <SectionTitle title="分配师傅" />
         <Field label="姓名" value={order.masterName ?? "—"} />
@@ -143,6 +172,28 @@ export default async function WorkerOrderDetailPage({
         {/* 时间戳 */}
         <SectionTitle title="时间信息" />
         <Field label="创建时间" value={formatDateTime(order.createdAt)} />
+
+        {/* [v0.7.9] 取消信息（cancelled 状态展示）*/}
+        {order.status === "cancelled" && order.cancelReason ? (
+          <Field label="取消原因" value={order.cancelReason} />
+        ) : null}
+        {order.status === "cancelled" && order.canceledAt ? (
+          <Field label="取消时间" value={formatDateTime(order.canceledAt)} />
+        ) : null}
+
+        {/* [v0.7.9] 师傅取消按钮 — assigned / in_service 状态（业务规则 #11）*/}
+        {(order.status === "assigned" || order.status === "in_service") && (
+          <div style={{ marginTop: 16 }}>
+            <SectionTitle title="操作" />
+            <CancelForm
+              orderId={order.id}
+              formAction={workerCancelOrderAction}
+              csrfToken={csrfToken}
+              requireReason={order.status === "in_service"}
+              buttonLabel="确认取消订单"
+            />
+          </div>
+        )}
       </section>
 
       {/* 操作按钮区 */}
@@ -167,7 +218,9 @@ export default async function WorkerOrderDetailPage({
               textAlign: "center",
             }}
           >
-            {order.status === "completed" ? "✓ 订单已完成，不可再操作" : "订单已取消，不可再操作"}
+            {order.status === "completed"
+              ? "✓ 订单已完成，不可再操作"
+              : "订单已取消，不可再操作"}
           </div>
         ) : null}
       </section>
@@ -219,3 +272,13 @@ function Field({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
+const logoutBtnStyle: React.CSSProperties = {
+  fontSize: 13,
+  color: "#6b7280",
+  background: "#f3f4f6",
+  border: "1px solid #d1d5db",
+  borderRadius: 6,
+  padding: "6px 12px",
+  cursor: "pointer",
+};

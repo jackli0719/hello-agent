@@ -35,7 +35,14 @@ export default async function MastersPage({ searchParams }: PageProps) {
           color: "#111827",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 4,
+          }}
+        >
           <h1 style={{ fontSize: 24, margin: 0 }}>师傅管理</h1>
           <Link
             href="/masters/new"
@@ -87,7 +94,13 @@ export default async function MastersPage({ searchParams }: PageProps) {
 
         <section style={card}>
           {masters.length === 0 ? (
-            <div style={{ padding: "40px 0", textAlign: "center", color: "#9ca3af" }}>
+            <div
+              style={{
+                padding: "40px 0",
+                textAlign: "center",
+                color: "#9ca3af",
+              }}
+            >
               暂无师傅，点右上「+ 新增师傅」创建第一位
             </div>
           ) : (
@@ -99,6 +112,7 @@ export default async function MastersPage({ searchParams }: PageProps) {
                   <th style={th}>技能</th>
                   <th style={th}>评分</th>
                   <th style={th}>是否可接单</th>
+                  <th style={th}>所属商家</th>
                   <th style={th}>服务区域</th>
                   <th style={th}>操作</th>
                 </tr>
@@ -111,7 +125,11 @@ export default async function MastersPage({ searchParams }: PageProps) {
                       <td style={td}>{m.name}</td>
                       <td style={td}>{m.phone}</td>
                       <td style={{ ...td, maxWidth: 260 }}>
-                        {m.skills.length > 0 ? skillsToString(m.skills) : <span style={{ color: "#9ca3af" }}>—</span>}
+                        {m.skills.length > 0 ? (
+                          skillsToString(m.skills)
+                        ) : (
+                          <span style={{ color: "#9ca3af" }}>—</span>
+                        )}
                       </td>
                       <td style={td}>⭐ {m.rating.toFixed(1)}</td>
                       <td style={td}>
@@ -131,7 +149,12 @@ export default async function MastersPage({ searchParams }: PageProps) {
                         </span>
                       </td>
                       <td style={td}>
-                        {m.serviceArea || <span style={{ color: "#9ca3af" }}>—</span>}
+                        {m.merchantName ?? m.merchantId ?? "—"}
+                      </td>
+                      <td style={td}>
+                        {m.serviceArea || (
+                          <span style={{ color: "#9ca3af" }}>—</span>
+                        )}
                       </td>
                       <td style={td}>
                         <Link

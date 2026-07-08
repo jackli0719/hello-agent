@@ -47,7 +47,7 @@ export default async function CustomerPage() {
         <div>
           <div style={{ fontSize: 18, fontWeight: 600 }}>下单</div>
           <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>
-            O2O 上门服务 · MVP 演示
+            演示版 · 不验证手机号归属
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
@@ -91,7 +91,8 @@ export default async function CustomerPage() {
           marginBottom: 12,
         }}
       >
-        填写下方信息提交订单 → 后台分配师傅 → 师傅上门服务 → 完成后可在「查询订单」随时查看进度
+        填写下方信息提交订单 → 后台分配师傅 → 师傅上门服务 →
+        完成后可在「查询订单」随时查看进度
       </div>
 
       <CustomerOrderForm categories={categories} skus={skus} />

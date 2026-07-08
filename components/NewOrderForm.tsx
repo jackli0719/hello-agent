@@ -14,7 +14,10 @@
 
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
-import { createOrderAction, type CreateOrderActionResult } from "@/app/orders/actions";
+import {
+  createOrderAction,
+  type CreateOrderActionResult,
+} from "@/app/orders/actions";
 
 interface CategoryOption {
   id: string;
@@ -53,24 +56,33 @@ const inputStyle: React.CSSProperties = {
   outline: "none",
   boxSizing: "border-box",
 };
-const errorStyle: React.CSSProperties = { fontSize: 12, color: "#b91c1c", marginTop: 4 };
+const errorStyle: React.CSSProperties = {
+  fontSize: 12,
+  color: "#b91c1c",
+  marginTop: 4,
+};
 
 export function NewOrderForm({ categories, skus }: Props) {
   const [isPending, startTransition] = useTransition();
   const [result, setResult] = useState<CreateOrderActionResult | null>(null);
 
   const firstCategory = categories[0];
-  const [selectedCategoryCode, setSelectedCategoryCode] = useState(firstCategory.categoryCode);
+  const [selectedCategoryCode, setSelectedCategoryCode] = useState(
+    firstCategory.categoryCode,
+  );
 
   const skusForCategory = useMemo(
-    () => skus.filter((s) => {
-      const cat = categories.find((c) => c.id === s.categoryId);
-      return cat?.categoryCode === selectedCategoryCode;
-    }),
+    () =>
+      skus.filter((s) => {
+        const cat = categories.find((c) => c.id === s.categoryId);
+        return cat?.categoryCode === selectedCategoryCode;
+      }),
     [skus, categories, selectedCategoryCode],
   );
   const firstSkuForCategory = skusForCategory[0];
-  const [selectedSkuCode, setSelectedSkuCode] = useState(firstSkuForCategory?.skuCode ?? "");
+  const [selectedSkuCode, setSelectedSkuCode] = useState(
+    firstSkuForCategory?.skuCode ?? "",
+  );
 
   function handleCategoryChange(code: string) {
     setSelectedCategoryCode(code);
@@ -79,7 +91,12 @@ export function NewOrderForm({ categories, skus }: Props) {
     setSelectedSkuCode(firstSku?.skuCode ?? "");
   }
 
-  function handleSubmit(formData: FormData) {
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    // [v0.9.1] 修 legacy bug：之前用 `<form action={handleSubmit}>` + client closure，
+    // React 19/Next 15 把它当成待序列化 server action → 引用 client-only state → hydration 失败 → 跳 /login
+    // 改成 onSubmit + preventDefault，让 React 把 handleSubmit 当作纯 event handler
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
     setResult(null);
     startTransition(async () => {
       const r = await createOrderAction(formData);
@@ -88,7 +105,7 @@ export function NewOrderForm({ categories, skus }: Props) {
   }
 
   return (
-    <form action={handleSubmit} style={{ display: "grid", gap: 16 }}>
+    <form onSubmit={handleSubmit} style={{ display: "grid", gap: 16 }}>
       {/* 服务品类 + 服务 SKU：级联 */}
       <div style={{ display: "grid", gap: 16, gridTemplateColumns: "1fr 1fr" }}>
         <div>
@@ -130,7 +147,8 @@ export function NewOrderForm({ categories, skus }: Props) {
             ) : (
               skusForCategory.map((s) => (
                 <option key={s.skuCode} value={s.skuCode}>
-                  {s.name} · ¥{s.basePriceYuan.toFixed(2)} · {s.durationMinutes} 分钟
+                  {s.name} · ¥{s.basePriceYuan.toFixed(2)} · {s.durationMinutes}{" "}
+                  分钟
                 </option>
               ))
             )}

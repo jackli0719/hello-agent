@@ -44,7 +44,9 @@ export default async function EditRulePage({ params }: PageProps) {
             ← 返回规则列表
           </Link>
         </div>
-        <h1 style={{ fontSize: 24, margin: "0 0 4px 0" }}>编辑派单规则：{rule.name}</h1>
+        <h1 style={{ fontSize: 24, margin: "0 0 4px 0" }}>
+          编辑派单规则：{rule.name}
+        </h1>
         <p style={{ color: "#6b7280", margin: "0 0 20px 0", fontSize: 14 }}>
           ID：{rule.id}
         </p>

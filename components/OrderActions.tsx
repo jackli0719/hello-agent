@@ -37,8 +37,10 @@ export function OrderActions({ orderId, status, ruleName, candidates }: Props) {
   const [dispatchedTo, setDispatchedTo] = useState<string | null>(null);
 
   // 状态流转结果（success / validation / system）
-  const [transitionResult, setTransitionResult] = useState<TransitionActionResult | null>(null);
-  const [dispatchResult, setDispatchResult] = useState<AssignOrderActionResult | null>(null);
+  const [transitionResult, setTransitionResult] =
+    useState<TransitionActionResult | null>(null);
+  const [dispatchResult, setDispatchResult] =
+    useState<AssignOrderActionResult | null>(null);
 
   const [isPending, startTransition] = useTransition();
   const confirmedRef = useRef(false);
@@ -76,9 +78,7 @@ export function OrderActions({ orderId, status, ruleName, candidates }: Props) {
   }
 
   // ----- 状态流转（开始服务 / 完成 / 取消） -----
-  function runTransition(
-    fn: () => Promise<TransitionActionResult>,
-  ) {
+  function runTransition(fn: () => Promise<TransitionActionResult>) {
     const trigger = () => {
       if (isPending) return;
       setTransitionResult(null);
@@ -101,7 +101,14 @@ export function OrderActions({ orderId, status, ruleName, candidates }: Props) {
 
   // 派单成功反馈 — 等 revalidate 后这个组件会被父卸载
   // 条件：已设置乐观 dispatchedTo，且没有 system 错误（system 错误走自己的分支）
-  if (dispatchedTo && !(dispatchResult && !dispatchResult.ok && dispatchResult.category === "system")) {
+  if (
+    dispatchedTo &&
+    !(
+      dispatchResult &&
+      !dispatchResult.ok &&
+      dispatchResult.category === "system"
+    )
+  ) {
     return (
       <SuccessFeedback
         primary={`✓ 已派给 ${dispatchedTo}`}
@@ -111,7 +118,11 @@ export function OrderActions({ orderId, status, ruleName, candidates }: Props) {
   }
 
   // 派单的 system 错误 — 重试
-  if (dispatchResult && !dispatchResult.ok && dispatchResult.category === "system") {
+  if (
+    dispatchResult &&
+    !dispatchResult.ok &&
+    dispatchResult.category === "system"
+  ) {
     return (
       <SystemErrorBanner
         message={dispatchResult.error}
@@ -123,7 +134,9 @@ export function OrderActions({ orderId, status, ruleName, candidates }: Props) {
 
   // 状态流转的 success
   if (transitionResult?.ok) {
-    const nextLabel = ORDER_STATUS_LABEL[transitionResult.nextStatus as OrderStatus] ?? transitionResult.nextStatus;
+    const nextLabel =
+      ORDER_STATUS_LABEL[transitionResult.nextStatus as OrderStatus] ??
+      transitionResult.nextStatus;
     return (
       <SuccessFeedback
         primary={`✓ 状态已更新为「${nextLabel}」`}
@@ -133,7 +146,11 @@ export function OrderActions({ orderId, status, ruleName, candidates }: Props) {
   }
 
   // 状态流转的 system 错误 — 重试
-  if (transitionResult && !transitionResult.ok && transitionResult.category === "system") {
+  if (
+    transitionResult &&
+    !transitionResult.ok &&
+    transitionResult.category === "system"
+  ) {
     return (
       <SystemErrorBanner
         message={transitionResult.error}
@@ -156,9 +173,7 @@ export function OrderActions({ orderId, status, ruleName, candidates }: Props) {
           dispatchResult && !dispatchResult.ok ? dispatchResult.error : null
         }
         onDispatch={triggerDispatch}
-        onCancel={() =>
-          runTransition(() => cancelOrderAction(orderId))
-        }
+        onCancel={() => runTransition(() => cancelOrderAction(orderId))}
       />
     );
   }
@@ -170,7 +185,9 @@ export function OrderActions({ orderId, status, ruleName, candidates }: Props) {
         status={status}
         isPending={isPending}
         validationError={
-          transitionResult && !transitionResult.ok && transitionResult.category === "validation"
+          transitionResult &&
+          !transitionResult.ok &&
+          transitionResult.category === "validation"
             ? transitionResult.error
             : null
         }
@@ -192,7 +209,13 @@ export function OrderActions({ orderId, status, ruleName, candidates }: Props) {
 // 子组件
 // ============================================================
 
-function SuccessFeedback({ primary, secondary }: { primary: string; secondary: string }) {
+function SuccessFeedback({
+  primary,
+  secondary,
+}: {
+  primary: string;
+  secondary: string;
+}) {
   return (
     <div style={{ fontSize: 12 }}>
       <div style={{ color: "#15803d", fontWeight: 600 }}>{primary}</div>
@@ -356,11 +379,16 @@ function ForwardBranch({
   onCancel: () => void;
 }) {
   const forwardLabel = status === "assigned" ? "开始服务" : "完成订单";
-  const forwardColor: "blue" | "green" = status === "assigned" ? "blue" : "green";
+  const forwardColor: "blue" | "green" =
+    status === "assigned" ? "blue" : "green";
 
   return (
     <div style={{ fontSize: 12, display: "flex", gap: 6, flexWrap: "wrap" }}>
-      <PrimaryButton onClick={onForward} disabled={isPending} color={forwardColor}>
+      <PrimaryButton
+        onClick={onForward}
+        disabled={isPending}
+        color={forwardColor}
+      >
         {forwardLabel}
       </PrimaryButton>
       <DangerButton onClick={onCancel} disabled={isPending}>

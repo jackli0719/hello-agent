@@ -7,15 +7,86 @@
 // 这里测不到成功路径（只能验证「合法输入下确实走到了 redirect」— 但 redirect 抛错说明走到了，
 // 算是一种间接验证）。
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createOrderAction,
+  assignOrderAction,
   cancelDispatchAction,
   startServiceAction,
   completeOrderAction,
   cancelOrderAction,
 } from "@/app/orders/actions";
 import { prisma } from "@/src/lib/db";
+
+// [v0.9.4] mock 鉴权 — 默认返 admin 角色，让现有 case 不被新鉴权破坏
+// 权限失败路径测试在 v0.9.8 组 5
+const {
+  mockRequireAdmin,
+  mockRequireCsrf,
+  mockRequireRole,
+  mockRequireWorker,
+} = vi.hoisted(() => {
+  return {
+    // mock 函数签名用 any 让 TS 接受 mockResolvedValueOnce 的 ok:false
+    mockRequireAdmin: vi.fn<any>(),
+    mockRequireCsrf: vi.fn<any>(),
+    mockRequireRole: vi.fn<any>(),
+    mockRequireWorker: vi.fn<any>(),
+  };
+});
+
+// 默认 mock 全部成功
+const ADMIN_OK = {
+  ok: true,
+  user: { id: "admin1", name: "admin", role: "admin" as const },
+};
+const WORKER_OK = {
+  ok: true,
+  user: { id: "w1", name: "worker", role: "worker" as const, workerId: "T001" },
+};
+const CUSTOMER_OK = {
+  ok: true,
+  user: { id: "c1", name: "customer", role: "customer" as const },
+};
+const CSRF_OK = { ok: true, user: null };
+
+vi.mock("@/src/lib/auth-helpers", () => ({
+  requireAdmin: () => mockRequireAdmin(),
+  requireCsrf: () => mockRequireCsrf(),
+  requireRole: () => mockRequireRole(),
+  requireWorker: () => mockRequireWorker(),
+}));
+
+// 同样 mock csrf origin — 默认成功
+const { mockVerifyCsrfOrigin } = vi.hoisted(() => ({
+  mockVerifyCsrfOrigin: vi.fn<any>(),
+}));
+vi.mock("@/src/lib/csrf", async () => {
+  const actual =
+    await vi.importActual<typeof import("@/src/lib/csrf")>("@/src/lib/csrf");
+  return {
+    ...actual,
+    verifyCsrfOrigin: () => mockVerifyCsrfOrigin(),
+  };
+});
+
+beforeEach(() => {
+  // 默认 mock 全部成功
+  mockRequireAdmin.mockResolvedValue({
+    ok: true,
+    user: { id: "admin1", name: "admin", role: "admin" },
+  });
+  mockRequireCsrf.mockResolvedValue({ ok: true, user: null });
+  mockRequireRole.mockResolvedValue({
+    ok: true,
+    user: { id: "c1", name: "customer", role: "customer" },
+  });
+  mockRequireWorker.mockResolvedValue({
+    ok: true,
+    user: { id: "w1", name: "worker", role: "worker", workerId: "T001" },
+  });
+  mockVerifyCsrfOrigin.mockResolvedValue({ ok: true });
+});
 
 // 重置订单回 seed 初值（不同测试用不同订单做隔离）
 async function resetOrder(
@@ -31,12 +102,12 @@ async function resetOrder(
 }
 
 async function resetMasterStatuses() {
+  // [v0.9.2] seed-demo 删了 T005 — T001-T004 4 师傅
   const map: Record<string, "available" | "busy" | "offline"> = {
     T001: "busy",
     T002: "busy",
     T003: "busy",
     T004: "available",
-    T005: "offline",
   };
   for (const [id, status] of Object.entries(map)) {
     await prisma.master.update({ where: { id }, data: { status } });
@@ -64,6 +135,7 @@ const validOrder = {
 // ============================================================
 
 describe("createOrderAction — FormData 解析", () => {
+  // # spec: createOrderAction 把 FormData 解析 + 校验，非法字段返 ok:false+field，不抛
   it("空表单 → 字段级错误（first fail 是 customerName）", async () => {
     const r = await createOrderAction(fd({}));
     expect(r).not.toBeNull();
@@ -71,6 +143,7 @@ describe("createOrderAction — FormData 解析", () => {
     expect(r.ok).toBe(false);
   });
 
+  // # documents current behavior: categoryCode="" → normalizeCode → "" → undefined（向后兼容）
   it("categoryCode 空字符串被 normalize 成 undefined", async () => {
     // 合法 + categoryCode="" → 服务端跳过配对校验 → 应该走到 SKU 查表 + 写库 + redirect
     // redirect 在单测环境抛错 — 抓住「走到 redirect 了」的事实
@@ -83,6 +156,7 @@ describe("createOrderAction — FormData 解析", () => {
     expect(threwRedirectLikeError).toBe(true);
   });
 
+  // # documents current behavior: 合法 FormData 走完校验 → DB 写入 → redirect（redirect 抛错间接证明走到了）
   it("categoryCode 传值 → 走到 redirect 路径", async () => {
     let threwRedirectLikeError = false;
     try {
@@ -93,8 +167,11 @@ describe("createOrderAction — FormData 解析", () => {
     expect(threwRedirectLikeError).toBe(true);
   });
 
+  // # spec: scheduledAt 必须是合法日期字符串，否则返 ok:false + field=scheduledAt
   it("scheduledAt 非日期字符串 → 校验失败回返（不抛）", async () => {
-    const r = await createOrderAction(fd({ ...validOrder, scheduledAt: "不是日期" }));
+    const r = await createOrderAction(
+      fd({ ...validOrder, scheduledAt: "不是日期" }),
+    );
     expect(r).not.toBeNull();
     if (!r) return;
     expect(r.ok).toBe(false);
@@ -102,6 +179,7 @@ describe("createOrderAction — FormData 解析", () => {
     expect(r.field).toBe("scheduledAt");
   });
 
+  // # spec: scheduledAt 必须能解析成 Date，非法字符串返 field=scheduledAt
   it("amount 非数字字符串 → 校验失败回返", async () => {
     const r = await createOrderAction(fd({ ...validOrder, amount: "abc" }));
     expect(r).not.toBeNull();
@@ -111,6 +189,7 @@ describe("createOrderAction — FormData 解析", () => {
     expect(r.field).toBe("amount");
   });
 
+  // # spec: amount 必须可转 Number，非法字符串返 field=amount
   it("skuCode 和 categoryCode 配对错误 → 校验失败回返", async () => {
     const r = await createOrderAction(
       fd({ ...validOrder, skuCode: "CLEAN-DAILY-2H", categoryCode: "REPAIR" }),
@@ -128,29 +207,35 @@ describe("createOrderAction — FormData 解析", () => {
 // ============================================================
 
 describe("cancelDispatchAction", () => {
-  beforeEach(() => resetOrder("O20260624003", "assigned", "T002", "赵师傅"));
-  afterEach(() => resetOrder("O20260624003", "assigned", "T002", "赵师傅"));
+  // # spec: cancelDispatchAction 撤销已派单：order→cancelled，master busy→available，释放前 masterName 快照
+  beforeEach(() => resetOrder("O20260628003", "assigned", "T002", "赵师傅"));
+  afterEach(() => resetOrder("O20260628003", "assigned", "T002", "赵师傅"));
 
+  // # spec: assigned 订单撤销派单：order→cancelled，master busy→available，masterName 快照返回
   it("assigned 订单 → 订单回 cancelled，师傅回 available", async () => {
-    const r = await cancelDispatchAction("O20260624003");
+    const r = await cancelDispatchAction("O20260628003");
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.masterName).toBe("赵师傅"); // 释放前的名字（snapshot）
 
-    const order = await prisma.order.findUnique({ where: { id: "O20260624003" } });
+    const order = await prisma.order.findUnique({
+      where: { id: "O20260628003" },
+    });
     expect(order?.status).toBe("cancelled");
     const tech = await prisma.master.findUnique({ where: { id: "T002" } });
     expect(tech?.status).toBe("available");
   });
 
+  // # spec: 撤销派单只能撤 assigned；pending 没派单则返「没有需要释放」
   it("pending 订单 → validation「没有需要释放」", async () => {
-    const r = await cancelDispatchAction("O20260624002"); // pending
+    const r = await cancelDispatchAction("O20260629001"); // pending
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.category).toBe("validation");
     expect(r.error).toMatch(/没有需要释放/);
   });
 
+  // # spec: 订单 ID 不存在时返 validation，不抛
   it("订单不存在 → validation", async () => {
     const r = await cancelDispatchAction("NOT-EXIST");
     expect(r.ok).toBe(false);
@@ -158,8 +243,9 @@ describe("cancelDispatchAction", () => {
     expect(r.error).toMatch(/不存在/);
   });
 
+  // # spec: 终态订单（completed/cancelled）不能再退派单
   it("completed 订单 → validation（已终态，不能再退）", async () => {
-    const r = await cancelDispatchAction("O20260623007"); // completed
+    const r = await cancelDispatchAction("O20260626001"); // completed
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.category).toBe("validation");
@@ -171,33 +257,39 @@ describe("cancelDispatchAction", () => {
 // ============================================================
 
 describe("startServiceAction", () => {
+  // # spec: startServiceAction 把 assigned→in_service，master 保持 busy（服务中不释放）
   beforeEach(async () => {
     await resetMasterStatuses();
-    await resetOrder("O20260624003", "assigned", "T002", "赵师傅");
+    await resetOrder("O20260628003", "assigned", "T002", "赵师傅");
   });
   afterEach(async () => {
     await resetMasterStatuses();
-    await resetOrder("O20260624003", "assigned", "T002", "赵师傅");
+    await resetOrder("O20260628003", "assigned", "T002", "赵师傅");
   });
 
+  // # spec: assigned 订单开始服务：order→in_service，master 保持 busy（服务中不释放）
   it("assigned 订单 → in_service（师傅保持 busy）", async () => {
-    const r = await startServiceAction("O20260624003");
+    const r = await startServiceAction("O20260628003");
     expect(r.ok).toBe(true);
     if (!r.ok) return;
 
-    const order = await prisma.order.findUnique({ where: { id: "O20260624003" } });
+    const order = await prisma.order.findUnique({
+      where: { id: "O20260628003" },
+    });
     expect(order?.status).toBe("in_service");
     const tech = await prisma.master.findUnique({ where: { id: "T002" } });
     expect(tech?.status).toBe("busy"); // in_service 不释放
   });
 
+  // # spec: 必须先派单（assigned）才能开始服务，pending 直接拒
   it("pending 订单 → validation 拒", async () => {
-    const r = await startServiceAction("O20260624002");
+    const r = await startServiceAction("O20260629001");
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.category).toBe("validation");
   });
 
+  // # spec: startService 订单不存在时返 validation「不存在」，不抛
   it("订单不存在 → validation", async () => {
     const r = await startServiceAction("NOT-EXIST");
     expect(r.ok).toBe(false);
@@ -207,27 +299,32 @@ describe("startServiceAction", () => {
 });
 
 describe("completeOrderAction", () => {
+  // # spec: completeOrderAction 把 in_service→completed，并释放 master busy→available
   beforeEach(async () => {
     await resetMasterStatuses();
-    await resetOrder("O20260624001", "in_service", "T001", "李师傅");
+    await resetOrder("O20260629011", "in_service", "T001", "李师傅");
   });
   afterEach(async () => {
     await resetMasterStatuses();
-    await resetOrder("O20260624001", "in_service", "T001", "李师傅");
+    await resetOrder("O20260629011", "in_service", "T001", "李师傅");
   });
 
+  // # spec: in_service 订单完成：order→completed，master busy→available（关键：完成必须释放）
   it("in_service 订单 → completed（师傅释放 busy → available）", async () => {
-    const r = await completeOrderAction("O20260624001");
+    const r = await completeOrderAction("O20260629011");
     expect(r.ok).toBe(true);
 
-    const order = await prisma.order.findUnique({ where: { id: "O20260624001" } });
+    const order = await prisma.order.findUnique({
+      where: { id: "O20260629011" },
+    });
     expect(order?.status).toBe("completed");
     const tech = await prisma.master.findUnique({ where: { id: "T001" } });
     expect(tech?.status).toBe("available"); // 关键：完成释放
   });
 
+  // # spec: 必须先 startService（in_service）才能完成，assigned 直接拒
   it("assigned 订单 → validation 拒（必须先开始服务）", async () => {
-    const r = await completeOrderAction("O20260624003"); // assigned
+    const r = await completeOrderAction("O20260628003"); // assigned
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.category).toBe("validation");
@@ -235,29 +332,106 @@ describe("completeOrderAction", () => {
 });
 
 describe("cancelOrderAction", () => {
+  // # spec: cancelOrderAction 把订单→cancelled，并释放 master busy→available（任意非终态都可）
   beforeEach(async () => {
     await resetMasterStatuses();
-    await resetOrder("O20260624003", "assigned", "T002", "赵师傅");
+    await resetOrder("O20260628003", "assigned", "T002", "赵师傅");
   });
   afterEach(async () => {
     await resetMasterStatuses();
-    await resetOrder("O20260624003", "assigned", "T002", "赵师傅");
+    await resetOrder("O20260628003", "assigned", "T002", "赵师傅");
   });
 
-  it("assigned 订单 → cancelled + 师傅释放", async () => {
-    const r = await cancelOrderAction("O20260624003");
+  // # spec: assigned 订单取消：order→cancelled，master busy→available
+  // [v0.9.0] 业务规则 #14：所有 cancel 都必填 cancelReason
+  it("assigned 订单 + 原因 → cancelled + 师傅释放", async () => {
+    const r = await cancelOrderAction("O20260628003", "测试取消");
     expect(r.ok).toBe(true);
 
-    const order = await prisma.order.findUnique({ where: { id: "O20260624003" } });
+    const order = await prisma.order.findUnique({
+      where: { id: "O20260628003" },
+    });
     expect(order?.status).toBe("cancelled");
     const tech = await prisma.master.findUnique({ where: { id: "T002" } });
     expect(tech?.status).toBe("available");
   });
 
+  // [v0.9.0] 业务规则 #14：不传原因 → 拒绝
+  // # spec: cancelOrderAction 校验失败不写库
+  it("assigned 订单 + 不传原因 → 拒绝", async () => {
+    const r = await cancelOrderAction("O20260628003");
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toMatch(/请填写取消原因/);
+    }
+  });
+
+  // # spec: 已终态订单（completed）不能取消，返 validation
   it("completed 订单 → validation 拒", async () => {
-    const r = await cancelOrderAction("O20260623007");
+    const r = await cancelOrderAction("O20260626001");
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.category).toBe("validation");
   });
+});
+
+// ============================================================
+// [v0.9.8] 组 5：鉴权失败路径测试
+// ============================================================
+
+describe("鉴权失败路径", () => {
+  // # spec: 未登录调 admin action → 守卫失败，action 透传守卫结果
+  it("未登录 → createOrderAction 返守卫失败", async () => {
+    mockRequireAdmin.mockResolvedValueOnce({
+      ok: false,
+      category: "validation",
+      error: "请重新登录后再操作",
+    });
+    const r = await createOrderAction(fd(validOrder));
+    expect(r).not.toBeNull();
+    if (!r) return;
+
+    expect(r.error).toBe("请重新登录后再操作");
+  });
+
+  // # spec: customer 角色调 admin action → 守卫拒绝
+  it("customer 角色 → assignOrderAction 返「仅管理员可执行此操作」", async () => {
+    mockRequireAdmin.mockResolvedValueOnce({
+      ok: false,
+      category: "validation",
+      error: "仅管理员可执行此操作",
+    });
+    // assignOrderAction 返回类型包含 {ok:true, ...} 分支
+    // 我们的 mock 强制失败 — TS 收窄不到 fail 分支，用 as any 强转
+    const r = (await assignOrderAction("O20260628003", "T001")) as any;
+    expect(r.ok).toBe(false);
+    expect(r.error).toBe("仅管理员可执行此操作");
+  });
+
+  // # spec: 缺 CSRF token → 守卫拒绝
+  it("缺 _csrf → createOrderAction 返「会话已过期」", async () => {
+    mockRequireCsrf.mockResolvedValueOnce({
+      ok: false,
+      category: "validation",
+      error: "会话已过期，请刷新页面后重试",
+    });
+    const r = (await createOrderAction(fd(validOrder))) as any;
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/会话已过期/);
+  });
+
+  // # spec: 跨源 Origin 头 → 非 FormData action 拒绝
+  it("跨源 Origin → assignOrderAction 返 CSRF 校验失败", async () => {
+    mockVerifyCsrfOrigin.mockResolvedValueOnce({
+      ok: false,
+      error: "CSRF 校验失败：Origin 不匹配",
+    });
+    const r = (await assignOrderAction("O20260628003", "T001")) as any;
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/CSRF 校验失败/);
+  });
+
+  // # spec: 跨源 Origin → toggleRuleEnabledAction 拒绝（dispatch-rules）
+  // 注：toggleRuleEnabledAction 来自 dispatch-rules/actions.ts，
+  // 本文件只测 orders 6 个 action。dispatch-rules 鉴权测试在那个文件。
 });

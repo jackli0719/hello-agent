@@ -86,8 +86,17 @@ export default async function ServicesPage({ searchParams }: PageProps) {
 
         {/* 类目卡片 + SKU 折叠列表 */}
         <section style={{ ...card, marginBottom: 24 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-            <h2 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>服务品类</h2>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginBottom: 12,
+            }}
+          >
+            <h2 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>
+              服务品类
+            </h2>
             <Link
               href="/services/categories/new"
               style={{
@@ -104,7 +113,13 @@ export default async function ServicesPage({ searchParams }: PageProps) {
           </div>
 
           {categories.length === 0 ? (
-            <div style={{ padding: "20px 0", textAlign: "center", color: "#9ca3af" }}>
+            <div
+              style={{
+                padding: "20px 0",
+                textAlign: "center",
+                color: "#9ca3af",
+              }}
+            >
               暂无品类
             </div>
           ) : (
@@ -121,9 +136,15 @@ export default async function ServicesPage({ searchParams }: PageProps) {
                 {categories.map((c) => (
                   <tr key={c.id}>
                     <td style={td}>{c.name}</td>
-                    <td style={{ ...td, fontFamily: "monospace" }}>{c.categoryCode}</td>
-                    <td style={td}>{skuByCategory.get(c.categoryCode)?.length ?? 0}</td>
-                    <td style={td}><StatusBadge enabled={c.enabled} /></td>
+                    <td style={{ ...td, fontFamily: "monospace" }}>
+                      {c.categoryCode}
+                    </td>
+                    <td style={td}>
+                      {skuByCategory.get(c.categoryCode)?.length ?? 0}
+                    </td>
+                    <td style={td}>
+                      <StatusBadge enabled={c.enabled} />
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -133,8 +154,17 @@ export default async function ServicesPage({ searchParams }: PageProps) {
 
         {/* SKU 卡片 — 按类目分组，每个类目默认显示前 3 个 SKU */}
         <section style={card}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-            <h2 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>服务 SKU</h2>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginBottom: 12,
+            }}
+          >
+            <h2 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>
+              服务 SKU
+            </h2>
             <Link
               href="/services/skus/new"
               style={{
@@ -151,7 +181,13 @@ export default async function ServicesPage({ searchParams }: PageProps) {
           </div>
 
           {skus.length === 0 ? (
-            <div style={{ padding: "20px 0", textAlign: "center", color: "#9ca3af" }}>
+            <div
+              style={{
+                padding: "20px 0",
+                textAlign: "center",
+                color: "#9ca3af",
+              }}
+            >
               暂无 SKU
             </div>
           ) : (
@@ -180,13 +216,18 @@ export default async function ServicesPage({ searchParams }: PageProps) {
                       }}
                     >
                       <span>
-                        {c.name} <span style={{ color: "#9ca3af", fontWeight: 400 }}>({c.categoryCode})</span>
+                        {c.name}{" "}
+                        <span style={{ color: "#9ca3af", fontWeight: 400 }}>
+                          ({c.categoryCode})
+                        </span>
                       </span>
                       <span style={{ fontSize: 12, color: "#6b7280" }}>
                         {items.length} 个 SKU
                       </span>
                     </summary>
-                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <table
+                      style={{ width: "100%", borderCollapse: "collapse" }}
+                    >
                       <thead>
                         <tr>
                           <th style={th}>名称</th>
@@ -200,13 +241,21 @@ export default async function ServicesPage({ searchParams }: PageProps) {
                         {items.map((s) => (
                           <tr key={s.id}>
                             <td style={td}>{s.name}</td>
-                            <td style={{ ...td, fontFamily: "monospace" }}>{s.skuCode}</td>
+                            <td style={{ ...td, fontFamily: "monospace" }}>
+                              {s.skuCode}
+                            </td>
                             <td style={td}>¥{s.basePriceYuan.toFixed(2)}</td>
-                            <td style={td}><StatusBadge enabled={s.enabled} /></td>
+                            <td style={td}>
+                              <StatusBadge enabled={s.enabled} />
+                            </td>
                             <td style={td}>
                               <Link
                                 href={`/services/skus/${s.id}/edit`}
-                                style={{ color: "#2563eb", fontSize: 13, textDecoration: "none" }}
+                                style={{
+                                  color: "#2563eb",
+                                  fontSize: 13,
+                                  textDecoration: "none",
+                                }}
                               >
                                 编辑
                               </Link>

@@ -8,7 +8,7 @@ import { z } from "zod";
 /** 派单规则的结构化内容（从 DispatchRule.ruleJson 解析出来） */
 export interface DispatchRuleSpec {
   match: {
-    skuId?: string;      // 精确 SKU 匹配（可选）
+    skuId?: string; // 精确 SKU 匹配（可选）
     categoryId?: string; // 类目兜底匹配（可选）
   };
   requiredSkills: string[]; // 师傅技能必须覆盖这个集合
@@ -25,9 +25,24 @@ export interface DispatchRuleRow {
 
 /** 推荐结果 — 给 /orders 页面展示用 */
 export interface RecommendationResult {
-  rule: DispatchRuleRow | null;          // 命中的规则（null = 没有规则覆盖）
-  candidates: Technician[];              // 按 rating 降序排好的候选师傅
-  reason: string;                        // 一句话说明（为什么有 / 为什么没有）
+  rule: DispatchRuleRow | null; // 命中的规则（null = 没有规则覆盖）
+  candidates: Technician[]; // 按 rating 降序排好的候选师傅
+  reason: string; // 一句话说明（为什么有 / 为什么没有）
+}
+
+export interface PlatformAreaRow {
+  id: string;
+  province: string;
+  city: string;
+  district: string;
+  street: string;
+  enabled: boolean;
+}
+
+export interface MerchantAreaRow {
+  merchantId: string;
+  platformAreaId: string;
+  enabled: boolean;
 }
 
 /** 输入：订单的 SKU 和类目，加上规则库 + 师傅池 */
@@ -35,9 +50,12 @@ export interface RecommendArgs {
   order: {
     skuId: string | null;
     categoryId: string | null;
+    address?: string | null;
   };
   rules: DispatchRuleRow[];
   masters: Technician[];
+  platformAreas?: PlatformAreaRow[];
+  merchantAreas?: MerchantAreaRow[];
 }
 
 /**
@@ -56,8 +74,24 @@ export interface RecommendArgs {
  *
  * @returns 命中的规则 + 候选列表 + 一句话理由
  */
-export function recommendMastersForOrder(args: RecommendArgs): RecommendationResult {
-  const { order, rules, masters } = args;
+export function recommendMastersForOrder(
+  args: RecommendArgs,
+): RecommendationResult {
+  const { order, rules } = args;
+
+  let masters = args.masters;
+  if (args.platformAreas && args.merchantAreas) {
+    const areaResult = filterMastersByArea({
+      address: order.address ?? "",
+      masters,
+      platformAreas: args.platformAreas,
+      merchantAreas: args.merchantAreas,
+    });
+    if (!areaResult.ok) {
+      return { rule: null, candidates: [], reason: areaResult.reason };
+    }
+    masters = areaResult.masters;
+  }
 
   // 1. 找命中的规则 — SKU 精确优先
   const enabledRules = rules.filter((r) => r.enabled);
@@ -65,7 +99,8 @@ export function recommendMastersForOrder(args: RecommendArgs): RecommendationRes
     (r) => r.spec.match.skuId && r.spec.match.skuId === order.skuId,
   );
   const categoryRules = enabledRules.filter(
-    (r) => r.spec.match.categoryId && r.spec.match.categoryId === order.categoryId,
+    (r) =>
+      r.spec.match.categoryId && r.spec.match.categoryId === order.categoryId,
   );
 
   let rule: DispatchRuleRow | null = null;
@@ -124,6 +159,83 @@ function pickTopRule(rules: DispatchRuleRow[]): DispatchRuleRow {
   })[0];
 }
 
+function filterMastersByArea(args: {
+  address: string;
+  masters: Technician[];
+  platformAreas: PlatformAreaRow[];
+  merchantAreas: MerchantAreaRow[];
+}): { ok: true; masters: Technician[] } | { ok: false; reason: string } {
+  const matchedArea = pickPlatformAreaForAddress(
+    args.address,
+    args.platformAreas,
+  );
+  if (!matchedArea) {
+    return {
+      ok: false,
+      reason: "订单地址不在平台已开放合作区域，请人工处理",
+    };
+  }
+
+  const merchantIds = new Set(
+    args.merchantAreas
+      .filter((ma) => ma.enabled && ma.platformAreaId === matchedArea.id)
+      .map((ma) => ma.merchantId),
+  );
+  if (merchantIds.size === 0) {
+    return {
+      ok: false,
+      reason: `平台区域「${formatPlatformArea(matchedArea)}」暂无启用商家覆盖，请人工处理`,
+    };
+  }
+
+  const masters = args.masters.filter(
+    (m) => m.merchantId !== undefined && merchantIds.has(m.merchantId),
+  );
+  if (masters.length === 0) {
+    return {
+      ok: false,
+      reason: `平台区域「${formatPlatformArea(matchedArea)}」的商家下暂无师傅，请人工处理`,
+    };
+  }
+
+  return { ok: true, masters };
+}
+
+function pickPlatformAreaForAddress(
+  address: string,
+  platformAreas: PlatformAreaRow[],
+): PlatformAreaRow | null {
+  const normalizedAddress = normalizeAreaText(address);
+  const matches = platformAreas
+    .filter((area) => area.enabled)
+    .filter((area) =>
+      [area.province, area.city, area.district, area.street].every((part) =>
+        normalizedAddress.includes(normalizeAreaText(part)),
+      ),
+    );
+  if (matches.length === 0) return null;
+  return matches.sort((a, b) => {
+    const lenA = areaTextLength(a);
+    const lenB = areaTextLength(b);
+    if (lenB !== lenA) return lenB - lenA;
+    return a.id.localeCompare(b.id);
+  })[0];
+}
+
+function normalizeAreaText(value: string): string {
+  return value.replace(/\s+/g, "");
+}
+
+function areaTextLength(area: PlatformAreaRow): number {
+  return [area.province, area.city, area.district, area.street]
+    .map(normalizeAreaText)
+    .join("").length;
+}
+
+function formatPlatformArea(area: PlatformAreaRow): string {
+  return `${area.province}/${area.city}/${area.district}/${area.street}`;
+}
+
 /**
  * Zod schema — 描述 ruleJson 的合法结构。
  * - match 是 optional 对象（缺则空对象），skuId/categoryId 都 optional
@@ -142,7 +254,10 @@ export const dispatchRuleSpecSchema = z
       .transform((v) => v ?? {}),
     requiredSkills: z
       .preprocess(
-        (v) => (Array.isArray(v) ? v.filter((s): s is string => typeof s === "string") : []),
+        (v) =>
+          Array.isArray(v)
+            ? v.filter((s): s is string => typeof s === "string")
+            : [],
         z.array(z.string()),
       )
       .default([]),
@@ -161,12 +276,16 @@ export function parseRuleJson(json: string): DispatchRuleSpec | null {
   try {
     raw = JSON.parse(json);
   } catch (e) {
-    console.warn(`[dispatch] ruleJson 不是合法 JSON: ${e instanceof Error ? e.message : String(e)}`);
+    console.warn(
+      `[dispatch] ruleJson 不是合法 JSON: ${e instanceof Error ? e.message : String(e)}`,
+    );
     return null;
   }
   const result = dispatchRuleSpecSchema.safeParse(raw);
   if (!result.success) {
-    console.warn(`[dispatch] ruleJson 校验失败: ${result.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
+    console.warn(
+      `[dispatch] ruleJson 校验失败: ${result.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`,
+    );
     return null;
   }
   return result.data;

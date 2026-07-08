@@ -1,61 +1,214 @@
-// 登录保护 — MVP 阶段固定账号 + cookie session。
+// 登录保护 — [v0.6.0] iron-session 签名/加密 session
 //
 // 设计：
-// - 固定账号：用户名 admin / 密码 admin123（需求里写明）
-// - cookie 名：o2o_session = "1" 即登录态；不存在 = 未登录
-// - httpOnly: 防 XSS 偷 cookie（不是 P0 但最小成本就加上）
-// - secure: 注释里默认关（dev 跑 http），生产部署时按需打开
-// - 30 天过期
+// - 三种角色：admin / worker / customer
+// - User 模型（Prisma）存账号；密码 bcrypt 哈希
+// - session 用 iron-session 签名/加密（A256-GCM）
+//   - 单一 cookie：o2o_session 存 { userId, role }
+//   - httpOnly: 防 XSS 偷 cookie
+//   - 30 天过期
+//   - 改 cookie role/userId 都被 iron-session 拒绝（签名校验失败）
 //
 // 不做（按需求）：
-// - 不签名（无 cookie 篡改保护）— MVP 接受
-// - 不做密码哈希（明文比对）— MVP 接受
-// - 不做用户管理 / 注册 / 忘记密码 / 多角色
+// - 不做密码明文（已用 bcrypt 哈希）
+// - 不做注册 / 找回密码 / OAuth / 短信验证码
+// - 不做 RBAC 权限表（粗粒度按 role 分组）
 
 import { cookies } from "next/headers";
+import { getIronSession, type IronSession } from "iron-session";
+import bcrypt from "bcryptjs";
+import { prisma } from "./db";
 
 export const SESSION_COOKIE = "o2o_session";
 
-// 固定管理员账号（按需求）
-const ADMIN_USER = "admin";
-const ADMIN_PASS = "admin123";
+export type Role = "admin" | "worker" | "customer";
 
-/** 校验账号密码 — 简单 string 比对 */
-export function checkCredentials(username: string, password: string): boolean {
-  return username === ADMIN_USER && password === ADMIN_PASS;
-}
-
-/** 服务端读 cookie 判断是否登录（用于 server component / middleware） */
-export async function isAuthenticated(): Promise<boolean> {
-  const c = await cookies();
-  return c.get(SESSION_COOKIE)?.value === "1";
-}
-
-/** 登录态 cookie 配置（写 / 删） */
 export const COOKIE_OPTIONS = {
   httpOnly: true,
   sameSite: "lax" as const,
   path: "/",
-  // dev 跑 http 不会自动加 secure；生产部署再加
   maxAge: 60 * 60 * 24 * 30, // 30 天
 };
 
-/** 受保护的路径前缀（middleware 用来判断哪些路径需要登录） */
+// ============================================================
+// 路径权限矩阵（按角色分组）
+// ============================================================
+
+/** 受保护路径（必须登录） */
 export const PROTECTED_PATHS = [
   "/dashboard",
   "/orders",
   "/services",
   "/masters",
+  "/platform-areas",
+  "/merchants",
   "/dispatch-rules",
+  "/admin",
+  "/worker",
+  "/customer/orders",
 ];
 
-/** 静态资源 / 内部路径 — middleware 必须放行（不重定向） */
-export const PUBLIC_PATHS = ["/login"];
+/**
+ * 公开路径（不需登录也可访问）
+ * 注意：根路径 "/" 不放这里 —— 它 prefix-match 所有路径，会把 PROTECTED 全覆盖成 false
+ * 单独在 isProtectedPath 里判断 pathname === "/"
+ */
+export const PUBLIC_PATHS = ["/login", "/customer"];
 
-/** 是否受保护：路径是 PROTECTED_PATHS 任一前缀（但不是 PUBLIC） */
-export function isProtectedPath(pathname: string): boolean {
-  if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
-    return false;
+/** 各角色登录后默认跳转 */
+export const DEFAULT_LANDING: Record<Role, string> = {
+  admin: "/dashboard",
+  worker: "/worker",
+  customer: "/customer/orders",
+};
+
+/** 角色可访问的路径前缀 */
+export const ROLE_ALLOWED: Record<Role, string[]> = {
+  admin: [
+    "/dashboard",
+    "/orders",
+    "/services",
+    "/masters",
+    "/platform-areas",
+    "/merchants",
+    "/dispatch-rules",
+    "/admin",
+  ],
+  worker: ["/worker"],
+  customer: ["/customer", "/customer/orders"],
+};
+
+// ============================================================
+// 校验账号（查 DB）
+// ============================================================
+
+export interface AuthenticatedUser {
+  id: string;
+  name: string;
+  role: Role;
+  phone: string | null;
+  workerId: string | null;
+}
+
+/** iron-session 内容 schema */
+export interface SessionData {
+  userId?: string;
+  role?: Role;
+}
+
+/**
+ * iron-session 配置 — 必填 SESSION_SECRET（>= 32 字符）
+ * dev 默认给一个演示值；生产从 .env 读
+ */
+function getSessionOptions() {
+  const password =
+    process.env.SESSION_SECRET ??
+    "dev-only-do-not-use-in-production-32chars-min-aaaa";
+  if (password.length < 32) {
+    throw new Error("SESSION_SECRET 长度不足 32 字符 — 见 .env.example");
   }
-  return PROTECTED_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"));
+  return {
+    password,
+    cookieName: SESSION_COOKIE,
+    cookieOptions: {
+      httpOnly: true,
+      sameSite: "lax" as const,
+      path: "/",
+      secure: process.env.NODE_ENV === "production", // [v0.6.0] B5: production 强制 secure
+      maxAge: 60 * 60 * 24 * 30, // 30 天
+    },
+  };
+}
+
+/**
+ * 校验账号 + 返回用户信息
+ * - 支持 username 或 phone 登录
+ * - [v0.5.0] 密码 bcrypt 哈希比对（修 ADR-013 A1 P0）
+ */
+export async function authenticate(
+  account: string,
+  password: string,
+): Promise<AuthenticatedUser | null> {
+  // 同时按 name 或 phone 查（演示便利）
+  const user = await prisma.user.findFirst({
+    where: {
+      OR: [{ name: account }, { phone: account }],
+    },
+  });
+  if (!user) return null;
+  // bcrypt 哈希比对
+  const passwordOk = await bcrypt.compare(password, user.password);
+  if (!passwordOk) return null;
+  return {
+    id: user.id,
+    name: user.name,
+    role: user.role as Role,
+    phone: user.phone,
+    workerId: user.workerId,
+  };
+}
+
+// ============================================================
+// Session 读写（[v0.6.0] iron-session 替换裸 cookie）
+// ============================================================
+
+/**
+ * 取 iron-session 实例 — 在 server action / route handler / server component 内调用
+ */
+export async function getSession(): Promise<IronSession<SessionData>> {
+  const c = await cookies();
+  return getIronSession<SessionData>(c, getSessionOptions());
+}
+
+/** 从 session 取当前用户（userId 反查 DB） */
+export async function getCurrentUser(): Promise<AuthenticatedUser | null> {
+  const session = await getSession();
+  if (!session.userId || !session.role) return null;
+  const user = await prisma.user.findUnique({ where: { id: session.userId } });
+  if (!user) return null;
+  return {
+    id: user.id,
+    name: user.name,
+    role: user.role as Role,
+    phone: user.phone,
+    workerId: user.workerId,
+  };
+}
+
+export async function isAuthenticated(): Promise<boolean> {
+  const session = await getSession();
+  return !!session.userId && !!session.role;
+}
+
+// ============================================================
+// 路径权限判断
+// ============================================================
+
+/**
+ * 是否受保护路径：
+ * - 先看 PROTECTED_PATHS（受保护优先 — 即使前缀跟 PUBLIC 撞车）
+ * - 再看 PUBLIC_PATHS（仅当不受保护时才判断是否公开）
+ *
+ * 关键：/customer/orders 必须在 PROTECTED_PATHS 里，否则 PUBLIC 的 /customer 前缀
+ *      会把它覆盖成「公开」（prefix 匹配漏洞）。
+ */
+export function isProtectedPath(pathname: string): boolean {
+  // 1. 根路径永远放行（首页 + 静态入口）
+  if (pathname === "/") return false;
+
+  // 2. 受保护优先（精确 + 前缀匹配）
+  const isProtected = PROTECTED_PATHS.some(
+    (p) => pathname === p || pathname.startsWith(p + "/"),
+  );
+  if (isProtected) return true;
+
+  // 3. 不受保护：默认放行（白名单模式 — 未列入 = 公开）
+  return false;
+}
+
+/** 给定路径 + 当前角色，是否可访问 */
+export function canAccess(role: Role | null, pathname: string): boolean {
+  if (!role) return false;
+  const allowed = ROLE_ALLOWED[role];
+  return allowed.some((p) => pathname === p || pathname.startsWith(p + "/"));
 }

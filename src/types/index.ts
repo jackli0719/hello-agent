@@ -5,10 +5,10 @@
 // 字段精度（如金额用分 vs 元）以 schema 为准。
 
 export type OrderStatus =
-  | "pending"    // 待派单
-  | "assigned"   // 已派单
+  | "pending" // 待派单
+  | "assigned" // 已派单
   | "in_service" // 服务中
-  | "completed"  // 已完成
+  | "completed" // 已完成
   | "cancelled"; // 已取消
 
 export type TechnicianStatus = "available" | "busy" | "offline";
@@ -21,7 +21,7 @@ export interface Order {
   technicianName: string | null;
   address: string;
   scheduledAt: string; // ISO 时间字符串
-  amount: number;      // 单位：元（页面展示用，DB 存的是分）
+  amount: number; // 单位：元（页面展示用，DB 存的是分）
   status: OrderStatus;
 }
 
@@ -34,6 +34,8 @@ export interface Technician {
   completedJobs: number;
   status: TechnicianStatus;
   serviceArea: string;
+  merchantId?: string;
+  merchantName?: string;
 }
 
 export interface Service {

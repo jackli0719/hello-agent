@@ -17,7 +17,8 @@ export interface ServiceOption {
 function parseSkills(raw: string): string[] {
   try {
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) return parsed.filter((s) => typeof s === "string");
+    if (Array.isArray(parsed))
+      return parsed.filter((s) => typeof s === "string");
   } catch {
     // 坏数据留空
   }
@@ -51,7 +52,9 @@ export async function listEnabledServices(): Promise<ServiceOption[]> {
 }
 
 /** 取单个服务项目（按 ID）— 给 action 校验/默认值用 */
-export async function getServiceById(id: string): Promise<ServiceOption | null> {
+export async function getServiceById(
+  id: string,
+): Promise<ServiceOption | null> {
   const row = await prisma.serviceSku.findUnique({
     where: { id },
     select: {

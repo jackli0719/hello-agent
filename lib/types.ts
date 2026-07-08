@@ -2,10 +2,10 @@
 // MVP 阶段只用最小的内存数据结构，后续接入数据库时再扩展。
 
 export type OrderStatus =
-  | "pending"    // 待派单
-  | "assigned"   // 已派单
+  | "pending" // 待派单
+  | "assigned" // 已派单
   | "in_service" // 服务中
-  | "completed"  // 已完成
+  | "completed" // 已完成
   | "cancelled"; // 已取消
 
 export type TechnicianStatus = "available" | "busy" | "offline";
@@ -18,7 +18,7 @@ export interface Order {
   technicianName: string | null;
   address: string;
   scheduledAt: string; // ISO 时间字符串
-  amount: number;      // 单位：元
+  amount: number; // 单位：元
   status: OrderStatus;
 }
 
@@ -26,11 +26,13 @@ export interface Technician {
   id: string;
   name: string;
   phone: string;
-  skills: string[];       // 掌握的技能标签
-  rating: number;         // 0~5
-  completedJobs: number;  // 累计完成单数
+  skills: string[]; // 掌握的技能标签
+  rating: number; // 0~5
+  completedJobs: number; // 累计完成单数
   status: TechnicianStatus;
   serviceArea: string;
+  merchantId?: string;
+  merchantName?: string;
 }
 
 export interface Service {

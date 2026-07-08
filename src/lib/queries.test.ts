@@ -22,7 +22,9 @@ beforeEach(async () => {
   });
 });
 
+// # spec: 订单列表 SKU 过滤 = 按 skuCode 只返回该 SKU 订单、未传 skuCode 不过滤、不存在的 SKU 返回 0 条
 describe("listOrdersForPage — skuCode 过滤", () => {
+  // # spec: 订单列表 SKU 过滤 — 按 skuCode 只返回该 SKU 订单；不存在的 SKU 返回 0 条
   it("按 SKU 过滤只返回该 SKU 的订单", async () => {
     // 1. 创建类目 + 2 个 SKU + 2 个订单
     const cat = await prisma.serviceCategory.create({
@@ -102,13 +104,16 @@ describe("listOrdersForPage — skuCode 过滤", () => {
     expect(empty.totalCount).toBe(0);
   });
 
+  // # documents current behavior: 不传 skuCode 不过滤，返回全量订单
   it("skuCode 不传 → 不应用过滤（全量订单）", async () => {
     const all = await listOrdersForPage();
     expect(all.totalCount).toBeGreaterThan(0);
   });
 });
 
+// # spec: 订单列表时间过滤 + 分页 = 按 createdAt/scheduledAt 时间范围、dateTo 不含次日 0 点、page/pageSize 控制分页且不重复
 describe("listOrdersForPage — 时间范围 + 分页", () => {
+  // # spec: 订单列表时间过滤 — dateField=createdAt 时按 createdAt 时间范围过滤
   it("按 createdAt 时间范围过滤（今天）", async () => {
     // seed 跑完时 createdAt 是今天
     const today = new Date();
@@ -124,41 +129,63 @@ describe("listOrdersForPage — 时间范围 + 分页", () => {
     expect(r.totalCount).toBeGreaterThan(0);
   });
 
+  // # spec: 订单列表时间过滤 — 远古日期范围匹配不到任何订单时 totalCount=0
   it("按 createdAt 时间范围（远古）→ 应该 0（seed 都是今天创建的）", async () => {
     const dateFrom = new Date("2020-01-01T00:00:00");
     const dateTo = new Date("2020-01-01T00:00:00");
     const r = await listOrdersForPage({
-      dateFrom, dateTo, dateField: "createdAt", page: 1, pageSize: 100,
+      dateFrom,
+      dateTo,
+      dateField: "createdAt",
+      page: 1,
+      pageSize: 100,
     });
     expect(r.totalCount).toBe(0);
   });
 
+  // # spec: 订单列表时间过滤 — dateField=scheduledAt 时按预约时间范围过滤
+  // [v0.9.2] 改用 demo seed 真实日期范围（6/26 + 6/29）
   it("按 scheduledAt 时间范围过滤", async () => {
-    // O20260623007 预约时间 2026-06-23，O20260624001 预约 2026-06-24
-    const dateFrom = new Date("2026-06-23T00:00:00");
-    const dateTo = new Date("2026-06-24T00:00:00");
+    // O20260626002 预约 2026-06-26，O20260626001 预约 2026-06-26
+    // O20260629011 预约 2026-06-29 — 应该匹配 6/26-6/29 范围
+    const dateFrom = new Date("2026-06-26T00:00:00");
+    const dateTo = new Date("2026-06-29T00:00:00");
     const r = await listOrdersForPage({
-      dateFrom, dateTo, dateField: "scheduledAt", page: 1, pageSize: 100,
+      dateFrom,
+      dateTo,
+      dateField: "scheduledAt",
+      page: 1,
+      pageSize: 100,
     });
-    expect(r.orders.find((o) => o.id === "O20260623007")).toBeDefined();
-    expect(r.orders.find((o) => o.id === "O20260624001")).toBeDefined();
-    // O20260624002 预约 2026-06-24 — 也应该匹配
-    expect(r.orders.find((o) => o.id === "O20260624002")).toBeDefined();
+    expect(r.orders.find((o) => o.id === "O20260626002")).toBeDefined();
+    expect(r.orders.find((o) => o.id === "O20260626001")).toBeDefined();
+    expect(r.orders.find((o) => o.id === "O20260629011")).toBeDefined();
   });
 
+  // # spec: 订单列表时间边界 — dateTo 是「含当天 < 次日 00:00」不包含次日
+  // [v0.9.2] 用 6/27 测试「只含当天」
   it("dateTo 不含当天（< 次日 00:00）", async () => {
-    // dateTo = 2026-06-23 → 只包含 2026-06-23 当天
-    const dateFrom = new Date("2026-06-23T00:00:00");
-    const dateTo = new Date("2026-06-23T00:00:00");
+    // dateTo = 2026-06-27 → 只包含 2026-06-27 当天
+    // demo seed 有 2 条 6/27 completed 订单
+    const dateFrom = new Date("2026-06-27T00:00:00");
+    const dateTo = new Date("2026-06-27T00:00:00");
     const r = await listOrdersForPage({
-      dateFrom, dateTo, dateField: "scheduledAt", page: 1, pageSize: 100,
+      dateFrom,
+      dateTo,
+      dateField: "scheduledAt",
+      page: 1,
+      pageSize: 100,
     });
-    // 2026-06-23 当天预约的订单
-    expect(r.orders.find((o) => o.id === "O20260623007")).toBeDefined();
-    // 2026-06-24 预约的不该出现
-    expect(r.orders.find((o) => o.id === "O20260624001")).toBeUndefined();
+    // 2026-06-26 不该出现
+    expect(r.orders.find((o) => o.id === "O20260626002")).toBeUndefined();
+    // 2026-06-29 不该出现
+    expect(r.orders.find((o) => o.id === "O20260629011")).toBeUndefined();
+    expect(r.orders.find((o) => o.id === "O20260627001")).toBeDefined();
+    expect(r.orders.find((o) => o.id === "O20260627002")).toBeDefined();
+    expect(r.totalCount).toBe(2);
   });
 
+  // # spec: 订单列表分页 — page + pageSize 控制分页且不同页 ID 不重复
   it("分页 page + pageSize", async () => {
     const r1 = await listOrdersForPage({ page: 1, pageSize: 2 });
     expect(r1.orders.length).toBeLessThanOrEqual(2);

@@ -58,7 +58,14 @@ export default async function DispatchRulesPage({ searchParams }: PageProps) {
           color: "#111827",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 4,
+          }}
+        >
           <h1 style={{ fontSize: 24, margin: 0 }}>派单规则</h1>
           <Link
             href="/dispatch-rules/new"
@@ -96,10 +103,14 @@ export default async function DispatchRulesPage({ searchParams }: PageProps) {
           </summary>
           <div style={{ marginTop: 8, lineHeight: 1.7 }}>
             <div style={{ marginBottom: 6 }}>
-              <strong>SKU 精确</strong>：订单的 SKU 匹配规则里写的 SKU → 命中规则。要求师傅技能包含 <code style={codeStyle}>requiredSkills</code>。
+              <strong>SKU 精确</strong>：订单的 SKU 匹配规则里写的 SKU →
+              命中规则。要求师傅技能包含{" "}
+              <code style={codeStyle}>requiredSkills</code>。
             </div>
             <div style={{ marginBottom: 6 }}>
-              <strong>类目兜底</strong>：SKU 精确没命中 → 退到类目级（如「家政」类目下所有 SKU 都命中）。给该类目所有 SKU 一个统一规则。
+              <strong>类目兜底</strong>：SKU 精确没命中 →
+              退到类目级（如「家政」类目下所有 SKU 都命中）。给该类目所有 SKU
+              一个统一规则。
             </div>
             <div style={{ color: "#6b7280", fontSize: 12, marginTop: 6 }}>
               优先级 priority 高的先匹配。同优先级按 SKU 精确 &gt; 类目兜底。
@@ -130,7 +141,13 @@ export default async function DispatchRulesPage({ searchParams }: PageProps) {
 
         <section style={card}>
           {rules.length === 0 ? (
-            <div style={{ padding: "40px 0", textAlign: "center", color: "#9ca3af" }}>
+            <div
+              style={{
+                padding: "40px 0",
+                textAlign: "center",
+                color: "#9ca3af",
+              }}
+            >
               暂无派单规则，点右上「+ 新增规则」创建第一条
             </div>
           ) : (
@@ -170,14 +187,20 @@ function RuleRow({ rule }: { rule: RuleListItem }) {
           <span style={{ color: "#9ca3af" }}>—</span>
         )}
         {rule.categoryName && (
-          <div style={{ color: "#6b7280", fontSize: 12 }}>{rule.categoryName}</div>
+          <div style={{ color: "#6b7280", fontSize: 12 }}>
+            {rule.categoryName}
+          </div>
         )}
       </td>
       <td style={td}>
         {rule.skuCode ? (
           <>
             <span style={{ fontFamily: "monospace" }}>{rule.skuCode}</span>
-            {rule.skuName && <div style={{ color: "#6b7280", fontSize: 12 }}>{rule.skuName}</div>}
+            {rule.skuName && (
+              <div style={{ color: "#6b7280", fontSize: 12 }}>
+                {rule.skuName}
+              </div>
+            )}
           </>
         ) : (
           <span style={{ color: "#9ca3af" }}>—</span>
@@ -192,7 +215,10 @@ function RuleRow({ rule }: { rule: RuleListItem }) {
       </td>
       <td style={td}>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <DispatchRuleActionsCell ruleId={rule.id} initialEnabled={rule.enabled} />
+          <DispatchRuleActionsCell
+            ruleId={rule.id}
+            initialEnabled={rule.enabled}
+          />
           <Link
             href={`/dispatch-rules/${rule.id}/edit`}
             style={{ color: "#2563eb", fontSize: 12, textDecoration: "none" }}

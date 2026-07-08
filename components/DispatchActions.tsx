@@ -30,14 +30,21 @@ interface Props {
  * useEffect 清理兜底。
  */
 export function DispatchActions({ orderId, ruleName, candidates }: Props) {
-  const [optimisticMasterName, setOptimisticMasterName] = useState<string | null>(null);
-  const [error, setError] = useState<{ category: "validation" | "system"; message: string } | null>(null);
+  const [optimisticMasterName, setOptimisticMasterName] = useState<
+    string | null
+  >(null);
+  const [error, setError] = useState<{
+    category: "validation" | "system";
+    message: string;
+  } | null>(null);
   const [isPending, startTransition] = useTransition();
   // 标记「该组件实例是否已经被服务端确认成功」
   // revalidate 后父组件可能不卸载这个组件（如果订单状态没变），这时不重复触发 server action
   const confirmedRef = useRef(false);
   // 记住「最后一次触发的派单动作」 — system 错误的「重试」按钮直接重发它
-  const lastActionRef = useRef<{ masterId: string; masterName: string } | null>(null);
+  const lastActionRef = useRef<{ masterId: string; masterName: string } | null>(
+    null,
+  );
 
   // 兜底：组件卸载时清掉乐观状态（一般不会触发，因为 revalidate 后订单变 assigned 会卸载这个组件）
   useEffect(() => {

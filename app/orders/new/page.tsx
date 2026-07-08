@@ -47,7 +47,10 @@ export default async function NewOrderPage({ searchParams }: PageProps) {
         }}
       >
         <div style={{ marginBottom: 12 }}>
-          <Link href="/orders" style={{ color: "#6b7280", fontSize: 13, textDecoration: "none" }}>
+          <Link
+            href="/orders"
+            style={{ color: "#6b7280", fontSize: 13, textDecoration: "none" }}
+          >
             ← 返回订单列表
           </Link>
         </div>
